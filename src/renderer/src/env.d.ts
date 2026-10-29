@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 
 import type { ClippingConfig } from '../../shared/clipping';
+import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
   InputSource,
@@ -15,6 +16,7 @@ import type {
   RecordingLevelUpdate,
   RecordingRequestResult,
   RecordingSession,
+  RecordingSilenceReport,
   RecordingStartupFailure,
   RecordingStartupFailureResult,
   RecordingStopResult,
@@ -34,6 +36,9 @@ declare global {
       setInputSource: (source: InputSource) => Promise<RecordingAppState>;
       setClippingConfig: (
         config: Partial<ClippingConfig>,
+      ) => Promise<RecordingAppState>;
+      setSilenceConfig: (
+        config: Partial<SilenceConfig>,
       ) => Promise<RecordingAppState>;
       onRecordingState: (
         listener: (state: RecordingAppState) => void,
@@ -57,6 +62,7 @@ declare global {
         event: RecordingEvent,
       ) => Promise<RecordingDeviceEventResult>;
       reportClipping: (report: RecordingClippingReport) => Promise<void>;
+      reportSilence: (report: RecordingSilenceReport) => Promise<void>;
       recordStartupFailure: (
         payload: RecordingStartupFailure,
       ) => Promise<RecordingStartupFailureResult>;

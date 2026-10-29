@@ -26,6 +26,12 @@ function createState(overrides: Partial<RecordingAppState> = {}): RecordingAppSt
       intervalsToWarn: 3,
       recoveryIntervals: 5,
     },
+    silence: null,
+    silenceConfig: {
+      windowSeconds: 5,
+      rmsThreshold: 0.003,
+      graceSeconds: 30,
+    },
     error: null,
     ...overrides,
   };

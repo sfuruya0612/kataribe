@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
+import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
   InputSource,
@@ -15,6 +16,7 @@ import type {
   RecordingLevelUpdate,
   RecordingRequestResult,
   RecordingSession,
+  RecordingSilenceReport,
   RecordingStartupFailure,
   RecordingStartupFailureResult,
   RecordingStopResult,
@@ -50,6 +52,10 @@ const api = {
     config: Partial<ClippingConfig>,
   ): Promise<RecordingAppState> =>
     ipcRenderer.invoke('recording:set-clipping-config', config),
+  setSilenceConfig: (
+    config: Partial<SilenceConfig>,
+  ): Promise<RecordingAppState> =>
+    ipcRenderer.invoke('recording:set-silence-config', config),
   onRecordingState: (listener: (state: RecordingAppState) => void): (() => void) =>
     subscribe('recording:state', listener),
   onRecordingLevel: (listener: (update: RecordingLevelUpdate) => void): (() => void) =>
@@ -70,6 +76,8 @@ const api = {
     ipcRenderer.invoke('recording:device-event', event),
   reportClipping: (report: RecordingClippingReport): Promise<void> =>
     ipcRenderer.invoke('recording:clipping', report),
+  reportSilence: (report: RecordingSilenceReport): Promise<void> =>
+    ipcRenderer.invoke('recording:silence', report),
   recordStartupFailure: (
     payload: RecordingStartupFailure,
   ): Promise<RecordingStartupFailureResult> =>

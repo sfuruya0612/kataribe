@@ -18,6 +18,8 @@
   - @shoichi.furuya
 - [ADD] マイク入力のクリッピング警告と設定を追加する
   - @shoichi.furuya
+- [ADD] システム音声の無音検出と設定を追加する
+  - @shoichi.furuya
 
 ### FIX
 

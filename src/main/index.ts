@@ -11,6 +11,7 @@ import {
 } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
+import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
   InputSource,
@@ -23,6 +24,7 @@ import type {
   RecordingEvent,
   RecordingLevelUpdate,
   RecordingRequestResult,
+  RecordingSilenceReport,
   RecordingStartupFailure,
   RecordingStartupFailureResult,
   StartRecordingOptions,
@@ -343,13 +345,26 @@ function registerIpc(recordingManager: RecordingManager): void {
     return stateStore.getState();
   });
 
+  ipcMain.handle('recording:set-silence-config', (_event, config: unknown) => {
+    if (typeof config !== 'object' || config === null) {
+      throw new Error('invalid silence config');
+    }
+    stateStore.setSilenceConfig(config as Partial<SilenceConfig>);
+    return stateStore.getState();
+  });
+
   ipcMain.handle('recording:start', async (_event, options: StartRecordingOptions) => {
     const status = stateStore.getStatus();
     if (status !== 'starting' && status !== 'idle' && status !== 'encoding' && status !== 'error') {
       throw new Error('recording cannot be started');
     }
     try {
-      const created = await recordingManager.start(options);
+      const state = stateStore.getState();
+      const created = await recordingManager.start({
+        ...options,
+        clippingConfig: state.clippingConfig,
+        silenceConfig: state.silenceConfig,
+      });
       stateStore.markRecording(created);
       return created;
     } catch (error) {
@@ -438,6 +453,44 @@ function registerIpc(recordingManager: RecordingManager): void {
     stateStore.setClipping(report);
   });
 
+  ipcMain.handle('recording:silence', async (_event, report: RecordingSilenceReport) => {
+    const status = stateStore.getStatus();
+    if (status !== 'recording' && status !== 'stopping') {
+      return;
+    }
+
+    const previous = stateStore.getState().silence;
+    if (report.active && !previous?.active) {
+      const event: RecordingEvent = {
+        at: report.at,
+        kind: 'system-silence',
+        device: 'system',
+        severity: 'warning',
+        message:
+          'システム音声が届いていません。Multi-Output Device と macOS の出力設定を確認してください。',
+      };
+      try {
+        await recordingManager.recordEvent(event);
+      } catch (error) {
+        console.error('failed to record silence event', error);
+      }
+    } else if (!report.active && previous?.active) {
+      const event: RecordingEvent = {
+        at: report.at,
+        kind: 'system-silence-recovered',
+        device: 'system',
+        severity: 'warning',
+        message: 'システム音声が戻りました。',
+      };
+      try {
+        await recordingManager.recordEvent(event);
+      } catch (error) {
+        console.error('failed to record silence recovery event', error);
+      }
+    }
+    stateStore.setSilence(report);
+  });
+
   ipcMain.handle(
     'recording:device-event',
     async (_event, event: RecordingEvent): Promise<RecordingDeviceEventResult> => {
@@ -473,8 +526,13 @@ function registerIpc(recordingManager: RecordingManager): void {
       if (status !== 'starting' && !stateStore.canStart()) {
         throw new Error('recording cannot be started');
       }
+      const state = stateStore.getState();
       const failure = await recordingManager.recordStartupFailure(
-        payload.options,
+        {
+          ...payload.options,
+          clippingConfig: state.clippingConfig,
+          silenceConfig: state.silenceConfig,
+        },
         payload.event,
       );
       stateStore.markStartupFailure(payload.event, failure.meetingDir);

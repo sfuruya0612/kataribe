@@ -5,6 +5,7 @@ export type AppInfo = {
 };
 
 import type { ClippingConfig } from './clipping';
+import type { SilenceConfig } from './silence';
 
 export type InputSource = 'microphone' | 'system' | 'both';
 
@@ -22,6 +23,8 @@ export type StartRecordingOptions = {
   sampleRate: number;
   microphoneLabel?: string;
   systemLabel?: string;
+  clippingConfig?: ClippingConfig;
+  silenceConfig?: SilenceConfig;
 };
 
 export type RecordingSession = {
@@ -93,7 +96,9 @@ export type RecordingEventKind =
   | 'device-lost'
   | 'device-open-failed'
   | 'clipping'
-  | 'clipping-recovered';
+  | 'clipping-recovered'
+  | 'system-silence'
+  | 'system-silence-recovered';
 
 export type RecordingEventDevice = 'microphone' | 'system' | 'output' | 'unknown';
 
@@ -129,6 +134,12 @@ export type RecordingClippingReport = {
   at: string;
 };
 
+export type RecordingSilenceReport = {
+  active: boolean;
+  rms: number;
+  at: string;
+};
+
 export type RecordingLevel = {
   peak: number;
   rms: number;
@@ -148,6 +159,8 @@ export type RecordingAppState = {
   notice: RecordingEvent | null;
   clipping: RecordingClippingReport | null;
   clippingConfig: ClippingConfig;
+  silence: RecordingSilenceReport | null;
+  silenceConfig: SilenceConfig;
   error: string | null;
 };
 

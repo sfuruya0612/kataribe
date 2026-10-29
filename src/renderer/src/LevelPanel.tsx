@@ -5,6 +5,7 @@ import type {
   RecordingClippingReport,
   RecordingLevel,
   RecordingLevelUpdate,
+  RecordingSilenceReport,
 } from '../../shared/types';
 import {
   formatLevel,
@@ -16,9 +17,15 @@ type LevelPanelProps = {
   status: RecordingAppStatus;
   chunkCount: number;
   clipping: RecordingClippingReport | null;
+  silence: RecordingSilenceReport | null;
 };
 
-export function LevelPanel({ status, chunkCount, clipping }: LevelPanelProps) {
+export function LevelPanel({
+  status,
+  chunkCount,
+  clipping,
+  silence,
+}: LevelPanelProps) {
   const [level, setLevel] = useState<RecordingLevel | null>(null);
   const [stats, setStats] = useState<RecordingCaptureStats | null>(null);
 
@@ -98,6 +105,13 @@ export function LevelPanel({ status, chunkCount, clipping }: LevelPanelProps) {
       {clipping?.active ? (
         <p className="alert alert-warning">
           マイク入力がクリップしています。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。
+        </p>
+      ) : null}
+
+      {silence?.active ? (
+        <p className="alert alert-warning">
+          システム音声が届いていません。Multi-Output Device と macOS
+          の出力設定を確認してください。
         </p>
       ) : null}
 

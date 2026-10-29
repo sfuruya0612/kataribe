@@ -240,6 +240,42 @@ describe('RecordingStateStore', () => {
     expect(store.getState().clipping).toBeNull();
   });
 
+  it('stores and clears the system silence state', () => {
+    const { store } = createStore();
+    store.startRequested('system');
+    store.markRecording({ ...session, inputSource: 'system' });
+
+    const report = {
+      active: true,
+      rms: 0.001,
+      at: new Date(2026, 9, 29, 14, 5, 40).toISOString(),
+    };
+    store.setSilence(report);
+    expect(store.getState().silence).toEqual(report);
+
+    store.setSilence({ ...report, active: false, rms: 0.02 });
+    expect(store.getState().silence).toBeNull();
+
+    store.setSilence(report);
+    store.markStopped(result);
+    expect(store.getState().silence).toBeNull();
+  });
+
+  it('normalizes silence settings', () => {
+    const { store } = createStore();
+    const updated = store.setSilenceConfig({
+      windowSeconds: 0,
+      rmsThreshold: 2,
+      graceSeconds: 1000,
+    });
+    expect(updated).toEqual({
+      windowSeconds: 1,
+      rmsThreshold: 1,
+      graceSeconds: 600,
+    });
+    expect(store.getState().silenceConfig).toEqual(updated);
+  });
+
   it('normalizes clipping settings', () => {
     const { store, states } = createStore();
     expect(store.getState().clippingConfig).toEqual({

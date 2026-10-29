@@ -24,6 +24,8 @@ import type {
   RecoverableRecording,
   StartRecordingOptions,
 } from '../shared/types';
+import type { ClippingConfig } from '../shared/clipping';
+import type { SilenceConfig } from '../shared/silence';
 import {
   createWavHeader,
   encodeWavMono16,
@@ -71,6 +73,8 @@ type Meta = {
   expected_samples: number;
   actual_samples: number;
   events?: RecordingEvent[];
+  clipping_config?: ClippingConfig;
+  silence_config?: SilenceConfig;
   capture_stats?: MetaCaptureStats;
   audio_path?: string;
   app_version: string;
@@ -310,6 +314,8 @@ export class RecordingManager {
       expected_samples: 0,
       actual_samples: 0,
       events: [],
+      clipping_config: options.clippingConfig,
+      silence_config: options.silenceConfig,
       app_version: this.appVersion,
     };
 
@@ -668,6 +674,8 @@ export class RecordingManager {
       expected_samples: 0,
       actual_samples: 0,
       events: [event],
+      clipping_config: options.clippingConfig,
+      silence_config: options.silenceConfig,
       app_version: this.appVersion,
     };
 

@@ -1,4 +1,5 @@
 import type { ClippingConfig } from '../../shared/clipping';
+import type { SilenceConfig } from '../../shared/silence';
 import type { InputSource } from '../../shared/types';
 import type { InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
@@ -11,8 +12,10 @@ type SettingsPanelProps = {
   microphones: InputDevice[];
   systemDevices: InputDevice[];
   clippingConfig: ClippingConfig;
+  silenceConfig: SilenceConfig;
   onSetInputSource: (source: InputSource) => void;
   onClippingConfigChange: (config: Partial<ClippingConfig>) => void;
+  onSilenceConfigChange: (config: Partial<SilenceConfig>) => void;
   onRequestPermission: () => void;
   onOpenMicrophoneSettings: () => void;
   onOpenReadme: () => void;
@@ -34,8 +37,10 @@ export function SettingsPanel({
   microphones,
   systemDevices,
   clippingConfig,
+  silenceConfig,
   onSetInputSource,
   onClippingConfigChange,
+  onSilenceConfigChange,
   onRequestPermission,
   onOpenMicrophoneSettings,
   onOpenReadme,
@@ -191,6 +196,66 @@ export function SettingsPanel({
                   })
                 }
                 data-testid="clipping-recovery-intervals"
+              />
+            </label>
+          </div>
+        </section>
+
+        <section className="setting-card setting-card-wide">
+          <h3>システム音声の無音検出</h3>
+          <p className="muted">
+            システム音声の RMS がしきい値を下回る状態が続くと警告します。録音開始後の猶予時間は、会議前の無音で警告しないために使います。
+          </p>
+          <div className="clipping-settings">
+            <label className="field">
+              <span>監視ウィンドウ（秒）</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="1"
+                max="60"
+                step="1"
+                value={silenceConfig.windowSeconds}
+                onChange={(event) =>
+                  onSilenceConfigChange({
+                    windowSeconds: Number(event.target.value),
+                  })
+                }
+                data-testid="silence-window"
+              />
+            </label>
+            <label className="field">
+              <span>RMS しきい値</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="0"
+                max="1"
+                step="0.001"
+                value={silenceConfig.rmsThreshold}
+                onChange={(event) =>
+                  onSilenceConfigChange({
+                    rmsThreshold: Number(event.target.value),
+                  })
+                }
+                data-testid="silence-threshold"
+              />
+            </label>
+            <label className="field">
+              <span>猶予時間（秒）</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="0"
+                max="600"
+                step="1"
+                value={silenceConfig.graceSeconds}
+                onChange={(event) =>
+                  onSilenceConfigChange({
+                    graceSeconds: Number(event.target.value),
+                  })
+                }
+                data-testid="silence-grace"
               />
             </label>
           </div>

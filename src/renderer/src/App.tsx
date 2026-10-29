@@ -130,6 +130,7 @@ export default function App() {
           status={appState.status}
           chunkCount={appState.chunkCount}
           clipping={appState.clipping}
+          silence={appState.silence}
         />
       </div>
 
@@ -199,9 +200,13 @@ export default function App() {
               microphones={recorder.microphones}
               systemDevices={recorder.systemDevices}
               clippingConfig={appState.clippingConfig}
+              silenceConfig={appState.silenceConfig}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
               onClippingConfigChange={(config) =>
                 void recorder.setClippingConfig(config)
+              }
+              onSilenceConfigChange={(config) =>
+                void recorder.setSilenceConfig(config)
               }
               onRequestPermission={() => void recorder.requestPermission()}
               onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}

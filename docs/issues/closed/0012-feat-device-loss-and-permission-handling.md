@@ -105,5 +105,5 @@ BlackHole の消失、USB マイクの抜去、マイク権限の拒否を検出
 - `docs/adr/0002-web-audio-recording-and-chunks.md`
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/adr/0012-menu-bar-and-main-window.md`
-- `docs/issues/0002-feat-system-audio-silence-detection.md`
+- `docs/issues/closed/0002-feat-system-audio-silence-detection.md`
 - `docs/prd/kataribe.md` の R-2、R-3、非機能要件

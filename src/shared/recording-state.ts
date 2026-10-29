@@ -1,4 +1,5 @@
 import { DEFAULT_CLIPPING_CONFIG } from './clipping';
+import { DEFAULT_SILENCE_CONFIG } from './silence';
 import type { RecordingAppState } from './types';
 
 export function createInitialRecordingAppState(): RecordingAppState {
@@ -16,6 +17,8 @@ export function createInitialRecordingAppState(): RecordingAppState {
     notice: null,
     clipping: null,
     clippingConfig: { ...DEFAULT_CLIPPING_CONFIG },
+    silence: null,
+    silenceConfig: { ...DEFAULT_SILENCE_CONFIG },
     error: null,
   };
 }

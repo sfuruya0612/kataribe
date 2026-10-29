@@ -106,6 +106,16 @@ describe('RecordingManager', () => {
       sampleRate: 48000,
       microphoneLabel: 'FIFINE K670',
       systemLabel: 'BlackHole 2ch',
+      clippingConfig: {
+        peakThreshold: 0.99,
+        intervalsToWarn: 4,
+        recoveryIntervals: 6,
+      },
+      silenceConfig: {
+        windowSeconds: 4,
+        rmsThreshold: 0.004,
+        graceSeconds: 20,
+      },
     });
 
     expect(session.meetingId).toMatch(
@@ -129,6 +139,16 @@ describe('RecordingManager', () => {
     expect(meta.actual_samples).toBe(0);
     expect(meta.expected_samples).toBe(0);
     expect(meta.events).toEqual([]);
+    expect(meta.clipping_config).toEqual({
+      peakThreshold: 0.99,
+      intervalsToWarn: 4,
+      recoveryIntervals: 6,
+    });
+    expect(meta.silence_config).toEqual({
+      windowSeconds: 4,
+      rmsThreshold: 0.004,
+      graceSeconds: 20,
+    });
     expect(meta.app_version).toBe('0.1.0');
     expect(meta.source).toEqual({
       input: 'both',

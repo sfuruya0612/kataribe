@@ -7,6 +7,12 @@ import {
   type ClippingTracker,
 } from '../../shared/clipping';
 import { createInitialRecordingAppState } from '../../shared/recording-state';
+import {
+  computeWindowRms,
+  DEFAULT_SILENCE_CONFIG,
+  shouldWarnSilence,
+  type SilenceConfig,
+} from '../../shared/silence';
 import type {
   InputSource,
   MicrophonePermissionStatus,
@@ -98,6 +104,7 @@ export type RecorderController = {
   requestStop: () => Promise<void>;
   setInputSource: (source: InputSource) => Promise<void>;
   setClippingConfig: (config: Partial<ClippingConfig>) => Promise<void>;
+  setSilenceConfig: (config: Partial<SilenceConfig>) => Promise<void>;
   recover: (recording: RecoverableRecording) => Promise<void>;
   openFolder: () => Promise<void>;
   openMicrophoneSettings: () => Promise<void>;
@@ -241,6 +248,10 @@ export function useRecorder(): RecorderController {
     ...DEFAULT_CLIPPING_CONFIG,
   });
   const clippingErrorRef = useRef(false);
+  const silenceConfigRef = useRef<SilenceConfig>({ ...DEFAULT_SILENCE_CONFIG });
+  const silenceSamplesRef = useRef<Array<{ at: number; rms: number }>>([]);
+  const silenceActiveRef = useRef(false);
+  const silenceErrorRef = useRef(false);
 
   const refreshDevices = useCallback(async (): Promise<{
     microphones: InputDevice[];
@@ -344,6 +355,53 @@ export function useRecorder(): RecorderController {
             if (!clippingErrorRef.current) {
               clippingErrorRef.current = true;
               setWarning(`クリッピング状態の送信に失敗しました: ${errorText(reason)}`);
+            }
+          });
+      }
+    }
+
+    const system = graph?.inputs.find((input) => input.role === 'system');
+    if (
+      captureSourceRef.current &&
+      captureSourceRef.current !== 'microphone' &&
+      system?.analyser &&
+      system.analyserBuffer
+    ) {
+      const config = silenceConfigRef.current;
+      system.analyser.getFloatTimeDomainData(system.analyserBuffer);
+      let sumSquares = 0;
+      for (const value of system.analyserBuffer) {
+        sumSquares += value * value;
+      }
+      const rms = Math.sqrt(sumSquares / system.analyserBuffer.length);
+      const now = performance.now();
+      const samples = silenceSamplesRef.current;
+      samples.push({ at: now, rms });
+      const cutoff = now - config.windowSeconds * 1000;
+      while (samples.length > 0 && samples[0].at < cutoff) {
+        samples.shift();
+      }
+      const minimumSamples = Math.max(
+        2,
+        Math.floor(config.windowSeconds * 10 * 0.8),
+      );
+      const windowRms = computeWindowRms(samples.map((sample) => sample.rms));
+      const elapsed = stats.frames / stats.sampleRate;
+      const warn =
+        samples.length >= minimumSamples &&
+        shouldWarnSilence(elapsed, windowRms, config);
+      if (warn !== silenceActiveRef.current) {
+        silenceActiveRef.current = warn;
+        void window.kataribe
+          .reportSilence({
+            active: warn,
+            rms: windowRms,
+            at: new Date().toISOString(),
+          })
+          .catch((reason: unknown) => {
+            if (!silenceErrorRef.current) {
+              silenceErrorRef.current = true;
+              setWarning(`無音状態の送信に失敗しました: ${errorText(reason)}`);
             }
           });
       }
@@ -512,6 +570,9 @@ export function useRecorder(): RecorderController {
       deviceLossReportedRef.current = { microphone: false, system: false };
       clippingRef.current = { ...INITIAL_CLIPPING_TRACKER };
       clippingErrorRef.current = false;
+      silenceSamplesRef.current = [];
+      silenceActiveRef.current = false;
+      silenceErrorRef.current = false;
 
       let streams: MediaStream[] = [];
       let context: AudioContext | null = null;
@@ -628,15 +689,11 @@ export function useRecorder(): RecorderController {
           sourceNode.connect(gain);
           gain.connect(node);
           const track = spec.stream.getAudioTracks()[0] ?? null;
-          let analyser: AnalyserNode | null = null;
-          let analyserBuffer: Float32Array<ArrayBuffer> | null = null;
-          if (spec.role === 'microphone') {
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 8192;
-            analyserBuffer = new Float32Array(analyser.fftSize);
-            gain.connect(analyser);
-            analyser.connect(sink);
-          }
+          const analyser = audioContext.createAnalyser();
+          analyser.fftSize = 8192;
+          const analyserBuffer = new Float32Array(analyser.fftSize);
+          gain.connect(analyser);
+          analyser.connect(sink);
           const input: RecorderInput = {
             role: spec.role,
             stream: spec.stream,
@@ -799,6 +856,8 @@ export function useRecorder(): RecorderController {
       }
     } finally {
       clippingRef.current = { ...INITIAL_CLIPPING_TRACKER };
+      silenceSamplesRef.current = [];
+      silenceActiveRef.current = false;
       await teardownGraph(graph);
       deviceLossReportedRef.current = { microphone: false, system: false };
       await refreshRecoverable();
@@ -842,6 +901,10 @@ export function useRecorder(): RecorderController {
   useEffect(() => {
     clippingConfigRef.current = appState.clippingConfig;
   }, [appState.clippingConfig]);
+
+  useEffect(() => {
+    silenceConfigRef.current = appState.silenceConfig;
+  }, [appState.silenceConfig]);
 
   useEffect(() => {
     let cancelled = false;
@@ -969,6 +1032,17 @@ export function useRecorder(): RecorderController {
     [],
   );
 
+  const setSilenceConfig = useCallback(
+    async (config: Partial<SilenceConfig>) => {
+      try {
+        await window.kataribe.setSilenceConfig(config);
+      } catch (reason: unknown) {
+        setUiError(`無音検出の設定を変更できませんでした: ${errorText(reason)}`);
+      }
+    },
+    [],
+  );
+
   const recover = useCallback(
     async (recording: RecoverableRecording) => {
       setRecoveringId(recording.meetingId);
@@ -1019,6 +1093,7 @@ export function useRecorder(): RecorderController {
     requestStop,
     setInputSource,
     setClippingConfig,
+    setSilenceConfig,
     recover,
     openFolder,
     openMicrophoneSettings,
