@@ -74,6 +74,6 @@ BlackHole 2ch のライセンスと配布の条件を明確にし、利用者向
 
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/adr/0014-distribution-dmg-notarization.md`
-- `docs/issues/0013-feat-release-checklist-and-entitlements.md`
+- `docs/issues/pending/0013-feat-release-checklist-and-entitlements.md`
 - `docs/m0/0003-system-audio/README.md`
 - `docs/prd/kataribe.md` の非機能要件

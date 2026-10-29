@@ -56,6 +56,20 @@ M0 は署名なしの Electron で検証しており、署名と公証をした�
 - 署名済みビルドでのマイク権限、BlackHole 2ch の取得、画面収録権限のダイアログが出ないことの確認。
 - 子プロセス、モデル、ライセンス表示の確認は、それぞれの実装後に行う。
 
+## pending にした理由
+
+Apple Developer ID Application の証明書と Apple の公証サービスの資格情報が、この実行環境にない。
+そのため、署名と公証をしたビルドの Gatekeeper、権限、entitlement の実適用を確認できない。
+
+ローカルでできる範囲は実装済みである。
+
+- リリースチェックリスト
+- entitlement の一覧と `build/entitlements.mac.plist`
+- `scripts/verify-mac-bundle.cjs`
+- README と ADR-0014 の更新
+
+資格情報が用意できたら `docs/issues/` に戻し、署名と公証をしたビルドで残りの完了条件を確認する。
+
 ## 参照
 
 - `docs/adr/0014-distribution-dmg-notarization.md`

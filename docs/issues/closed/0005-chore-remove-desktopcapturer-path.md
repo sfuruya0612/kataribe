@@ -59,5 +59,5 @@ MVP の権限要求をマイクと書類フォルダだけに整理し、desktop
 
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/adr/0014-distribution-dmg-notarization.md`
-- `docs/issues/0013-feat-release-checklist-and-entitlements.md`
+- `docs/issues/pending/0013-feat-release-checklist-and-entitlements.md`
 - `docs/prd/kataribe.md` の非機能要件
