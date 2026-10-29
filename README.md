@@ -13,9 +13,9 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 ## ステータス
 
 開発中です。
-アプリ基盤と録音中核は実装済みで、開発版を起動して録音できます。
+アプリ基盤、録音中核、メニューバー、会議一覧、会議詳細、設定の土台は実装済みです。
 M0 のシステム音声検証は完了しています。
-mp3 への変換、文字起こし、要約はまだ実装されていません。
+会議一覧と会議詳細の本実装、設定値の保存、mp3 への変換、文字起こし、要約はまだ実装されていません。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
 ## ドキュメント
@@ -23,6 +23,7 @@ mp3 への変換、文字起こし、要約はまだ実装されていません�
 - [PRD](docs/prd/kataribe.md)
 - [ADR 一覧](docs/adr/)
 - [Issue 一覧](docs/issues/)
+- [変更履歴](CHANGES.md)
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 主な ADR:
@@ -148,11 +149,20 @@ npm run typecheck
 npm test
 npm run build
 npm run smoke
+npm run test:window
 npm run package
 ```
 
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
+`npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
 署名と公証は [issue 0013](docs/issues/0013-feat-release-checklist-and-entitlements.md) で行う。
+
+起動するとメニューバーにマイクのアイコンが表示されます。
+
+- アイコンを左クリックすると、録音を開始または停止します。
+- アイコンを右クリックすると、状態、経過時間、録音の開始と停止、入力ソース、メインウィンドウを開く項目、終了のメニューが表示されます。
+- メインウィンドウを閉じてもアプリは終了せず、メニューバーに残ります。
+- 2 つ目の Kataribe を起動すると、既存のウィンドウが前面に表示されます。
 
 開発版の録音パネルでは、次の流れを確認できます。
 
@@ -166,9 +176,15 @@ npm run package
 mp3 と 16 kHz wav の生成はまだ実装していません。
 録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
 
+会議一覧、会議詳細、設定は画面の土台だけを実装しています。
+会議一覧と会議詳細の本実装、設定値の保存、モデルのダウンロードは次の issue で追加します。
+設定画面の入力ソースは、メニューバーとメインウィンドウの録音パネルに同期します。
+BlackHole 2ch のセットアップ手順は、設定画面から README を開いて確認できます。
+
 ## 初回起動後の設定
 
-設定画面はまだ実装していません。
+設定画面は土台だけを実装しています。
+設定値の保存はまだ実装していません。
 現在の保存先は `~/Documents/Kataribe/` 固定です。
 
 1. 保存先フォルダを設定します。既定は `~/Documents/Kataribe/` です。
@@ -261,6 +277,6 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
-アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md) と、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md) は実装済みです。
-次は issue 0011 以降を進めます。
+アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md) は実装済みです。
+次は issue 0012 以降を進めます。
 保留中の issue は `docs/issues/pending/` にあります。

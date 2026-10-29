@@ -3,6 +3,9 @@ import type { RecordingCaptureStats } from '../../shared/types';
 import {
   buildAudioConstraints,
   deviceLabel,
+  errorText,
+  formatDateTime,
+  recordingErrorText,
   formatDuration,
   formatLevel,
   frameClockDeltaSeconds,
@@ -146,5 +149,40 @@ describe('inputSourceLabel', () => {
     expect(inputSourceLabel('microphone')).toBe('マイク');
     expect(inputSourceLabel('system')).toBe('システム音声');
     expect(inputSourceLabel('both')).toBe('マイク + システム音声');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('formats a valid ISO timestamp and preserves invalid values', () => {
+    expect(formatDateTime('2026-10-29T05:05:00.000Z')).toContain('2026');
+    expect(formatDateTime('not a date')).toBe('not a date');
+  });
+});
+
+describe('errorText', () => {
+  it('extracts an error message or stringifies a value', () => {
+    expect(errorText(new Error('failed'))).toBe('failed');
+    expect(errorText('failed')).toBe('failed');
+  });
+});
+
+describe('recordingErrorText', () => {
+  it('maps microphone permission errors to a user message', () => {
+    expect(
+      recordingErrorText(new DOMException('denied', 'NotAllowedError')),
+    ).toContain('マイクの使用が許可されていません');
+  });
+
+  it('maps missing devices and unreadable devices', () => {
+    expect(recordingErrorText(new DOMException('missing', 'NotFoundError'))).toContain(
+      '入力デバイスが見つかりません',
+    );
+    expect(recordingErrorText(new DOMException('busy', 'NotReadableError'))).toContain(
+      '入力デバイスを開けませんでした',
+    );
+  });
+
+  it('falls back to the original message', () => {
+    expect(recordingErrorText(new Error('custom failure'))).toBe('custom failure');
   });
 });

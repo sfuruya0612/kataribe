@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "test": "vitest run",
     "smoke": "npm run build && KATARIBE_SMOKE_TEST=1 electron .",
+    "test:window": "npm run build && KATARIBE_WINDOW_TEST=1 electron .",
     "package": "npm run build && electron-builder --mac dir",
     "dist": "npm run build && electron-builder --mac dmg"
   },

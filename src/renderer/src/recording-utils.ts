@@ -100,6 +100,20 @@ export function frameClockDeltaSeconds(stats: RecordingCaptureStats): number {
   return Math.abs(stats.currentTime - stats.frames / stats.sampleRate);
 }
 
+export function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function inputSourceLabel(source: InputSource): string {
   switch (source) {
     case 'microphone':
@@ -113,4 +127,26 @@ export function inputSourceLabel(source: InputSource): string {
 
 export function isClipping(peak: number): boolean {
   return Number.isFinite(peak) && peak >= 0.99;
+}
+
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function recordingErrorText(error: unknown): string {
+  if (error instanceof DOMException) {
+    switch (error.name) {
+      case 'NotAllowedError':
+        return 'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。';
+      case 'NotFoundError':
+        return '選択した入力デバイスが見つかりません。デバイスを接続してから再試行してください。';
+      case 'NotReadableError':
+        return '入力デバイスを開けませんでした。他のアプリが使用していないか確認してください。';
+      case 'OverconstrainedError':
+        return '選択した入力デバイスの設定に対応できません。別のデバイスを選んでください。';
+      default:
+        break;
+    }
+  }
+  return errorText(error);
 }

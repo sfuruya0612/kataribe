@@ -101,7 +101,7 @@ M0 ハーネスのシステムスリープ再測定では、`powerSaveBlocker` �
 
 - mp3 と 16 kHz wav の生成は、ADR-0005 に従って次の実装で追加する。
 - 入力デバイスの消失と権限拒否の画面は issue 0012 で扱う。
-- メニューバーと本画面は issue 0011 で扱う。
+- メニューバーと本画面は [issue 0011](0011-feat-app-shell-and-recording-ui.md) で扱う。
 - 署名済みビルドの entitlement は issue 0013 で確認する。
 
 ## 参照

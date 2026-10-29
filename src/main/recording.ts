@@ -222,6 +222,7 @@ export class RecordingManager {
         ? {
             meetingId: this.active.meetingId,
             meetingDir: this.active.meetingDir,
+            startedAt: this.active.meta.started_at,
             sampleRate: this.active.meta.sample_rate,
             inputSource: this.active.meta.source.input,
           }
@@ -332,6 +333,7 @@ export class RecordingManager {
       return {
         meetingId,
         meetingDir,
+        startedAt: meta.started_at,
         sampleRate: options.sampleRate,
         inputSource: options.inputSource,
       };
@@ -446,6 +448,7 @@ export class RecordingManager {
         meetingId: active.meetingId,
         meetingDir: active.meetingDir,
         audioPath,
+        startedAt: active.meta.started_at,
         status: 'encoding',
         sampleRate: active.meta.sample_rate,
         actualSamples: active.meta.actual_samples,
@@ -572,6 +575,7 @@ export class RecordingManager {
       meetingId,
       meetingDir: session.meeting_dir,
       audioPath,
+      startedAt: meta.started_at,
       status: 'encoding',
       sampleRate: meta.sample_rate,
       actualSamples: meta.actual_samples,

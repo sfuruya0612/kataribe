@@ -2,11 +2,15 @@
 
 import type {
   AppInfo,
+  InputSource,
   MicrophonePermissionStatus,
+  RecordingAppState,
   RecordingCaptureStats,
   RecordingChunk,
+  RecordingCommand,
+  RecordingLevelUpdate,
+  RecordingRequestResult,
   RecordingSession,
-  RecordingState,
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
@@ -18,6 +22,19 @@ declare global {
       getAppInfo: () => Promise<AppInfo>;
       getMicrophoneStatus: () => Promise<MicrophonePermissionStatus>;
       requestMicrophone: () => Promise<boolean>;
+      getRecordingState: () => Promise<RecordingAppState>;
+      requestStartRecording: () => Promise<RecordingRequestResult>;
+      requestStopRecording: () => Promise<RecordingRequestResult>;
+      setInputSource: (source: InputSource) => Promise<RecordingAppState>;
+      onRecordingState: (
+        listener: (state: RecordingAppState) => void,
+      ) => () => void;
+      onRecordingLevel: (
+        listener: (update: RecordingLevelUpdate) => void,
+      ) => () => void;
+      onRecordingCommand: (
+        listener: (command: RecordingCommand) => void,
+      ) => () => void;
       startRecording: (options: StartRecordingOptions) => Promise<RecordingSession>;
       appendChunk: (
         chunk: RecordingChunk,
@@ -25,10 +42,15 @@ declare global {
       stopRecording: (
         stats?: RecordingCaptureStats,
       ) => Promise<RecordingStopResult>;
-      getRecordingStatus: () => Promise<RecordingState>;
+      reportRecordingLevel: (update: RecordingLevelUpdate) => Promise<void>;
+      reportRecordingError: (message: string) => Promise<void>;
       listRecoverableRecordings: () => Promise<RecoverableRecording[]>;
       recoverRecording: (meetingId: string) => Promise<RecordingStopResult>;
       openRecordingFolder: () => Promise<void>;
+      showAbout: () => Promise<void>;
+      closeWindow: () => Promise<void>;
+      openReadme: () => Promise<void>;
+      openBlackHoleSite: () => Promise<void>;
       ready: () => void;
     };
   }

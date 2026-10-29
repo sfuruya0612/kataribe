@@ -1,6 +1,7 @@
 export type AppInfo = {
   version: string;
   platform: string;
+  saveRoot: string;
 };
 
 export type InputSource = 'microphone' | 'system' | 'both';
@@ -24,6 +25,7 @@ export type StartRecordingOptions = {
 export type RecordingSession = {
   meetingId: string;
   meetingDir: string;
+  startedAt: string;
   sampleRate: number;
   inputSource: InputSource;
 };
@@ -51,6 +53,7 @@ export type RecordingStopResult = {
   meetingId: string;
   meetingDir: string;
   audioPath: string;
+  startedAt: string;
   status: 'encoding';
   sampleRate: number;
   actualSamples: number;
@@ -73,4 +76,45 @@ export type RecordingState = {
   status: RecordingStatus;
   session: RecordingSession | null;
   lastMeetingDir: string | null;
+};
+
+export type RecordingAppStatus =
+  | 'idle'
+  | 'starting'
+  | 'recording'
+  | 'stopping'
+  | 'encoding'
+  | 'error';
+
+export type RecordingLevel = {
+  peak: number;
+  rms: number;
+};
+
+export type RecordingAppState = {
+  status: RecordingAppStatus;
+  inputSource: InputSource;
+  session: RecordingSession | null;
+  startedAt: string | null;
+  elapsedSeconds: number;
+  level: RecordingLevel | null;
+  captureStats: RecordingCaptureStats | null;
+  chunkCount: number;
+  lastResult: RecordingStopResult | null;
+  lastMeetingDir: string | null;
+  error: string | null;
+};
+
+export type RecordingCommand =
+  | { action: 'start'; inputSource: InputSource }
+  | { action: 'stop' };
+
+export type RecordingLevelUpdate = {
+  level: RecordingLevel;
+  stats: RecordingCaptureStats;
+};
+
+export type RecordingRequestResult = {
+  accepted: boolean;
+  reason?: string;
 };

@@ -5,6 +5,13 @@ directories:
   buildResources: build
 files:
   - out/**
+extraResources:
+  - from: README.md
+    to: README.md
+  - from: build/trayTemplate.png
+    to: trayTemplate.png
+  - from: build/trayTemplate@2x.png
+    to: trayTemplate@2x.png
 asar: true
 afterPack: scripts/after-pack.cjs
 mac:
