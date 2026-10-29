@@ -4,6 +4,7 @@ ADR-0003 のシステム音声検証ハーネス。
 
 MVP は BlackHole 2ch を入力デバイスとしてシステム音声を取得する。
 desktopCapturer と ScreenCaptureKit の検証は、将来の選択肢を確認するための予備的なものである。
+リリース前の回帰テストは [録音のリリース回帰テスト](../../testing/recording-regression.md) を使う。
 
 ## BlackHole 2ch での検証
 

@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P2
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)
 関連 PRD: 非機能要件の録音の信頼性
@@ -65,6 +66,27 @@ elapsedMs 120,001 と elapsedAudioSeconds 112.731 の差 7.27 秒が、スリー
 - 検証結果のテンプレートがある。
 - リリースチェックリストから M0 の回帰テストに到達できる。
 - 60 分連続録音、Bluetooth、ディスプレイスリープ、システムスリープ、Zoom / Meet の手動手順が、第三者が実行できる粒度で書かれている。
+
+## 解決方法
+
+2026-10-29 に、録音のリリース回帰テストを整備した。
+
+- M0 ハーネスは `docs/m0/0003-system-audio/` に残し、BlackHole 2ch と Multi-Output Device の環境確認に使う。
+- 製品の録音経路の回帰は、Kataribe のアプリで確認する。
+  M0 ハーネスの `AnalyserNode` の読み取り回数をフレーム数として扱わない。
+- [録音のリリース回帰テスト](../../testing/recording-regression.md) を作成した。
+  自動テストと手動テストを分け、実フレーム数、`expectedFrames`、`gaps`、`missedFrames` の合格基準を数値で記載した。
+- [回帰テスト結果テンプレート](../../testing/recording-regression-template.md) を作成した。
+  実行日、macOS、Electron、BlackHole、マイク、出力、各項目の結果、ログのパスを記録する。
+- 60 分連続録音、Bluetooth、ディスプレイスリープ、システムスリープ、Zoom と Google Meet の手順を、第三者が実行できる粒度で記載した。
+- リリースチェックリストから回帰テストと結果保存への確認項目を追加した。
+- README と M0 ハーネスの README から回帰テストへのリンクを追加した。
+
+確認結果:
+
+- 自動テストのコマンドは、既存の `typecheck`、`test`、`build`、`smoke`、`test:window`、`package`、`verify:mac` を使う。
+- ドキュメントのリンクを確認した。
+- システムスリープの無音埋めと署名済みビルドの確認は、それぞれ issue 0003 と issue 0013 の完了後に回帰テストで確認する。
 
 ## 参照
 

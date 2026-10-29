@@ -24,6 +24,7 @@ M0 のシステム音声検証は完了しています。
 - [ADR 一覧](docs/adr/)
 - [Issue 一覧](docs/issues/)
 - [変更履歴](CHANGES.md)
+- [録音のリリース回帰テスト](docs/testing/recording-regression.md)
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 主な ADR:

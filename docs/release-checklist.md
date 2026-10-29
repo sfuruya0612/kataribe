@@ -114,6 +114,8 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 
 ## ドキュメント
 
+- [ ] `docs/testing/recording-regression.md` の自動テストと手動テストを実施した
+- [ ] 回帰テストの結果を `docs/testing/results/` に保存した
 - [ ] README の初期設定手順が最新である
 - [ ] README の Bluetooth 推奨構成が最新である
 - [ ] README のトラブルシューティングが最新である

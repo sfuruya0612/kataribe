@@ -34,3 +34,5 @@
   - @shoichi.furuya
 - [ADD] README に BlackHole 2ch のサポート情報と画面写真を追加する
   - @shoichi.furuya
+- [ADD] 録音のリリース回帰テスト手順と結果テンプレートを追加する
+  - @shoichi.furuya
