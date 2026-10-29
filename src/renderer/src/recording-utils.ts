@@ -6,10 +6,28 @@ export type InputDevice = {
 };
 
 const BLACKHOLE_PATTERN = /blackhole/i;
+const BLACKHOLE_CHANNEL_PATTERN = /\b(2|16|64)ch\b/i;
 const AGGREGATE_DEVICE_IDS = new Set(['default', 'communications']);
 
 export function isBlackHoleDevice(label: string): boolean {
   return BLACKHOLE_PATTERN.test(label);
+}
+
+export function blackHolePriority(label: string): number {
+  const match = label.match(BLACKHOLE_CHANNEL_PATTERN);
+  if (!match) {
+    return 3;
+  }
+  switch (match[1]) {
+    case '2':
+      return 0;
+    case '16':
+      return 1;
+    case '64':
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 export function splitInputDevices(devices: InputDevice[]): {
@@ -34,6 +52,11 @@ export function splitInputDevices(devices: InputDevice[]): {
       microphones.push(device);
     }
   }
+
+  systemDevices.sort((left, right) => {
+    const priority = blackHolePriority(left.label) - blackHolePriority(right.label);
+    return priority !== 0 ? priority : left.label.localeCompare(right.label);
+  });
 
   return { microphones, systemDevices };
 }

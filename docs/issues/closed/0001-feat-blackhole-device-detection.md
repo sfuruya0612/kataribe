@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P0
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0012 (docs/adr/0012-menu-bar-and-main-window.md)
 関連 PRD: R-2、非機能要件の対応環境と権限
@@ -62,6 +63,37 @@ BlackHole 2ch を入力デバイスとして検出し、見つからない場合
 - 画面収録権限のダイアログが出ない。
 - アプリが macOS の音声出力を勝手に変更しない。
 - 見つからない場合の案内から、README を開ける。
+
+## 解決方法
+
+2026-10-29 に BlackHole の入力デバイス検出を実装した。
+
+- `blackHolePriority` を追加した。
+  `BlackHole 2ch`、`BlackHole 16ch`、`BlackHole 64ch` の順に優先する。
+  `default` と `communications` の擬似デバイスは検出対象から外す。
+- `splitInputDevices` で BlackHole をシステム音声の候補に分け、優先順位で並べた。
+  マイクの候補からは BlackHole を除外する。
+- Renderer の起動中は `navigator.mediaDevices` の `devicechange` を監視し、録音していないときにデバイス一覧を再取得する。
+  録音中は issue 0012 の監視が担当する。
+- BlackHole が見つからない場合は、システム音声と両方の入力ソースを無効にする。
+  録音パネルに README のセットアップ手順を開くボタンを表示する。
+- マイク権限の説明に、入力デバイスの検出と録音に加えて、システム音声だけの場合も BlackHole 2ch のラベル取得に必要であることを表示する。
+- アプリは macOS の音声出力を変更しない。
+  画面収録権限も要求しない。
+
+確認結果:
+
+- `npm run typecheck`: 成功。
+- `npm test`: 80 件成功。
+  BlackHole のラベル判定、擬似デバイスの除外、2ch、16ch、64ch の優先順位をテストする。
+- 開発版の実機確認:
+  - `enumerateDevices` を 2ch、16ch、64ch の 3 つに差し替えて `devicechange` を発生させると、システム音声の選択肢が 2ch、16ch、64ch の順に並び、2ch が選ばれた。
+  - 擬似デバイスの `default` は選択肢に含まれなかった。
+  - BlackHole を入力一覧から外すと、システム音声と両方の選択肢が無効になり、README のセットアップ手順を開くボタンが表示された。
+  - BlackHole を戻すと、システム音声の選択肢が再び有効になった。
+- BlackHole 2ch の入力レベルが 0 より大きいことの確認は、音声出力を BlackHole 2ch にルーティングする必要があるため、この issue では実施していない。
+  M0 と issue 0010 で BlackHole 2ch のフレーム取得は確認済みである。
+  リリース前の実機確認で入力レベルを確認する。
 
 ## 参照
 

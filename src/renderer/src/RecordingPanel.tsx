@@ -31,6 +31,7 @@ type RecordingPanelProps = {
   onRequestStop: () => void;
   onRequestPermission: () => void;
   onOpenMicrophoneSettings: () => void;
+  onOpenReadme: () => void;
   onSetInputSource: (source: InputSource) => void;
 };
 
@@ -94,6 +95,7 @@ export function RecordingPanel({
   onRequestStop,
   onRequestPermission,
   onOpenMicrophoneSettings,
+  onOpenReadme,
   onSetInputSource,
 }: RecordingPanelProps) {
   const isRecording = status === 'recording';
@@ -261,6 +263,13 @@ export function RecordingPanel({
         </div>
       ) : null}
 
+      {permission !== 'granted' ? (
+        <p className="hint">
+          入力デバイスの検出と録音にマイク権限を使います。システム音声だけの場合も、BlackHole
+          2ch のラベル取得に必要です。
+        </p>
+      ) : null}
+
       {needsMicrophone && !microphoneAvailable ? (
         <p className="hint">
           マイクが見つかりません。マイクを接続し、マイク権限を確認してください。
@@ -268,9 +277,12 @@ export function RecordingPanel({
       ) : null}
 
       {needsSystem && systemDevices.length === 0 ? (
-        <p className="hint">
-          BlackHole 2ch が見つかりません。設定画面のセットアップ手順を確認してください。
-        </p>
+        <div className="hint">
+          BlackHole 2ch が見つかりません。
+          <button type="button" className="link-button" onClick={onOpenReadme}>
+            セットアップ手順を開く
+          </button>
+        </div>
       ) : null}
 
 

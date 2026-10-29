@@ -732,6 +732,21 @@ export function useRecorder(): RecorderController {
   }, []);
 
   useEffect(() => {
+    const handleDeviceChange = () => {
+      if (graphRef.current) {
+        return;
+      }
+      void refreshDevices().catch((reason: unknown) => {
+        setWarning(`入力デバイスの変更を確認できませんでした: ${errorText(reason)}`);
+      });
+    };
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [refreshDevices]);
+
+  useEffect(() => {
     let cancelled = false;
     const unsubscribe = window.kataribe.onRecordingState((state) => {
       if (!cancelled) {

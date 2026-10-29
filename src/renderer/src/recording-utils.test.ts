@@ -11,6 +11,7 @@ import {
   formatLevel,
   frameClockDeltaSeconds,
   inputSourceLabel,
+  blackHolePriority,
   isBlackHoleDevice,
   isClipping,
   levelPercent,
@@ -59,6 +60,39 @@ describe('splitInputDevices', () => {
 
     expect(result.microphones).toHaveLength(1);
     expect(result.systemDevices).toHaveLength(0);
+  });
+
+  it('prioritizes BlackHole 2ch over 16ch and 64ch', () => {
+    const result = splitInputDevices([
+      { deviceId: 'bh-64', label: 'BlackHole 64ch' },
+      { deviceId: 'bh-16', label: 'BlackHole 16ch' },
+      { deviceId: 'bh-2', label: 'BlackHole 2ch' },
+    ]);
+
+    expect(result.systemDevices.map((device) => device.deviceId)).toEqual([
+      'bh-2',
+      'bh-16',
+      'bh-64',
+    ]);
+  });
+
+  it('excludes the default and communications pseudo devices', () => {
+    const result = splitInputDevices([
+      { deviceId: 'default', label: 'BlackHole 2ch' },
+      { deviceId: 'communications', label: 'BlackHole 2ch' },
+      { deviceId: 'bh-2', label: 'BlackHole 2ch' },
+    ]);
+
+    expect(result.systemDevices).toEqual([{ deviceId: 'bh-2', label: 'BlackHole 2ch' }]);
+  });
+});
+
+describe('blackHolePriority', () => {
+  it('orders the channel counts used by BlackHole', () => {
+    expect(blackHolePriority('BlackHole 2ch')).toBe(0);
+    expect(blackHolePriority('BlackHole 16ch')).toBe(1);
+    expect(blackHolePriority('BlackHole 64ch')).toBe(2);
+    expect(blackHolePriority('BlackHole')).toBe(3);
   });
 });
 

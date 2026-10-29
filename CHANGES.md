@@ -14,6 +14,8 @@
   - @shoichi.furuya
 - [ADD] 署名済みビルド向けの entitlement と配布物検証コマンドを追加する
   - @shoichi.furuya
+- [ADD] BlackHole 2ch の検出と入力デバイスの優先順位を追加する
+  - @shoichi.furuya
 
 ### FIX
 

@@ -123,6 +123,7 @@ export default function App() {
           onRequestStop={() => void recorder.requestStop()}
           onRequestPermission={() => void recorder.requestPermission()}
           onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
+          onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
           onSetInputSource={(source) => void recorder.setInputSource(source)}
         />
         <LevelPanel status={appState.status} chunkCount={appState.chunkCount} />

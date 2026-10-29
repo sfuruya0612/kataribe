@@ -70,6 +70,9 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 
 - [ ] README の手順で BlackHole 2ch をインストールできる
 - [ ] README の手順で Multi-Output Device を作れる
+- [ ] BlackHole 2ch、16ch、64ch が検出され、2ch が優先される
+- [ ] BlackHole が見つからない場合、システム音声と両方の選択肢が無効になり、README の手順を開ける
+- [ ] BlackHole を追加または削除すると、`devicechange` で選択肢が更新される
 - [ ] 署名済みビルドで BlackHole 2ch を検出できる
 - [ ] 署名済みビルドでシステム音声を録音できる
 - [ ] 録音中に出力を Multi-Output Device から外すと、無音警告が出る
