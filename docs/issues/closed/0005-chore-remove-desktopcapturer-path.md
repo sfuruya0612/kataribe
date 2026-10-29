@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P1
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)
 関連 PRD: 非機能要件の権限、R-2
@@ -41,6 +42,18 @@ MVP の権限要求をマイクと書類フォルダだけに整理し、desktop
 アプリ基盤の issue 0009 ができるまで、削除する desktopCapturer のコードも `Info.plist` も存在しない。
 0013 で署名済みビルドの権限検証を行うため、この issue の画面収録権限の確認と重複する。
 0009 と 0013 の完了後に、MVP のコードに desktopCapturer の経路が残っていないかの確認として再開する。
+
+## 解決方法
+
+2026-10-29 に、MVP のコードと配布物に desktopCapturer と画面収録権限の経路がないことを確認した。
+
+- `src`、`scripts`、`electron-builder.yml`、`build` を検索し、`desktopCapturer` と `getDisplayMedia` の利用がないことを確認した。
+- `scripts/after-pack.cjs` は `NSAudioCaptureUsageDescription`、`NSScreenCaptureUsageDescription`、`NSCameraUsageDescription` を `Info.plist` から削除する。
+- `scripts/verify-mac-bundle.cjs` は、`Info.plist` に画面収録、システム音声録音、カメラのキーがないことと、`out` に `desktopCapturer` と `getDisplayMedia` がないことを検査する。
+- `build/entitlements.mac.plist` に画面収録の entitlement はない。
+- アプリはマイクと書類フォルダの権限だけを要求する。
+- リリースチェックリストに、画面収録権限のダイアログが出ないことと、desktopCapturer のコードパスが残っていないことの確認を追加した。
+- `npm run package` と `npm run verify:mac` で、パッケージ済みアプリの `Info.plist` と配布物を検査できる。
 
 ## 参照
 
