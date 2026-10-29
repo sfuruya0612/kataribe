@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kataribe M0 system audio</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 20px;
+        line-height: 1.6;
+      }
+      #status {
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        background: #f4f4f4;
+        padding: 12px;
+        border-radius: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Kataribe M0 system audio</h1>
+    <p>
+      display モードは画面収録のループバックを測る。blackhole モードは BlackHole 2ch を入力デバイスとして測る。
+      音声トラックが取れたら 5 秒測定し、ビデオトラックを止めてから 3 秒測定する。
+    </p>
+    <div id="status">waiting...</div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

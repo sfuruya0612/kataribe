@@ -1,0 +1,6 @@
+{
+  "name": "kataribe-m0-system-audio",
+  "version": "1.0.0",
+  "private": true,
+  "main": "main.js"
+}
