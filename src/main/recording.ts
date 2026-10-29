@@ -72,6 +72,7 @@ type Meta = {
   chunks: MetaChunk[];
   expected_samples: number;
   actual_samples: number;
+  gap_samples?: number;
   events?: RecordingEvent[];
   clipping_config?: ClippingConfig;
   silence_config?: SilenceConfig;
@@ -246,6 +247,10 @@ export class RecordingManager {
     return this.enqueue(() => this.appendChunkInternal(chunk));
   }
 
+  appendGap(frames: number): Promise<{ file: string; frames: number }> {
+    return this.enqueue(() => this.appendGapInternal(frames));
+  }
+
   stop(stats?: RecordingCaptureStats): Promise<RecordingStopResult> {
     return this.enqueue(() => this.stopInternal(stats));
   }
@@ -313,6 +318,7 @@ export class RecordingManager {
       chunks: [],
       expected_samples: 0,
       actual_samples: 0,
+      gap_samples: 0,
       events: [],
       clipping_config: options.clippingConfig,
       silence_config: options.silenceConfig,
@@ -384,8 +390,8 @@ export class RecordingManager {
     if (!Number.isInteger(chunk.expectedFrames) || chunk.expectedFrames < chunk.frames) {
       throw new Error('chunk expected frames are invalid');
     }
-    if (chunk.sequence !== active.meta.chunks.length + 1) {
-      throw new Error('chunk sequence is out of order');
+    if (!Number.isInteger(chunk.sequence) || chunk.sequence <= 0) {
+      throw new Error('chunk sequence is invalid');
     }
 
     const samples = chunk.samples instanceof Float32Array
@@ -395,21 +401,22 @@ export class RecordingManager {
       throw new Error('chunk frame count does not match sample count');
     }
 
-    const file = chunkFileName(chunk.sequence);
+    const sequence = active.meta.chunks.length + 1;
+    const file = chunkFileName(sequence);
     const wav = encodeWavMono16(samples, active.meta.sample_rate);
 
     try {
       await writePrivateFile(join(active.chunksDir, file), wav);
       active.meta.chunks.push({
-        sequence: chunk.sequence,
+        sequence,
         file,
         frames: chunk.frames,
-        expected_frames: chunk.expectedFrames,
+        expected_frames: chunk.expectedFrames + (active.meta.gap_samples ?? 0),
       });
       active.meta.actual_samples += chunk.frames;
       active.meta.expected_samples = Math.max(
         active.meta.expected_samples,
-        chunk.expectedFrames,
+        chunk.expectedFrames + (active.meta.gap_samples ?? 0),
       );
       active.meta.duration = active.meta.actual_samples / active.meta.sample_rate;
       await writeMeta(active.metaPath, active.meta);
@@ -417,6 +424,44 @@ export class RecordingManager {
     } catch (error) {
       active.failed = true;
       console.error(`failed to append chunk: ${errorMessage(error)}`);
+      throw error;
+    }
+  }
+
+  private async appendGapInternal(frames: number): Promise<{ file: string; frames: number }> {
+    const active = this.active;
+    if (!active) {
+      throw new Error('no recording is in progress');
+    }
+    if (!Number.isInteger(frames) || frames <= 0) {
+      throw new Error('gap has no frames');
+    }
+    if (frames > active.meta.sample_rate * 4 * 60 * 60) {
+      throw new Error('gap is too long');
+    }
+
+    const sequence = active.meta.chunks.length + 1;
+    const file = chunkFileName(sequence);
+    const data = Buffer.alloc(frames * 2, 0);
+    const wav = Buffer.concat([createWavHeader(data.length, active.meta.sample_rate), data]);
+
+    try {
+      await writePrivateFile(join(active.chunksDir, file), wav);
+      active.meta.gap_samples = (active.meta.gap_samples ?? 0) + frames;
+      active.meta.actual_samples += frames;
+      active.meta.expected_samples += frames;
+      active.meta.chunks.push({
+        sequence,
+        file,
+        frames,
+        expected_frames: active.meta.expected_samples,
+      });
+      active.meta.duration = active.meta.actual_samples / active.meta.sample_rate;
+      await writeMeta(active.metaPath, active.meta);
+      return { file, frames };
+    } catch (error) {
+      active.failed = true;
+      console.error(`failed to append silence gap: ${errorMessage(error)}`);
       throw error;
     }
   }
@@ -442,7 +487,7 @@ export class RecordingManager {
       active.meta.capture_stats = toMetaStats(stats);
       active.meta.expected_samples = Math.max(
         active.meta.expected_samples,
-        stats.expectedFrames,
+        stats.expectedFrames + (active.meta.gap_samples ?? 0),
       );
     }
     active.meta.duration = active.meta.actual_samples / active.meta.sample_rate;
@@ -673,6 +718,7 @@ export class RecordingManager {
       chunks: [],
       expected_samples: 0,
       actual_samples: 0,
+      gap_samples: 0,
       events: [event],
       clipping_config: options.clippingConfig,
       silence_config: options.silenceConfig,

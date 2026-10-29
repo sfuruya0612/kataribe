@@ -23,10 +23,19 @@ class RecorderProcessor extends AudioWorkletProcessor {
     this.levelFrames = 0;
     this.stopping = false;
     this.stopped = false;
+    this.pendingGapFrames = 0;
 
     this.port.onmessage = (event) => {
       if (event.data && event.data.type === 'stop') {
         this.stopping = true;
+      }
+      if (
+        event.data &&
+        event.data.type === 'insertGap' &&
+        Number.isFinite(event.data.frames) &&
+        event.data.frames > 0
+      ) {
+        this.pendingGapFrames += Math.round(event.data.frames);
       }
     };
   }
@@ -34,6 +43,15 @@ class RecorderProcessor extends AudioWorkletProcessor {
   process(inputs) {
     if (this.stopped) {
       return false;
+    }
+
+    if (this.pendingGapFrames > 0) {
+      this.flushChunk();
+      this.port.postMessage({
+        type: 'gap',
+        frames: this.pendingGapFrames,
+      });
+      this.pendingGapFrames = 0;
     }
 
     const input = inputs[0] || [];

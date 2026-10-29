@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 
 type PostedMessage = {
-  type: 'level' | 'chunk' | 'stopped';
+  type: 'level' | 'chunk' | 'stopped' | 'gap';
   peak?: number;
   rms?: number;
   sequence?: number;
@@ -214,6 +214,20 @@ describe('recorder worklet', () => {
       sampleRate: 48000,
       channels: 1,
     });
+  });
+
+  it('emits a silence gap before post-resume audio', () => {
+    const harness = loadProcessor();
+    block(harness, 0);
+    harness.processor.port.onmessage?.({ data: { type: 'insertGap', frames: 960 } });
+    block(harness, 128);
+
+    const gapIndex = harness.messages.findIndex((message) => message.type === 'gap');
+    const chunkIndex = harness.messages.findIndex((message) => message.type === 'chunk');
+    expect(gapIndex).toBeGreaterThanOrEqual(0);
+    expect(chunkIndex).toBeGreaterThanOrEqual(0);
+    expect(chunkIndex).toBeLessThan(gapIndex);
+    expect(harness.messages[gapIndex].frames).toBe(960);
   });
 
   it('reports peak and RMS at the level interval', () => {

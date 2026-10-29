@@ -20,6 +20,8 @@
   - @shoichi.furuya
 - [ADD] システム音声の無音検出と設定を追加する
   - @shoichi.furuya
+- [ADD] スリープ復帰時の録音再開と無音ギャップ補填を追加する
+  - @shoichi.furuya
 - [ADD] About に BlackHole 2ch の出典を追加する
   - @shoichi.furuya
 

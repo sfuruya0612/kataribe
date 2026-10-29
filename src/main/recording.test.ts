@@ -263,9 +263,9 @@ describe('RecordingManager', () => {
       fixture.manager.start({ inputSource: 'microphone', sampleRate: 48000 }),
     ).rejects.toThrow('a recording is already in progress');
 
-    await expect(fixture.manager.appendChunk(createChunk(2, 480))).rejects.toThrow(
-      'chunk sequence is out of order',
-    );
+    await expect(
+      fixture.manager.appendChunk({ ...createChunk(1, 480), sequence: 0 }),
+    ).rejects.toThrow('chunk sequence is invalid');
     await expect(
       fixture.manager.appendChunk(createChunk(1, 480, 480, 44100)),
     ).rejects.toThrow('chunk sample rate does not match the session');
@@ -276,10 +276,67 @@ describe('RecordingManager', () => {
       }),
     ).rejects.toThrow('chunk frame count does not match sample count');
 
-    await expect(fixture.manager.appendChunk(createChunk(1, 480))).resolves.toEqual({
+    await expect(fixture.manager.appendChunk(createChunk(5, 480))).resolves.toEqual({
       file: '000001.wav',
       frames: 480,
     });
+  });
+
+  it('assigns sequential files to chunks received in source order', async () => {
+    const fixture = await createFixture();
+    const session = await fixture.manager.start({
+      inputSource: 'microphone',
+      sampleRate: 48000,
+    });
+
+    await fixture.manager.appendChunk(createChunk(5, 480));
+    await fixture.manager.appendChunk(createChunk(2, 240));
+
+    const meta = await readMeta(session.meetingDir);
+    expect(
+      (meta.chunks as Array<{ sequence: number; file: string }>).map((chunk) => ({
+        sequence: chunk.sequence,
+        file: chunk.file,
+      })),
+    ).toEqual([
+      { sequence: 1, file: '000001.wav' },
+      { sequence: 2, file: '000002.wav' },
+    ]);
+  });
+
+  it('inserts a silence gap and keeps expected samples aligned', async () => {
+    const fixture = await createFixture();
+    const session = await fixture.manager.start({
+      inputSource: 'system',
+      sampleRate: 48000,
+    });
+
+    await fixture.manager.appendChunk(createChunk(1, 480, 480));
+    await fixture.manager.appendGap(960);
+    await fixture.manager.appendChunk(createChunk(2, 240, 720));
+
+    const metaWhileRecording = await readMeta(session.meetingDir);
+    expect(metaWhileRecording.actual_samples).toBe(1680);
+    expect(metaWhileRecording.expected_samples).toBe(1680);
+    expect(metaWhileRecording.gap_samples).toBe(960);
+
+    const result = await fixture.manager.stop(createStats(720, 720));
+    expect(result.actualSamples).toBe(1680);
+    expect(result.expectedSamples).toBe(1680);
+
+    const merged = await readFile(result.audioPath);
+    expect(merged.length).toBe(44 + 1680 * 2);
+    const gapStart = 44 + 480 * 2;
+    expect(merged.subarray(gapStart, gapStart + 960 * 2).every((value) => value === 0)).toBe(
+      true,
+    );
+  });
+
+  it('rejects a gap without an active recording', async () => {
+    const fixture = await createFixture();
+    await expect(fixture.manager.appendGap(480)).rejects.toThrow(
+      'no recording is in progress',
+    );
   });
 
   it('marks a stop without chunks as an error and removes the temporary session', async () => {

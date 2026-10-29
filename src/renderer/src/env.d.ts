@@ -14,6 +14,7 @@ import type {
   RecordingDeviceEventResult,
   RecordingEvent,
   RecordingLevelUpdate,
+  RecordingPowerEvent,
   RecordingRequestResult,
   RecordingSession,
   RecordingSilenceReport,
@@ -49,10 +50,14 @@ declare global {
       onRecordingCommand: (
         listener: (command: RecordingCommand) => void,
       ) => () => void;
+      onRecordingPower: (
+        listener: (event: RecordingPowerEvent) => void,
+      ) => () => void;
       startRecording: (options: StartRecordingOptions) => Promise<RecordingSession>;
       appendChunk: (
         chunk: RecordingChunk,
       ) => Promise<{ file: string; frames: number }>;
+      appendGap: (frames: number) => Promise<{ file: string; frames: number }>;
       stopRecording: (
         stats?: RecordingCaptureStats,
       ) => Promise<RecordingStopResult>;

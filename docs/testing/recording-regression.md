@@ -210,8 +210,8 @@ M0 の実測値は、BlackHole の Zoom と Meet 300 秒で RMS 0.03504、60 分
 - 録音終了後に欠落区間の警告が出る。
 - 復帰後に BlackHole が見つからない場合は、録音が停止する。
 
-この項目は issue 0003 の実装後に有効になる。
-issue 0003 が完了するまでは、suspend と resume の時刻記録だけを確認する。
+Kataribe は録音中の suspend と resume を `meta.json` に記録し、復帰後の欠落区間を無音で補う。
+復帰後に BlackHole 2ch が見つからない場合は、デバイス消失として録音を停止する。
 
 ### 10. Zoom と Google Meet
 

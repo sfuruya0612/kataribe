@@ -4,6 +4,7 @@ import {
   BrowserWindow,
   ipcMain,
   Menu,
+  powerMonitor,
   powerSaveBlocker,
   session,
   shell,
@@ -23,6 +24,7 @@ import type {
   RecordingDeviceEventResult,
   RecordingEvent,
   RecordingLevelUpdate,
+  RecordingPowerEvent,
   RecordingRequestResult,
   RecordingSilenceReport,
   RecordingStartupFailure,
@@ -375,6 +377,14 @@ function registerIpc(recordingManager: RecordingManager): void {
     }
   });
 
+  ipcMain.handle('recording:gap', async (_event, frames: number) => {
+    const status = stateStore.getStatus();
+    if (status !== 'recording' && status !== 'stopping') {
+      throw new Error('recording is not active');
+    }
+    return recordingManager.appendGap(frames);
+  });
+
   ipcMain.handle('recording:chunk', async (_event, chunk: RecordingChunk) => {
     const status = stateStore.getStatus();
     if (status !== 'recording' && status !== 'stopping') {
@@ -630,6 +640,68 @@ if (!app.requestSingleInstanceLock()) {
     });
     activeRecordingManager = recordingManager;
     registerIpc(recordingManager);
+
+    let suspendedAt: number | null = null;
+    powerMonitor.on('suspend', () => {
+      const status = stateStore.getStatus();
+      if (status !== 'recording' && status !== 'stopping') {
+        return;
+      }
+      suspendedAt = Date.now();
+      const event = {
+        at: new Date(suspendedAt).toISOString(),
+        kind: 'sleep-suspend' as const,
+        device: 'unknown' as const,
+        severity: 'warning' as const,
+        message: 'システムスリープに入りました。',
+      };
+      stateStore.setNotice(event);
+      void recordingManager.recordEvent(event).catch((error: unknown) => {
+        console.error('failed to record suspend event', error);
+      });
+    });
+
+    powerMonitor.on('resume', () => {
+      if (suspendedAt === null) {
+        return;
+      }
+      const resumedAt = Date.now();
+      const suspended = suspendedAt;
+      suspendedAt = null;
+      const status = stateStore.getStatus();
+      if (status !== 'recording' && status !== 'stopping') {
+        return;
+      }
+      const sampleRate = stateStore.getState().session?.sampleRate ?? 0;
+      const gapFrames =
+        sampleRate > 0
+          ? Math.max(0, Math.round(((resumedAt - suspended) / 1000) * sampleRate))
+          : 0;
+      const event = {
+        at: new Date(resumedAt).toISOString(),
+        kind: 'sleep-resume' as const,
+        device: 'unknown' as const,
+        severity: 'warning' as const,
+        message:
+          gapFrames > 0
+            ? `システムスリープから復帰しました。${(gapFrames / sampleRate).toFixed(1)} 秒の無音を補います。`
+            : 'システムスリープから復帰しました。',
+      };
+      stateStore.setNotice(event);
+      void recordingManager.recordEvent(event).catch((error: unknown) => {
+        console.error('failed to record resume event', error);
+      });
+
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const powerEvent: RecordingPowerEvent = {
+          action: 'resume',
+          gapFrames,
+          suspendedAt: new Date(suspended).toISOString(),
+          resumedAt: new Date(resumedAt).toISOString(),
+        };
+        mainWindow.webContents.send('recording:power', powerEvent);
+      }
+    });
 
     const iconPath = app.isPackaged
       ? join(process.resourcesPath, 'trayTemplate.png')

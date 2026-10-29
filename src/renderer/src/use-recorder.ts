@@ -66,7 +66,16 @@ type WorkletStoppedMessage = {
   finalChunk: WorkletChunkData | null;
 };
 
-type WorkletMessage = WorkletChunkMessage | WorkletLevelMessage | WorkletStoppedMessage;
+type WorkletGapMessage = {
+  type: 'gap';
+  frames: number;
+};
+
+type WorkletMessage =
+  | WorkletChunkMessage
+  | WorkletLevelMessage
+  | WorkletStoppedMessage
+  | WorkletGapMessage;
 
 type RecorderInput = {
   role: 'microphone' | 'system';
@@ -416,6 +425,20 @@ export function useRecorder(): RecorderController {
       }
       if (message.type === 'level') {
         reportLevel(message);
+        return;
+      }
+      if (message.type === 'gap') {
+        chunkQueueRef.current = chunkQueueRef.current.then(async () => {
+          if (chunkErrorRef.current) {
+            return;
+          }
+          try {
+            await window.kataribe.appendGap(message.frames);
+          } catch (reason: unknown) {
+            chunkErrorRef.current = errorText(reason);
+            setWarning(`スリープ中の無音を保存できませんでした: ${chunkErrorRef.current}`);
+          }
+        });
         return;
       }
       if (message.finalChunk) {
@@ -882,6 +905,36 @@ export function useRecorder(): RecorderController {
     });
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = window.kataribe.onRecordingPower((event) => {
+      if (event.action !== 'resume') {
+        return;
+      }
+      const graph = graphRef.current;
+      if (!graph) {
+        return;
+      }
+      if (graph.context.state === 'suspended') {
+        void graph.context.resume().catch((reason: unknown) => {
+          setWarning(`録音の再開に失敗しました: ${errorText(reason)}`);
+        });
+      }
+      for (const input of graph.inputs) {
+        if (input.track && input.track.readyState === 'ended') {
+          reportInputLoss(input.role);
+        }
+      }
+      void detectDeviceLoss();
+      if (event.gapFrames > 0) {
+        graph.node.port.postMessage({
+          type: 'insertGap',
+          frames: event.gapFrames,
+        });
+      }
+    });
+    return unsubscribe;
+  }, [detectDeviceLoss, reportInputLoss]);
 
   useEffect(() => {
     const handleDeviceChange = () => {

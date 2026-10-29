@@ -14,6 +14,7 @@ import type {
   RecordingDeviceEventResult,
   RecordingEvent,
   RecordingLevelUpdate,
+  RecordingPowerEvent,
   RecordingRequestResult,
   RecordingSession,
   RecordingSilenceReport,
@@ -62,10 +63,14 @@ const api = {
     subscribe('recording:level', listener),
   onRecordingCommand: (listener: (command: RecordingCommand) => void): (() => void) =>
     subscribe('recording:command', listener),
+  onRecordingPower: (listener: (event: RecordingPowerEvent) => void): (() => void) =>
+    subscribe('recording:power', listener),
   startRecording: (options: StartRecordingOptions): Promise<RecordingSession> =>
     ipcRenderer.invoke('recording:start', options),
   appendChunk: (chunk: RecordingChunk): Promise<{ file: string; frames: number }> =>
     ipcRenderer.invoke('recording:chunk', chunk),
+  appendGap: (frames: number): Promise<{ file: string; frames: number }> =>
+    ipcRenderer.invoke('recording:gap', frames),
   stopRecording: (stats?: RecordingCaptureStats): Promise<RecordingStopResult> =>
     ipcRenderer.invoke('recording:stop', stats),
   reportRecordingLevel: (update: RecordingLevelUpdate): Promise<void> =>

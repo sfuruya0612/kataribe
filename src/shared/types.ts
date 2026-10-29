@@ -98,7 +98,9 @@ export type RecordingEventKind =
   | 'clipping'
   | 'clipping-recovered'
   | 'system-silence'
-  | 'system-silence-recovered';
+  | 'system-silence-recovered'
+  | 'sleep-suspend'
+  | 'sleep-resume';
 
 export type RecordingEventDevice = 'microphone' | 'system' | 'output' | 'unknown';
 
@@ -138,6 +140,13 @@ export type RecordingSilenceReport = {
   active: boolean;
   rms: number;
   at: string;
+};
+
+export type RecordingPowerEvent = {
+  action: 'resume';
+  gapFrames: number;
+  suspendedAt: string;
+  resumedAt: string;
 };
 
 export type RecordingLevel = {
