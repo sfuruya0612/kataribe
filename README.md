@@ -151,9 +151,12 @@ npm run build
 npm run smoke
 npm run test:window
 npm run package
+npm run verify:mac
 ```
 
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
+`npm run verify:mac` は、`Info.plist`、entitlement、同梱物、アプリサイズを検査する。
+署名済みビルドでは `npm run verify:mac:release` を使う。
 `npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
 署名と公証は [issue 0013](docs/issues/0013-feat-release-checklist-and-entitlements.md) で行う。
 

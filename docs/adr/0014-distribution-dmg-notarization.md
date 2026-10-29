@@ -19,8 +19,14 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
 
 - 配布には electron-builder を使い、DMG を作る。
 - アプリは Apple Developer ID Application の証明書で署名し、hardened runtime を有効にする。
-  hardened runtime の entitlement に `com.apple.security.device.audio-input` を含める。
-  マイクと BlackHole 2ch の取得に必要である。
+  hardened runtime の entitlement は次の 5 つとする。
+  - `com.apple.security.device.audio-input`: マイクと BlackHole 2ch の取得に必要である。
+  - `com.apple.security.cs.allow-jit`: V8 の JIT に必要である。
+  - `com.apple.security.cs.allow-unsigned-executable-memory`: Electron の V8 に必要である。
+  - `com.apple.security.cs.allow-dyld-environment-variables`: Electron の framework の読み込みに必要である。
+  - `com.apple.security.cs.disable-library-validation`: Electron の framework とネイティブモジュールの読み込みに必要である。
+  entitlement の実体は `build/entitlements.mac.plist` に置き、`scripts/verify-mac-bundle.cjs` で一覧を検査する。
+  実際の署名済みビルドでの適用確認は、署名と公証の資格情報が用意できたときに行う。
 - 公証は Apple の公証サービスに提出し、発行されたチケットをアプリに添付する。
   DMG 自体にも署名し、配布前に Gatekeeper の検査を通す。
 - Apple Silicon 向けの arm64 の DMG を出す。
@@ -90,14 +96,16 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
 - Mac App Store を使わないため、配布は開発元のサイトか GitHub Releases に依存する。
   ダウンロードの経路と、配布物のハッシュの公開を決める必要がある。
 - 署名と公証の検証をリリースのチェックリストに入れることで、Gatekeeper の警告や子プロセスの起動失敗をリリース前に見つけられる。
+- `scripts/verify-mac-bundle.cjs` は、署名前でも Info.plist、entitlement、同梱物、アプリサイズ、desktopCapturer の残存を検査できる。
+  署名と公証の資格情報がない環境では、署名と Gatekeeper の検査だけを保留できる。
 - BlackHole 2ch はアプリに同梱せず、利用者がインストールする。
   配布物と署名の対象は変わらない（ADR-0003）。
 
 ## 未決事項
 
 - アプリの bundle identifier、Team ID、配布用のドメイン。
-- `com.apple.security.device.audio-input` 以外の hardened runtime の entitlement の一覧。
-  Electron と子プロセスの起動に必要な項目を、署名の検証で確定する。
+- 署名済みビルドで entitlement が実際に適用されるかの確認。
+  署名と公証の資格情報が用意できたときに行う。
 - 自動更新の仕組みを入れるか。
   入れる場合の配信経路、署名、録音中の適用の保留。
 - 配布の経路を GitHub Releases にするか、独自のサイトにするか。

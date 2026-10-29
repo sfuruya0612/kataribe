@@ -37,6 +37,25 @@ M0 は署名なしの Electron で検証しており、署名と公証をした�
 - チェックリストに、BlackHole 2ch を同梱していないこと、ライセンス表示、アプリサイズの確認がある。
 - ADR-0014 に entitlement の一覧が記録されている。
 
+## 進捗
+
+2026-10-29 に、署名と公証の資格情報がなくても確認できる範囲を実装した。
+
+- `build/entitlements.mac.plist` に、`com.apple.security.device.audio-input` と Electron の hardened runtime に必要な 4 つの entitlement を追加した。
+- `scripts/verify-mac-bundle.cjs` を追加した。
+  `Info.plist`、entitlement、README とトレイ画像の同梱、BlackHole のバイナリの有無、desktopCapturer と getDisplayMedia の残存、アプリサイズを検査する。
+  署名済みビルドでは、`codesign` と Gatekeeper の検査も行う。
+- `npm run verify:mac` と `npm run verify:mac:release` を追加した。
+- README とリリースチェックリストに検査コマンド、entitlement、署名、Gatekeeper、desktopCapturer の確認項目を追加した。
+- ADR-0014 に entitlement の一覧と、署名済みビルドでの確認が残っていることを記録した。
+
+未完了:
+
+- Apple Developer ID Application での署名と、Apple の公証サービスへの提出。
+- Gatekeeper の警告なしの起動確認。
+- 署名済みビルドでのマイク権限、BlackHole 2ch の取得、画面収録権限のダイアログが出ないことの確認。
+- 子プロセス、モデル、ライセンス表示の確認は、それぞれの実装後に行う。
+
 ## 参照
 
 - `docs/adr/0014-distribution-dmg-notarization.md`

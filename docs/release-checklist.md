@@ -8,6 +8,8 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 - [ ] `npm run build` が成功する
 - [ ] `npm run dist` で DMG が作られる
 - [ ] `npm run test:window` が成功する
+- [ ] `npm run verify:mac` が成功する
+- [ ] 署名済みビルドで `npm run verify:mac:release` が成功する
 - [ ] アプリのバージョンとビルド番号が正しい
 - [ ] `meta.json` と About 画面のバージョンが一致する
 
@@ -15,8 +17,10 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 
 - [ ] Apple Developer ID Application の証明書で署名されている
 - [ ] hardened runtime が有効になっている
+- [ ] `codesign --verify --deep --strict` が成功する
 - [ ] DMG が署名されている
 - [ ] 公証チケットがアプリに添付されている
+- [ ] `spctl --assess --type execute` が成功する
 - [ ] Gatekeeper の警告なしに起動できる
 
 ## 権限
@@ -26,6 +30,10 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 - [ ] `Info.plist` に `NSAudioCaptureUsageDescription` がない
 - [ ] `Info.plist` に `NSScreenCaptureUsageDescription` がない
 - [ ] hardened runtime の entitlement に `com.apple.security.device.audio-input` がある
+- [ ] hardened runtime の entitlement に `com.apple.security.cs.allow-jit` がある
+- [ ] hardened runtime の entitlement に `com.apple.security.cs.allow-unsigned-executable-memory` がある
+- [ ] hardened runtime の entitlement に `com.apple.security.cs.allow-dyld-environment-variables` がある
+- [ ] hardened runtime の entitlement に `com.apple.security.cs.disable-library-validation` がある
 - [ ] 初回の入力デバイス検出時または録音開始時に、マイク権限のダイアログが出る
 - [ ] マイク権限を拒否すると、録音を開始できず、システム設定への案内が出る
 - [ ] マイク権限を拒否した状態で、別の入力へ自動で切り替わらない
@@ -87,6 +95,7 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 ## 配布物
 
 - [ ] BlackHole 2ch のバイナリやインストーラを含めていない
+- [ ] desktopCapturer と getDisplayMedia のコードパスが残っていない
 - [ ] ffmpeg、whisper.cpp、Electron、ネイティブモジュールのライセンス表示がある
 - [ ] アプリ本体が 300 MB 以下である
 - [ ] DMG のサイズを記録した

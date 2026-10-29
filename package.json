@@ -17,7 +17,9 @@
     "smoke": "npm run build && KATARIBE_SMOKE_TEST=1 electron .",
     "test:window": "npm run build && KATARIBE_WINDOW_TEST=1 electron .",
     "package": "npm run build && electron-builder --mac dir",
-    "dist": "npm run build && electron-builder --mac dmg"
+    "dist": "npm run build && electron-builder --mac dmg",
+    "verify:mac": "node scripts/verify-mac-bundle.cjs",
+    "verify:mac:release": "node scripts/verify-mac-bundle.cjs --strict-signing"
   },
   "dependencies": {
     "react": "19.3.1",

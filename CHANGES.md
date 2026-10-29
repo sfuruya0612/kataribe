@@ -12,6 +12,8 @@
   - @shoichi.furuya
 - [ADD] 録音中のデバイス消失とマイク権限拒否の処理を追加する
   - @shoichi.furuya
+- [ADD] 署名済みビルド向けの entitlement と配布物検証コマンドを追加する
+  - @shoichi.furuya
 
 ### FIX
 
