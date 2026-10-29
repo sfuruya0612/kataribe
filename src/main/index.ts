@@ -103,6 +103,8 @@ function registerAppMenu(): void {
     applicationVersion: app.getVersion(),
     version: app.getVersion(),
     copyright: 'Copyright 2026 Shoichi Furuya',
+    credits:
+      'BlackHole 2ch は GPLv3 のソフトウェアです。Kataribe は BlackHole 2ch を同梱せず、再配布しません。配布元: https://existential.audio/blackhole/',
   });
 
   const template: MenuItemConstructorOptions[] = [

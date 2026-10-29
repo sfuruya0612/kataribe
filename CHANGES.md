@@ -20,6 +20,8 @@
   - @shoichi.furuya
 - [ADD] システム音声の無音検出と設定を追加する
   - @shoichi.furuya
+- [ADD] About に BlackHole 2ch の出典を追加する
+  - @shoichi.furuya
 
 ### FIX
 
@@ -29,4 +31,6 @@
 ### misc
 
 - [ADD] README とリリースチェックリストに録音と画面の確認手順を追加する
+  - @shoichi.furuya
+- [ADD] README に BlackHole 2ch のサポート情報と画面写真を追加する
   - @shoichi.furuya

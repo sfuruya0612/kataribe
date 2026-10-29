@@ -49,6 +49,7 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 - [ ] メインウィンドウを閉じた後にトレイから開き直せる
 - [ ] 2 つ目の Kataribe を起動すると既存のウィンドウが前面に表示される
 - [ ] アプリメニューの About にアプリ名とバージョンが表示される
+- [ ] About に BlackHole 2ch の GPLv3 と公式配布元が表示される
 - [ ] 会議一覧、会議詳細、設定の 3 画面を表示できる
 - [ ] 録音中にメインウィンドウが背面にあっても録音が継続する
 
@@ -116,4 +117,4 @@ Kataribe の配布ビルドをリリースする前に確認する項目です�
 - [ ] README の初期設定手順が最新である
 - [ ] README の Bluetooth 推奨構成が最新である
 - [ ] README のトラブルシューティングが最新である
-- [ ] `docs/issues/0007-docs-blackhole-license-and-support.md` の README 作業が完了している
+- [ ] `docs/issues/closed/0007-docs-blackhole-license-and-support.md` の README 作業が完了している

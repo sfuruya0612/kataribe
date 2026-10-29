@@ -174,6 +174,8 @@ npm run verify:mac
 3. 録音を開始し、経過時間、ピーク、RMS、実フレーム数を確認します。
 4. 録音を停止すると、`~/Documents/Kataribe/YYYY/YYYY-MM-DD_HHMM_タイトル未入力/` に `audio.wav` と `meta.json` を保存します。
 
+![録音パネルと会議一覧](docs/images/recording-panel.jpg)
+
 録音中の音声は 10 秒ごとに一時ディレクトリへ WAV チャンクとして書き出します。
 停止時にチャンクを `audio.wav` に結合し、一時ファイルを削除します。
 mp3 と 16 kHz wav の生成はまだ実装していません。
@@ -194,6 +196,8 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 設定画面は土台だけを実装しています。
 設定値の保存はまだ実装していません。
 現在の保存先は `~/Documents/Kataribe/` 固定です。
+
+![設定画面](docs/images/settings.jpg)
 
 1. 保存先フォルダを設定します。既定は `~/Documents/Kataribe/` です。
 2. whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。
@@ -286,7 +290,7 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
-アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md) は実装済みです。
+アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md) は実装済みです。
 issue 0013 は署名と公証の資格情報が必要なため、ローカルでできる検証だけを実装して保留しています。
-次は issue 0003、0006、0007 を進めます。
+次は issue 0003、0006 を進めます。
 保留中の issue は `docs/issues/pending/` にあります。

@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P2
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)
 関連 PRD: 非機能要件のプライバシー、配布、権限
@@ -49,6 +50,25 @@ BlackHole 2ch のライセンスと配布の条件を明確にし、利用者向
 - README に、Bluetooth 入力の HFP による品質低下と、Bluetooth 出力 + 内蔵/USB マイクの推奨構成、macOS の既定入力と会議アプリのマイクの設定が書かれている。
 - README の手順どおりに作った Multi-Output Device で、録音を 1 回通せる。
 - リリースチェックリストに、BlackHole を同梱していないことの確認がある。
+
+## 解決方法
+
+2026-10-29 に BlackHole 2ch のライセンス、配布、サポート資料を整備した。
+
+- About 画面に、BlackHole 2ch が GPLv3 であること、Kataribe が同梱、再配布しないこと、公式の配布元を表示する `credits` を追加した。
+- README に、動作確認済みの BlackHole 2ch 0.7.1、インストール、Multi-Output Device の作成、macOS の音声出力の選択、入力の設定、短いテスト録音、アンインストールを記載した。
+- README のトラブルシューティングに、BlackHole が見つからない場合、入力レベルが動かない場合、音が聞こえない場合、AirPods の音質、録音中の出力変更、スリープ、スピーカーでのハウリングを記載した。
+- README に、Bluetooth の HFP、推奨構成、Drift Correction、接続し直した場合の出力選択、遅延を記載した。
+- README に、macOS のアップデート後に BlackHole を再インストールする手順を記載した。
+- README にアプリの録音パネル、会議一覧、設定画面のスクリーンショットを追加した。
+- リリースチェックリストに、BlackHole を同梱していないこと、ライセンス表示、About の出典の確認を追加した。
+
+確認結果:
+
+- `npm run typecheck`、`npm test`、`npm run build`、`npm run smoke`、`npm run test:window`: 成功。
+- パッケージ済みアプリの `Info.plist` と `Resources` を `npm run verify:mac` で検査し、BlackHole のバイナリがないことを確認した。
+- About 画面の出典表示は `app.setAboutPanelOptions` の `credits` で設定した。
+- Audio MIDI Setup の画面そのもののスクリーンショットは環境依存のため含めず、手順をテキストで記載した。
 
 ## 参照
 
