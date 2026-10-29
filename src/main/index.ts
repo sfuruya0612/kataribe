@@ -3,14 +3,23 @@ import {
   app,
   BrowserWindow,
   ipcMain,
+  powerSaveBlocker,
   session,
   shell,
+  systemPreferences,
 } from 'electron';
-import type { AppInfo } from '../shared/types';
+import type {
+  AppInfo,
+  MicrophonePermissionStatus,
+  RecordingCaptureStats,
+  RecordingChunk,
+  StartRecordingOptions,
+} from '../shared/types';
 import {
   isAllowedPermission,
   type PermissionDetails,
 } from './security';
+import { RecordingManager } from './recording';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
@@ -100,12 +109,61 @@ function focusMainWindow(): void {
   mainWindow.focus();
 }
 
-function registerIpc(): void {
+function registerIpc(recordingManager: RecordingManager): void {
   ipcMain.handle('app:info', (): AppInfo => {
     return {
       version: app.getVersion(),
       platform: process.platform,
     };
+  });
+
+  ipcMain.handle('permissions:microphone-status', (): MicrophonePermissionStatus => {
+    return systemPreferences.getMediaAccessStatus(
+      'microphone',
+    ) as MicrophonePermissionStatus;
+  });
+
+  ipcMain.handle('permissions:request-microphone', async (): Promise<boolean> => {
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+    if (status === 'granted') {
+      return true;
+    }
+    if (status === 'denied' || status === 'restricted') {
+      return false;
+    }
+    return systemPreferences.askForMediaAccess('microphone');
+  });
+
+  ipcMain.handle('recording:start', (_event, options: StartRecordingOptions) => {
+    return recordingManager.start(options);
+  });
+
+  ipcMain.handle('recording:chunk', (_event, chunk: RecordingChunk) => {
+    return recordingManager.appendChunk(chunk);
+  });
+
+  ipcMain.handle('recording:stop', (_event, stats?: RecordingCaptureStats) => {
+    return recordingManager.stop(stats);
+  });
+
+  ipcMain.handle('recording:status', () => {
+    return recordingManager.getState();
+  });
+
+  ipcMain.handle('recording:list-recoverable', () => {
+    return recordingManager.listRecoverable();
+  });
+
+  ipcMain.handle('recording:recover', (_event, meetingId: string) => {
+    return recordingManager.recover(meetingId);
+  });
+
+  ipcMain.handle('recording:open-folder', () => {
+    const meetingDir = recordingManager.getLastMeetingDir();
+    if (!meetingDir) {
+      throw new Error('no recording folder');
+    }
+    shell.showItemInFolder(meetingDir);
   });
 
   ipcMain.on('app:renderer-ready', () => {
@@ -146,7 +204,23 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     configureSession();
-    registerIpc();
+    const recordingManager = new RecordingManager({
+      saveRoot: join(app.getPath('documents'), 'Kataribe'),
+      tempRoot: join(app.getPath('userData'), 'tmp'),
+      appVersion: app.getVersion(),
+      blocker: {
+        start: () => {
+          const id = powerSaveBlocker.start('prevent-app-suspension');
+          console.log(`power save blocker started: ${id}`);
+          return id;
+        },
+        stop: (id) => {
+          powerSaveBlocker.stop(id);
+          console.log(`power save blocker stopped: ${id}`);
+        },
+      },
+    });
+    registerIpc(recordingManager);
     mainWindow = createWindow();
     mainWindow.on('closed', () => {
       mainWindow = null;

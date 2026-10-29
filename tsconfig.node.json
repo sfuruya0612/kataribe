@@ -9,6 +9,7 @@
     "vitest.config.mts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
-    "src/shared/**/*.ts"
+    "src/shared/**/*.ts",
+    "tests/**/*.ts"
   ]
 }

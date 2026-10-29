@@ -13,10 +13,10 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 ## ステータス
 
 開発中です。
-アプリ基盤は実装済みで、開発版を起動できます。
+アプリ基盤と録音中核は実装済みで、開発版を起動して録音できます。
 M0 のシステム音声検証は完了しています。
-録音、文字起こし、要約はまだ実装されていません。
-この README の初期セットアップ手順は、録音機能の実装後の利用者向けです。
+mp3 への変換、文字起こし、要約はまだ実装されていません。
+この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
 ## ドキュメント
 
@@ -154,7 +154,22 @@ npm run package
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
 署名と公証は [issue 0013](docs/issues/0013-feat-release-checklist-and-entitlements.md) で行う。
 
+開発版の録音パネルでは、次の流れを確認できます。
+
+1. 入力ソースにマイク、システム音声、両方のいずれかを選びます。
+2. マイクと BlackHole 2ch の入力デバイスを選びます。
+3. 録音を開始し、経過時間、ピーク、RMS、実フレーム数を確認します。
+4. 録音を停止すると、`~/Documents/Kataribe/YYYY/YYYY-MM-DD_HHMM_タイトル未入力/` に `audio.wav` と `meta.json` を保存します。
+
+録音中の音声は 10 秒ごとに一時ディレクトリへ WAV チャンクとして書き出します。
+停止時にチャンクを `audio.wav` に結合し、一時ファイルを削除します。
+mp3 と 16 kHz wav の生成はまだ実装していません。
+録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
+
 ## 初回起動後の設定
+
+設定画面はまだ実装していません。
+現在の保存先は `~/Documents/Kataribe/` 固定です。
 
 1. 保存先フォルダを設定します。既定は `~/Documents/Kataribe/` です。
 2. whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。
@@ -246,6 +261,6 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
-アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md) は実装済みです。
-次は録音中核の issue 0010 以降を進めます。
+アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md) と、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md) は実装済みです。
+次は issue 0011 以降を進めます。
 保留中の issue は `docs/issues/pending/` にあります。

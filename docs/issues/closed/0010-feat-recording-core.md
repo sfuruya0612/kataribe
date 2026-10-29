@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P0
 対応 ADR: ADR-0002 (docs/adr/0002-web-audio-recording-and-chunks.md)、ADR-0005 (docs/adr/0005-audio-formats-mp3-and-16khz-wav.md)、ADR-0010 (docs/adr/0010-meeting-folder-and-sqlite-index.md)
 関連 PRD: R-2、R-4、R-5、非機能要件の録音の信頼性とデータ耐久性
@@ -51,6 +52,57 @@ M0 ハーネスのシステムスリープ再測定では、`powerSaveBlocker` �
 - 入力レベルのピークと RMS が 100 ms 間隔で更新される。
 - 録音中に `powerSaveBlocker` が有効になり、停止後に解放される。
 - 60 分の録音で、実フレーム数と `AudioContext.currentTime` の差が 1 秒以内である。
+
+## 解決方法
+
+2026-10-29 に録音中核を実装した。
+
+- `src/main/recording.ts` に `RecordingManager` を追加した。
+  録音の開始、チャンク保存、結合、復旧、`meta.json` の更新、`powerSaveBlocker` の開始と解放を担当する。
+  会議フォルダは `YYYY/YYYY-MM-DD_HHMM_タイトル未入力`、一時ディレクトリは `~/Library/Application Support/Kataribe/tmp/<meeting-id>/` に作る。
+- `src/main/wav.ts` に 16-bit PCM モノラル WAV の生成を分離した。
+  ヘッダ、データ長、サンプル境界、無音への丸めをテストする。
+- `src/renderer/public/recorder-worklet.js` に AudioWorklet を追加した。
+  10 秒ごとのチャンク、100 ms 間隔のピークと RMS、実フレーム数、期待フレーム数、gap、欠落フレームを数える。
+  マイクと BlackHole は同じ `AudioContext` で 0.5 倍ずつ混合し、`channelCount: 1` でモノラルにする。
+- `src/renderer/src/App.tsx` に録音パネルを追加した。
+  入力ソース、入力デバイス、マイク権限、ピークと RMS、実フレーム数、チャンク数、復旧できる録音、保存結果を表示する。
+- `meta.json` は `schema_version`、`id`、`status`、`started_at`、`duration`、`source`、`sample_rate`、`chunks`、`actual_samples`、`expected_samples`、`capture_stats`、`audio_path` を持つ。
+  書き込みは一時ファイル、fsync、rename で行う。
+  会議フォルダは 0700、ファイルは 0600 で作る。
+- 停止後は `status` を `encoding` にし、`audio.wav` を会議フォルダに結合する。
+  mp3 と 16 kHz wav の生成はまだ実装していないため、`audio.wav` を中間ファイルとして残す。
+  一時チャンクは結合後に削除する。
+- 録音中は `powerSaveBlocker.start('prevent-app-suspension')` を開始し、停止時に解放する。
+- 停止時は最終チャンクを `stopped` メッセージに同梱する。
+  `process()` の戻り値だけに依存せず、停止後に `stopped` を再送しないガードも入れた。
+
+確認結果:
+
+- `npm run typecheck`: 成功。
+- `npm test`: 46 件成功。
+  WAV、`RecordingManager`、AudioWorklet、権限、録音ユーティリティをテストする。
+- `npm run build`、`npm run smoke`、`npm run package`: 成功。
+- パッケージ済み `Kataribe.app` の smoke test: 成功。
+- 実機 macOS 26.7.1 arm64、BlackHole 2ch 0.7.1、MacBook Pro のマイクで確認した。
+  - マイクのみ 4 秒: 194,688 フレーム、gap 0、`audio.wav` 194,688 サンプル。
+  - システム音声のみ 12 秒: 2 チャンク（480,000 + 98,688）、578,688 フレーム、gap 0。
+  - マイク + システム音声 12 秒: 2 チャンク（480,000 + 96,640）、576,640 フレーム、gap 0、ピーク -42.8 dB。
+  - パッケージ済みアプリでマイク + システム音声 4 秒: 195,712 フレーム、gap 0。
+  - 12 秒の録音で、実フレーム数と `AudioContext.currentTime` の差は 0.003 秒だった。
+  - 入力レベルが 100 ms 間隔で更新されることを確認した。
+  - 録音中にプロセスを SIGKILL し、30 秒、3 チャンクの一時セッションから復旧した。
+    復旧後の `audio.wav` は 30.000 秒、1,440,000 サンプルで、一時ディレクトリは削除された。
+  - `powerSaveBlocker` の開始と停止をログで確認した。
+- パッケージ済みアプリで `app.asar` 内の AudioWorklet を読み込めることを確認した。
+- 60 分の連続録音は issue 0006 の回帰テストで確認する。
+
+残っている作業:
+
+- mp3 と 16 kHz wav の生成は、ADR-0005 に従って次の実装で追加する。
+- 入力デバイスの消失と権限拒否の画面は issue 0012 で扱う。
+- メニューバーと本画面は issue 0011 で扱う。
+- 署名済みビルドの entitlement は issue 0013 で確認する。
 
 ## 参照
 

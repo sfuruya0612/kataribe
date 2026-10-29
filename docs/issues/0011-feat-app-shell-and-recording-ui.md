@@ -49,4 +49,4 @@ ADR-0012 は、メニューバーに常駐し、メインウィンドウに会�
 - `docs/adr/0012-menu-bar-and-main-window.md`
 - `docs/adr/0002-web-audio-recording-and-chunks.md`
 - `docs/prd/kataribe.md` の R-1、R-2、R-3
-- `docs/issues/0010-feat-recording-core.md`
+- `docs/issues/closed/0010-feat-recording-core.md`
