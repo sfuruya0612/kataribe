@@ -19,6 +19,7 @@ function createState(overrides: Partial<RecordingAppState> = {}): RecordingAppSt
     chunkCount: 0,
     lastResult: null,
     lastMeetingDir: null,
+    notice: null,
     error: null,
     ...overrides,
   };

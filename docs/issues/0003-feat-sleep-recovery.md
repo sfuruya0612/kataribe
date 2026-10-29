@@ -51,5 +51,5 @@ M0 の旧カウンタの「フレーム数」は `AnalyserNode` の読み取り�
 - `docs/adr/0003-system-audio-virtual-device.md` の「結果」
 - `docs/issues/0006-test-m0-regression-harness.md`
 - `docs/issues/closed/0010-feat-recording-core.md`
-- `docs/issues/0012-feat-device-loss-and-permission-handling.md`
+- `docs/issues/closed/0012-feat-device-loss-and-permission-handling.md`
 - `docs/prd/kataribe.md` の非機能要件

@@ -10,6 +10,8 @@
   - @shoichi.furuya
 - [ADD] メニューバー、録音パネル、会議一覧、会議詳細、設定の土台を追加する
   - @shoichi.furuya
+- [ADD] 録音中のデバイス消失とマイク権限拒否の処理を追加する
+  - @shoichi.furuya
 
 ### FIX
 

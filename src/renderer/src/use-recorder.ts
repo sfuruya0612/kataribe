@@ -7,11 +7,13 @@ import type {
   RecordingCaptureStats,
   RecordingChunk,
   RecordingCommand,
+  RecordingEvent,
   RecordingLevelUpdate,
   RecoverableRecording,
 } from '../../shared/types';
 import {
   buildAudioConstraints,
+  deviceLossAction,
   errorText,
   pickDeviceId,
   recordingErrorText,
@@ -53,13 +55,20 @@ type WorkletStoppedMessage = {
 
 type WorkletMessage = WorkletChunkMessage | WorkletLevelMessage | WorkletStoppedMessage;
 
+type RecorderInput = {
+  role: 'microphone' | 'system';
+  stream: MediaStream;
+  source: MediaStreamAudioSourceNode;
+  gain: GainNode;
+  track: MediaStreamTrack | null;
+};
+
 type RecorderGraph = {
   context: AudioContext;
   node: AudioWorkletNode;
   sink: GainNode;
-  sources: MediaStreamAudioSourceNode[];
-  gains: GainNode[];
-  streams: MediaStream[];
+  inputs: RecorderInput[];
+  onDeviceChange: () => void;
 };
 
 export type RecorderController = {
@@ -81,23 +90,83 @@ export type RecorderController = {
   setInputSource: (source: InputSource) => Promise<void>;
   recover: (recording: RecoverableRecording) => Promise<void>;
   openFolder: () => Promise<void>;
+  openMicrophoneSettings: () => Promise<void>;
   refreshRecoverable: () => Promise<void>;
 };
 
+function makeEvent(
+  kind: RecordingEvent['kind'],
+  device: RecordingEvent['device'],
+  severity: RecordingEvent['severity'],
+  message: string,
+): RecordingEvent {
+  return {
+    at: new Date().toISOString(),
+    kind,
+    device,
+    severity,
+    message,
+  };
+}
+
+function mediaFailureEvent(
+  role: 'microphone' | 'system',
+  reason: unknown,
+): RecordingEvent {
+  const kind =
+    reason instanceof DOMException && reason.name === 'NotAllowedError'
+      ? 'permission-denied'
+      : 'device-open-failed';
+  return makeEvent(kind, role, 'error', recordingErrorText(reason));
+}
+
+function removeInput(graph: RecorderGraph, role: RecorderInput['role']): void {
+  const input = graph.inputs.find((entry) => entry.role === role);
+  if (!input) {
+    return;
+  }
+  if (input.track) {
+    input.track.onended = null;
+  }
+  try {
+    input.source.disconnect();
+  } catch {
+    // The node may already be disconnected.
+  }
+  try {
+    input.gain.disconnect();
+  } catch {
+    // The node may already be disconnected.
+  }
+  for (const track of input.stream.getTracks()) {
+    track.stop();
+  }
+  graph.inputs = graph.inputs.filter((entry) => entry !== input);
+  const remaining = graph.inputs[0];
+  if (remaining) {
+    remaining.gain.gain.value = 1;
+  }
+}
+
 async function teardownGraph(graph: RecorderGraph): Promise<void> {
+  navigator.mediaDevices.removeEventListener('devicechange', graph.onDeviceChange);
   graph.node.port.onmessage = null;
-  for (const source of graph.sources) {
+  for (const input of graph.inputs) {
+    if (input.track) {
+      input.track.onended = null;
+    }
     try {
-      source.disconnect();
+      input.source.disconnect();
     } catch {
       // The node may already be disconnected.
     }
-  }
-  for (const gain of graph.gains) {
     try {
-      gain.disconnect();
+      input.gain.disconnect();
     } catch {
       // The node may already be disconnected.
+    }
+    for (const track of input.stream.getTracks()) {
+      track.stop();
     }
   }
   try {
@@ -109,11 +178,6 @@ async function teardownGraph(graph: RecorderGraph): Promise<void> {
     graph.sink.disconnect();
   } catch {
     // The node may already be disconnected.
-  }
-  for (const stream of graph.streams) {
-    for (const track of stream.getTracks()) {
-      track.stop();
-    }
   }
   try {
     await graph.context.close();
@@ -142,6 +206,12 @@ export function useRecorder(): RecorderController {
   const levelErrorRef = useRef(false);
   const stopResolverRef = useRef<((stats: RecordingCaptureStats) => void) | null>(null);
   const lastStatsRef = useRef<RecordingCaptureStats | null>(null);
+  const captureSourceRef = useRef<InputSource | null>(null);
+  const captureDeviceIdsRef = useRef<{
+    microphone: string | null;
+    system: string | null;
+  } | null>(null);
+  const deviceLossReportedRef = useRef({ microphone: false, system: false });
 
   const refreshDevices = useCallback(async (): Promise<{
     microphones: InputDevice[];
@@ -254,6 +324,97 @@ export function useRecorder(): RecorderController {
     [],
   );
 
+  const reportInputLoss = useCallback(
+    (role: RecorderInput['role']) => {
+      const graph = graphRef.current;
+      const source = captureSourceRef.current;
+      if (!graph || !source) {
+        return;
+      }
+      if (deviceLossReportedRef.current[role]) {
+        return;
+      }
+      if (role === 'microphone' && source === 'system') {
+        return;
+      }
+      if (role === 'system' && source === 'microphone') {
+        return;
+      }
+      deviceLossReportedRef.current[role] = true;
+
+      const action = deviceLossAction(role, source);
+      const fatal = action === 'stop';
+      const message =
+        role === 'system'
+          ? 'BlackHole 2ch が切断されました。録音を停止してチャンクを保存します。'
+          : fatal
+            ? 'マイクが切断されました。録音を停止してチャンクを保存します。'
+            : 'マイクが切断されました。システム音声の録音を続けます。';
+      const event: RecordingEvent = {
+        at: new Date().toISOString(),
+        kind: 'device-lost',
+        device: role,
+        severity: fatal ? 'error' : 'warning',
+        message,
+      };
+
+      if (role === 'microphone' && !fatal) {
+        removeInput(graph, 'microphone');
+      }
+
+      void (async () => {
+        try {
+          const result = await window.kataribe.reportDeviceEvent(event);
+          if (fatal && !result.stopping) {
+            await window.kataribe.requestStopRecording();
+          }
+        } catch (reason: unknown) {
+          setWarning(`デバイスの切断を記録できませんでした: ${errorText(reason)}`);
+          if (fatal) {
+            try {
+              await window.kataribe.requestStopRecording();
+            } catch {
+              // The main process keeps the current state.
+            }
+          }
+        }
+      })();
+    },
+    [],
+  );
+
+  const detectDeviceLoss = useCallback(async () => {
+    const graph = graphRef.current;
+    const source = captureSourceRef.current;
+    const ids = captureDeviceIdsRef.current;
+    if (!graph || !source || !ids) {
+      return;
+    }
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const inputs = devices.filter((device) => device.kind === 'audioinput');
+      if (inputs.length === 0) {
+        return;
+      }
+      if (
+        source !== 'microphone' &&
+        ids.system &&
+        !inputs.some((device) => device.deviceId === ids.system)
+      ) {
+        reportInputLoss('system');
+      }
+      if (
+        source !== 'system' &&
+        ids.microphone &&
+        !inputs.some((device) => device.deviceId === ids.microphone)
+      ) {
+        reportInputLoss('microphone');
+      }
+    } catch (reason: unknown) {
+      setWarning(`入力デバイスの状態を確認できませんでした: ${errorText(reason)}`);
+    }
+  }, [reportInputLoss]);
+
   const startCapture = useCallback(
     async (inputSource: InputSource) => {
       if (graphRef.current) {
@@ -267,18 +428,33 @@ export function useRecorder(): RecorderController {
       levelErrorRef.current = false;
       stopResolverRef.current = null;
       lastStatsRef.current = null;
+      captureSourceRef.current = null;
+      captureDeviceIdsRef.current = null;
+      deviceLossReportedRef.current = { microphone: false, system: false };
 
       let streams: MediaStream[] = [];
       let context: AudioContext | null = null;
       let graph: RecorderGraph | null = null;
       let sessionStarted = false;
+      let managerStartAttempted = false;
+      let failureEvent: RecordingEvent | null = null;
+      let microphoneLabel: string | undefined;
+      let systemLabel: string | undefined;
 
       try {
+        const audioContext = new AudioContext({ latencyHint: 'playback' });
+        context = audioContext;
+        if (audioContext.state === 'running') {
+          await audioContext.suspend();
+        }
+
         const granted = await window.kataribe.requestMicrophone();
         if (!granted) {
-          throw new Error(
-            'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
-          );
+          setPermission('denied');
+          const message =
+            'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。';
+          failureEvent = makeEvent('permission-denied', 'microphone', 'error', message);
+          throw new Error(message);
         }
         setPermission('granted');
 
@@ -287,37 +463,62 @@ export function useRecorder(): RecorderController {
         const systemId = pickDeviceId(split.systemDevices, systemDeviceId);
         setMicDeviceId(micId);
         setSystemDeviceId(systemId);
+        microphoneLabel = split.microphones.find(
+          (device) => device.deviceId === micId,
+        )?.label;
+        systemLabel = split.systemDevices.find(
+          (device) => device.deviceId === systemId,
+        )?.label;
 
         const needsMicrophone = inputSource !== 'system';
         const needsSystem = inputSource !== 'microphone';
         if (needsMicrophone && !micId) {
-          throw new Error('マイクが見つかりません。マイクを接続してから再試行してください。');
+          const message = 'マイクが見つかりません。マイクを接続してから再試行してください。';
+          failureEvent = makeEvent('device-open-failed', 'microphone', 'error', message);
+          throw new Error(message);
         }
         if (needsSystem && !systemId) {
-          throw new Error(
-            'BlackHole 2ch が見つかりません。README の初期セットアップに従ってインストールしてください。',
-          );
+          const message =
+            'BlackHole 2ch が見つかりません。README の初期セットアップに従ってインストールしてください。';
+          failureEvent = makeEvent('device-open-failed', 'system', 'error', message);
+          throw new Error(message);
         }
 
+        const inputSpecs: Array<{
+          role: 'microphone' | 'system';
+          stream: MediaStream;
+        }> = [];
         if (needsMicrophone) {
-          streams.push(
-            await navigator.mediaDevices.getUserMedia(
+          let stream: MediaStream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(
               buildAudioConstraints(micId, 1),
-            ),
-          );
+            );
+          } catch (reason: unknown) {
+            if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
+              setPermission('denied');
+            }
+            failureEvent = mediaFailureEvent('microphone', reason);
+            throw reason;
+          }
+          streams.push(stream);
+          inputSpecs.push({ role: 'microphone', stream });
         }
         if (needsSystem) {
-          streams.push(
-            await navigator.mediaDevices.getUserMedia(
+          let stream: MediaStream;
+          try {
+            stream = await navigator.mediaDevices.getUserMedia(
               buildAudioConstraints(systemId, 2),
-            ),
-          );
-        }
-
-        const audioContext = new AudioContext({ latencyHint: 'playback' });
-        context = audioContext;
-        if (audioContext.state === 'running') {
-          await audioContext.suspend();
+            );
+          } catch (reason: unknown) {
+            if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
+              setPermission('denied');
+            }
+            failureEvent = mediaFailureEvent('system', reason);
+            throw reason;
+          }
+          streams.push(stream);
+          inputSpecs.push({ role: 'system', stream });
         }
 
         const workletUrl = new URL('recorder-worklet.js', window.location.href).href;
@@ -337,56 +538,70 @@ export function useRecorder(): RecorderController {
         node.connect(sink);
         sink.connect(audioContext.destination);
 
-        const gainValue = streams.length > 1 ? 0.5 : 1;
-        const sources: MediaStreamAudioSourceNode[] = [];
-        const gains: GainNode[] = [];
-        for (const stream of streams) {
-          const sourceNode = audioContext.createMediaStreamSource(stream);
+        const gainValue = inputSpecs.length > 1 ? 0.5 : 1;
+        const inputs: RecorderInput[] = [];
+        for (const spec of inputSpecs) {
+          const sourceNode = audioContext.createMediaStreamSource(spec.stream);
           const gain = audioContext.createGain();
           gain.gain.value = gainValue;
           sourceNode.connect(gain);
           gain.connect(node);
-          sources.push(sourceNode);
-          gains.push(gain);
+          const track = spec.stream.getAudioTracks()[0] ?? null;
+          const input: RecorderInput = {
+            role: spec.role,
+            stream: spec.stream,
+            source: sourceNode,
+            gain,
+            track,
+          };
+          if (track) {
+            track.onended = () => reportInputLoss(spec.role);
+          }
+          inputs.push(input);
         }
 
         node.port.onmessage = (event: MessageEvent) => {
           handleWorkletMessage(event.data as WorkletMessage);
         };
 
+        const onDeviceChange = () => {
+          void detectDeviceLoss();
+        };
+        navigator.mediaDevices.addEventListener('devicechange', onDeviceChange);
+
         graph = {
           context: audioContext,
           node,
           sink,
-          sources,
-          gains,
-          streams,
+          inputs,
+          onDeviceChange,
         };
         graphRef.current = graph;
+        captureSourceRef.current = inputSource;
+        captureDeviceIdsRef.current = {
+          microphone: needsMicrophone ? micId : null,
+          system: needsSystem ? systemId : null,
+        };
+        deviceLossReportedRef.current = { microphone: false, system: false };
 
+        managerStartAttempted = true;
         await window.kataribe.startRecording({
           inputSource,
           sampleRate: audioContext.sampleRate,
-          microphoneLabel: needsMicrophone
-            ? split.microphones.find((device) => device.deviceId === micId)?.label
-            : undefined,
-          systemLabel: needsSystem
-            ? split.systemDevices.find((device) => device.deviceId === systemId)?.label
-            : undefined,
+          microphoneLabel,
+          systemLabel,
         });
         sessionStarted = true;
         await audioContext.resume();
       } catch (reason: unknown) {
-        if (sessionStarted) {
-          try {
-            await window.kataribe.stopRecording();
-          } catch {
-            // The main process records the failed session as an error.
-          }
-        }
+        const event =
+          failureEvent ??
+          makeEvent('device-open-failed', 'unknown', 'error', recordingErrorText(reason));
 
         if (graph) {
+          graphRef.current = null;
           await teardownGraph(graph);
+          graph = null;
         } else {
           for (const stream of streams) {
             for (const track of stream.getTracks()) {
@@ -397,17 +612,62 @@ export function useRecorder(): RecorderController {
             await context.close().catch(() => undefined);
           }
         }
-
         graphRef.current = null;
-        const message = recordingErrorText(reason);
-        try {
-          await window.kataribe.reportRecordingError(message);
-        } catch {
-          setUiError(message);
+        captureSourceRef.current = null;
+        captureDeviceIdsRef.current = null;
+
+        if (sessionStarted) {
+          try {
+            await window.kataribe.reportDeviceEvent(event);
+          } catch {
+            // The error below keeps the failure visible.
+          }
+          try {
+            await window.kataribe.stopRecording();
+          } catch {
+            // The main process records the failed session as an error.
+          }
+          try {
+            await window.kataribe.reportRecordingError(event.message);
+          } catch {
+            setUiError(event.message);
+          }
+        } else if (managerStartAttempted) {
+          try {
+            await window.kataribe.reportRecordingError(event.message);
+          } catch {
+            setUiError(event.message);
+          }
+        } else {
+          try {
+            await window.kataribe.recordStartupFailure({
+              options: {
+                inputSource,
+                sampleRate: context?.sampleRate ?? 48000,
+                microphoneLabel,
+                systemLabel,
+              },
+              event,
+            });
+          } catch {
+            setUiError(event.message);
+            try {
+              await window.kataribe.reportRecordingError(event.message);
+            } catch {
+              // The local error is the fallback.
+            }
+          }
         }
       }
     },
-    [handleWorkletMessage, micDeviceId, refreshDevices, systemDeviceId],
+    [
+      detectDeviceLoss,
+      handleWorkletMessage,
+      micDeviceId,
+      refreshDevices,
+      reportInputLoss,
+      systemDeviceId,
+    ],
   );
 
   const stopCapture = useCallback(async () => {
@@ -422,6 +682,8 @@ export function useRecorder(): RecorderController {
       return;
     }
     graphRef.current = null;
+    captureSourceRef.current = null;
+    captureDeviceIdsRef.current = null;
 
     let stats = lastStatsRef.current ?? undefined;
     try {
@@ -445,6 +707,7 @@ export function useRecorder(): RecorderController {
       }
     } finally {
       await teardownGraph(graph);
+      deviceLossReportedRef.current = { microphone: false, system: false };
       await refreshRecoverable();
     }
   }, [refreshRecoverable, waitForWorkletStop]);
@@ -607,6 +870,14 @@ export function useRecorder(): RecorderController {
     }
   }, []);
 
+  const openMicrophoneSettings = useCallback(async () => {
+    try {
+      await window.kataribe.openMicrophoneSettings();
+    } catch (reason: unknown) {
+      setUiError(`システム設定を開けませんでした: ${errorText(reason)}`);
+    }
+  }, []);
+
   return {
     appState,
     permission,
@@ -626,6 +897,7 @@ export function useRecorder(): RecorderController {
     setInputSource,
     recover,
     openFolder,
+    openMicrophoneSettings,
     refreshRecoverable,
   };
 }

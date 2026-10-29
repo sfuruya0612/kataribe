@@ -129,6 +129,16 @@ export function isClipping(peak: number): boolean {
   return Number.isFinite(peak) && peak >= 0.99;
 }
 
+export function deviceLossAction(
+  role: 'microphone' | 'system',
+  source: InputSource,
+): 'continue' | 'stop' {
+  if (role === 'system') {
+    return 'stop';
+  }
+  return source === 'microphone' ? 'stop' : 'continue';
+}
+
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

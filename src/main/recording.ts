@@ -15,7 +15,9 @@ import type {
   InputSource,
   RecordingCaptureStats,
   RecordingChunk,
+  RecordingEvent,
   RecordingSession,
+  RecordingStartupFailureResult,
   RecordingState,
   RecordingStatus,
   RecordingStopResult,
@@ -68,6 +70,7 @@ type Meta = {
   chunks: MetaChunk[];
   expected_samples: number;
   actual_samples: number;
+  events?: RecordingEvent[];
   capture_stats?: MetaCaptureStats;
   audio_path?: string;
   app_version: string;
@@ -247,6 +250,17 @@ export class RecordingManager {
     return this.enqueue(() => this.recoverInternal(meetingId));
   }
 
+  recordEvent(event: RecordingEvent): Promise<boolean> {
+    return this.enqueue(() => this.recordEventInternal(event));
+  }
+
+  recordStartupFailure(
+    options: StartRecordingOptions,
+    event: RecordingEvent,
+  ): Promise<RecordingStartupFailureResult> {
+    return this.enqueue(() => this.recordStartupFailureInternal(options, event));
+  }
+
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationQueue.then(operation, operation);
     this.operationQueue = result.then(
@@ -295,6 +309,7 @@ export class RecordingManager {
       chunks: [],
       expected_samples: 0,
       actual_samples: 0,
+      events: [],
       app_version: this.appVersion,
     };
 
@@ -594,6 +609,78 @@ export class RecordingManager {
         : undefined,
       hadChunkFailure,
     };
+  }
+
+  private async recordEventInternal(event: RecordingEvent): Promise<boolean> {
+    const active = this.active;
+    if (!active) {
+      return false;
+    }
+    active.meta.events = active.meta.events ?? [];
+    active.meta.events.push(event);
+    try {
+      await writeMeta(active.metaPath, active.meta);
+      return true;
+    } catch (error) {
+      active.failed = true;
+      console.error(`failed to record recording event: ${errorMessage(error)}`);
+      throw error;
+    }
+  }
+
+  private async recordStartupFailureInternal(
+    options: StartRecordingOptions,
+    event: RecordingEvent,
+  ): Promise<RecordingStartupFailureResult> {
+    if (this.active) {
+      throw new Error('a recording is already in progress');
+    }
+    if (!Number.isFinite(options.sampleRate) || !Number.isInteger(options.sampleRate)) {
+      throw new Error('invalid sample rate');
+    }
+    if (options.sampleRate < 8000 || options.sampleRate > 192000) {
+      throw new Error('sample rate is out of range');
+    }
+    if (!['microphone', 'system', 'both'].includes(options.inputSource)) {
+      throw new Error('invalid input source');
+    }
+
+    const now = this.now();
+    const meetingDir = await this.createMeetingDir(now);
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta: Meta = {
+      schema_version: 1,
+      id: randomUUID(),
+      status: 'error',
+      title: 'タイトル未入力',
+      started_at: now.toISOString(),
+      ended_at: now.toISOString(),
+      duration: 0,
+      source: {
+        input: options.inputSource,
+        microphone: options.microphoneLabel,
+        system: options.systemLabel,
+      },
+      sample_rate: options.sampleRate,
+      channels: WAV_CHANNELS,
+      bits_per_sample: WAV_BITS_PER_SAMPLE,
+      chunks: [],
+      expected_samples: 0,
+      actual_samples: 0,
+      events: [event],
+      app_version: this.appVersion,
+    };
+
+    try {
+      await writeMeta(metaPath, meta);
+    } catch (error) {
+      await rm(meetingDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+
+    this.lastStatus = 'error';
+    this.lastMeetingDir = meetingDir;
+    return { meetingDir, metaPath };
   }
 
   private async createMeetingDir(now: Date): Promise<string> {

@@ -70,6 +70,6 @@ elapsedMs 120,001 と elapsedAudioSeconds 112.731 の差 7.27 秒が、スリー
 
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/m0/0003-system-audio/README.md`
-- `docs/issues/0012-feat-device-loss-and-permission-handling.md`
+- `docs/issues/closed/0012-feat-device-loss-and-permission-handling.md`
 - `docs/issues/0013-feat-release-checklist-and-entitlements.md`
 - `docs/prd/kataribe.md` の非機能要件

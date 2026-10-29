@@ -2,7 +2,11 @@ import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { RecordingCaptureStats, RecordingChunk } from '../shared/types';
+import type {
+  RecordingCaptureStats,
+  RecordingChunk,
+  RecordingEvent,
+} from '../shared/types';
 import { RecordingManager } from './recording';
 
 type Fixture = {
@@ -124,6 +128,7 @@ describe('RecordingManager', () => {
     expect(meta.chunks).toEqual([]);
     expect(meta.actual_samples).toBe(0);
     expect(meta.expected_samples).toBe(0);
+    expect(meta.events).toEqual([]);
     expect(meta.app_version).toBe('0.1.0');
     expect(meta.source).toEqual({
       input: 'both',
@@ -336,6 +341,94 @@ describe('RecordingManager', () => {
     expect(meta.audio_path).toBe('audio.wav');
     expect(meta.ended_at).toBe(new Date(2026, 9, 29, 15, 0, 0).toISOString());
     expect(await readdir(fixture.tempRoot)).toEqual([]);
+  });
+
+  it('records device events in meta.json', async () => {
+    const fixture = await createFixture();
+    const session = await fixture.manager.start({
+      inputSource: 'both',
+      sampleRate: 48000,
+    });
+    const event: RecordingEvent = {
+      at: new Date(2026, 9, 29, 14, 5, 35).toISOString(),
+      kind: 'device-lost',
+      device: 'microphone',
+      severity: 'warning',
+      message: 'マイクが切断されました。システム音声の録音を続けます。',
+    };
+
+    expect(await fixture.manager.recordEvent(event)).toBe(true);
+    let meta = await readMeta(session.meetingDir);
+    expect(meta.events).toEqual([event]);
+
+    await fixture.manager.appendChunk(createChunk(1, 100));
+    await fixture.manager.stop();
+    meta = await readMeta(session.meetingDir);
+    expect(meta.events).toEqual([event]);
+  });
+
+  it('creates an error meta for a failed start', async () => {
+    const fixture = await createFixture();
+    const event: RecordingEvent = {
+      at: new Date(2026, 9, 29, 14, 5, 30).toISOString(),
+      kind: 'permission-denied',
+      device: 'microphone',
+      severity: 'error',
+      message: 'マイクの使用が許可されていません。',
+    };
+
+    const failure = await fixture.manager.recordStartupFailure(
+      {
+        inputSource: 'microphone',
+        sampleRate: 48000,
+        microphoneLabel: 'FIFINE K670',
+      },
+      event,
+    );
+
+    expect(failure.meetingDir).toContain('2026-10-29_1405_タイトル未入力');
+    const meta = await readMeta(failure.meetingDir);
+    expect(meta.status).toBe('error');
+    expect(meta.duration).toBe(0);
+    expect(meta.chunks).toEqual([]);
+    expect(meta.events).toEqual([event]);
+    expect(meta.source).toEqual({
+      input: 'microphone',
+      microphone: 'FIFINE K670',
+    });
+    expect(fixture.manager.getState().status).toBe('error');
+    expect(fixture.manager.getLastMeetingDir()).toBe(failure.meetingDir);
+    expect((await stat(failure.metaPath)).mode & 0o777).toBe(0o600);
+  });
+
+  it('does not record an event without an active session', async () => {
+    const fixture = await createFixture();
+    expect(
+      await fixture.manager.recordEvent({
+        at: new Date().toISOString(),
+        kind: 'device-lost',
+        device: 'microphone',
+        severity: 'warning',
+        message: 'lost',
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects a startup failure while recording', async () => {
+    const fixture = await createFixture();
+    await fixture.manager.start({ inputSource: 'microphone', sampleRate: 48000 });
+    await expect(
+      fixture.manager.recordStartupFailure(
+        { inputSource: 'microphone', sampleRate: 48000 },
+        {
+          at: new Date().toISOString(),
+          kind: 'permission-denied',
+          device: 'microphone',
+          severity: 'error',
+          message: 'denied',
+        },
+      ),
+    ).rejects.toThrow('a recording is already in progress');
   });
 
   it('rejects an invalid meeting id during recovery', async () => {

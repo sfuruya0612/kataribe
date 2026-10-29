@@ -86,6 +86,38 @@ export type RecordingAppStatus =
   | 'encoding'
   | 'error';
 
+export type RecordingEventKind =
+  | 'permission-denied'
+  | 'device-lost'
+  | 'device-open-failed';
+
+export type RecordingEventDevice = 'microphone' | 'system' | 'output' | 'unknown';
+
+export type RecordingEventSeverity = 'warning' | 'error';
+
+export type RecordingEvent = {
+  at: string;
+  kind: RecordingEventKind;
+  device: RecordingEventDevice;
+  severity: RecordingEventSeverity;
+  message: string;
+};
+
+export type RecordingStartupFailure = {
+  options: StartRecordingOptions;
+  event: RecordingEvent;
+};
+
+export type RecordingStartupFailureResult = {
+  meetingDir: string;
+  metaPath: string;
+};
+
+export type RecordingDeviceEventResult = {
+  recorded: boolean;
+  stopping: boolean;
+};
+
 export type RecordingLevel = {
   peak: number;
   rms: number;
@@ -102,6 +134,7 @@ export type RecordingAppState = {
   chunkCount: number;
   lastResult: RecordingStopResult | null;
   lastMeetingDir: string | null;
+  notice: RecordingEvent | null;
   error: string | null;
 };
 

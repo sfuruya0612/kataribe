@@ -1,4 +1,5 @@
 import type { InputSource } from '../../shared/types';
+import type { InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
 
 type SettingsPanelProps = {
@@ -6,8 +7,11 @@ type SettingsPanelProps = {
   version: string;
   inputSource: InputSource;
   permission: PermissionState;
+  microphones: InputDevice[];
+  systemDevices: InputDevice[];
   onSetInputSource: (source: InputSource) => void;
   onRequestPermission: () => void;
+  onOpenMicrophoneSettings: () => void;
   onOpenReadme: () => void;
   onOpenBlackHoleSite: () => void;
   onShowAbout: () => void;
@@ -24,8 +28,11 @@ export function SettingsPanel({
   version,
   inputSource,
   permission,
+  microphones,
+  systemDevices,
   onSetInputSource,
   onRequestPermission,
+  onOpenMicrophoneSettings,
   onOpenReadme,
   onOpenBlackHoleSite,
   onShowAbout,
@@ -40,6 +47,9 @@ export function SettingsPanel({
           : permission === 'not-determined'
             ? '未確認'
             : '不明';
+  const microphoneAvailable = microphones.length > 0;
+  const systemAvailable = systemDevices.length > 0;
+  const permissionDenied = permission === 'denied' || permission === 'restricted';
 
   return (
     <section className="view-panel" aria-labelledby="settings-title">
@@ -59,19 +69,27 @@ export function SettingsPanel({
           </p>
           <fieldset className="source-picker settings-source">
             <legend>入力ソース</legend>
-            {sourceOptions.map((option) => (
-              <label className="source-option" key={option.value}>
-                <input
-                  type="radio"
-                  name="settings-input-source"
-                  value={option.value}
-                  checked={inputSource === option.value}
-                  onChange={() => onSetInputSource(option.value)}
-                  data-testid={`settings-source-${option.value}`}
-                />
-                <span>{option.label}</span>
-              </label>
-            ))}
+            {sourceOptions.map((option) => {
+              const unavailable =
+                permissionDenied ||
+                (option.value === 'microphone' && !microphoneAvailable) ||
+                (option.value === 'system' && !systemAvailable) ||
+                (option.value === 'both' && (!microphoneAvailable || !systemAvailable));
+              return (
+                <label className="source-option" key={option.value}>
+                  <input
+                    type="radio"
+                    name="settings-input-source"
+                    value={option.value}
+                    checked={inputSource === option.value}
+                    onChange={() => onSetInputSource(option.value)}
+                    disabled={unavailable}
+                    data-testid={`settings-source-${option.value}`}
+                  />
+                  <span>{option.label}</span>
+                </label>
+              );
+            })}
           </fieldset>
         </section>
 
@@ -118,14 +136,25 @@ export function SettingsPanel({
           <p className={`permission permission-${permission}`}>
             現在の状態: {permissionMessage}
           </p>
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={onRequestPermission}
-            disabled={permission === 'requesting' || permission === 'granted'}
-          >
-            マイク権限を確認する
-          </button>
+          <div className="setting-actions">
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={onRequestPermission}
+              disabled={permission === 'requesting' || permission === 'granted'}
+            >
+              マイク権限を確認する
+            </button>
+            {permissionDenied ? (
+              <button
+                type="button"
+                className="button button-secondary"
+                onClick={onOpenMicrophoneSettings}
+              >
+                システム設定を開く
+              </button>
+            ) : null}
+          </div>
         </section>
 
         <section className="setting-card setting-card-wide">

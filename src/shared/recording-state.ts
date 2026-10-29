@@ -12,6 +12,7 @@ export function createInitialRecordingAppState(): RecordingAppState {
     chunkCount: 0,
     lastResult: null,
     lastMeetingDir: null,
+    notice: null,
     error: null,
   };
 }

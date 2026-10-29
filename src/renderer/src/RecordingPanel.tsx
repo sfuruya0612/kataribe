@@ -1,6 +1,7 @@
 import type {
   InputSource,
   RecordingAppStatus,
+  RecordingEvent,
   RecordingSession,
 } from '../../shared/types';
 import {
@@ -18,6 +19,7 @@ type RecordingPanelProps = {
   error: string | null;
   warning: string | null;
   uiError: string | null;
+  notice: RecordingEvent | null;
   permission: PermissionState;
   microphones: InputDevice[];
   systemDevices: InputDevice[];
@@ -28,6 +30,7 @@ type RecordingPanelProps = {
   onRequestStart: () => void;
   onRequestStop: () => void;
   onRequestPermission: () => void;
+  onOpenMicrophoneSettings: () => void;
   onSetInputSource: (source: InputSource) => void;
 };
 
@@ -79,6 +82,7 @@ export function RecordingPanel({
   error,
   warning,
   uiError,
+  notice,
   permission,
   microphones,
   systemDevices,
@@ -89,6 +93,7 @@ export function RecordingPanel({
   onRequestStart,
   onRequestStop,
   onRequestPermission,
+  onOpenMicrophoneSettings,
   onSetInputSource,
 }: RecordingPanelProps) {
   const isRecording = status === 'recording';
@@ -99,6 +104,9 @@ export function RecordingPanel({
   const controlsDisabled = isRecording || isBusy;
   const sourceDisabled = isBusy;
   const sourceChanged = session !== null && session.inputSource !== inputSource;
+  const microphoneAvailable = microphones.length > 0;
+  const systemAvailable = systemDevices.length > 0;
+  const permissionDenied = permission === 'denied' || permission === 'restricted';
 
   const permissionMessage =
     permission === 'granted'
@@ -141,19 +149,27 @@ export function RecordingPanel({
 
       <fieldset className="source-picker" disabled={sourceDisabled}>
         <legend>入力ソース</legend>
-        {sourceOptions.map((option) => (
-          <label className="source-option" key={option.value}>
-            <input
-              type="radio"
-              name="input-source"
-              value={option.value}
-              checked={inputSource === option.value}
-              onChange={() => onSetInputSource(option.value)}
-              data-testid={`source-${option.value}`}
-            />
-            <span>{option.label}</span>
-          </label>
-        ))}
+        {sourceOptions.map((option) => {
+          const unavailable =
+            permissionDenied ||
+            (option.value === 'microphone' && !microphoneAvailable) ||
+            (option.value === 'system' && !systemAvailable) ||
+            (option.value === 'both' && (!microphoneAvailable || !systemAvailable));
+          return (
+            <label className="source-option" key={option.value}>
+              <input
+                type="radio"
+                name="input-source"
+                value={option.value}
+                checked={inputSource === option.value}
+                onChange={() => onSetInputSource(option.value)}
+                disabled={unavailable}
+                data-testid={`source-${option.value}`}
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
       </fieldset>
 
       {sourceChanged ? (
@@ -168,7 +184,12 @@ export function RecordingPanel({
           <select
             value={micDeviceId}
             onChange={(event) => onMicDeviceChange(event.target.value)}
-            disabled={controlsDisabled || !needsMicrophone || microphones.length === 0}
+            disabled={
+              controlsDisabled ||
+              permissionDenied ||
+              !needsMicrophone ||
+              microphones.length === 0
+            }
             data-testid="mic-select"
           >
             {microphones.length === 0 ? (
@@ -188,7 +209,12 @@ export function RecordingPanel({
           <select
             value={systemDeviceId}
             onChange={(event) => onSystemDeviceChange(event.target.value)}
-            disabled={controlsDisabled || !needsSystem || systemDevices.length === 0}
+            disabled={
+              controlsDisabled ||
+              permissionDenied ||
+              !needsSystem ||
+              systemDevices.length === 0
+            }
             data-testid="system-select"
           >
             {systemDevices.length === 0 ? (
@@ -216,13 +242,38 @@ export function RecordingPanel({
             マイク権限を確認する
           </button>
         ) : null}
+        {permissionDenied ? (
+          <button
+            type="button"
+            className="link-button"
+            onClick={onOpenMicrophoneSettings}
+            disabled={controlsDisabled}
+          >
+            システム設定を開く
+          </button>
+        ) : null}
       </div>
+
+      {permissionDenied ? (
+        <div className="alert alert-error" role="alert">
+          マイク権限が拒否されています。システム設定の「プライバシーとセキュリティ」&gt;「マイク」で
+          Kataribe を許可してください。
+        </div>
+      ) : null}
+
+      {needsMicrophone && !microphoneAvailable ? (
+        <p className="hint">
+          マイクが見つかりません。マイクを接続し、マイク権限を確認してください。
+        </p>
+      ) : null}
 
       {needsSystem && systemDevices.length === 0 ? (
         <p className="hint">
           BlackHole 2ch が見つかりません。設定画面のセットアップ手順を確認してください。
         </p>
       ) : null}
+
+
 
       <div className="recorder-actions">
         {isRecording || status === 'stopping' ? (
@@ -253,9 +304,19 @@ export function RecordingPanel({
         ) : null}
       </div>
 
-      {error ? (
+      {error && !permissionDenied ? (
         <p className="alert alert-error" role="alert">
           {error}
+        </p>
+      ) : null}
+      {notice && notice.message !== error ? (
+        <p
+          className={`alert ${
+            notice.severity === 'error' ? 'alert-error' : 'alert-warning'
+          }`}
+          role="status"
+        >
+          {notice.message}
         </p>
       ) : null}
       {uiError ? (

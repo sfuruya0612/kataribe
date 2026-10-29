@@ -8,9 +8,13 @@ import type {
   RecordingCaptureStats,
   RecordingChunk,
   RecordingCommand,
+  RecordingDeviceEventResult,
+  RecordingEvent,
   RecordingLevelUpdate,
   RecordingRequestResult,
   RecordingSession,
+  RecordingStartupFailure,
+  RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
@@ -44,6 +48,12 @@ declare global {
       ) => Promise<RecordingStopResult>;
       reportRecordingLevel: (update: RecordingLevelUpdate) => Promise<void>;
       reportRecordingError: (message: string) => Promise<void>;
+      reportDeviceEvent: (
+        event: RecordingEvent,
+      ) => Promise<RecordingDeviceEventResult>;
+      recordStartupFailure: (
+        payload: RecordingStartupFailure,
+      ) => Promise<RecordingStartupFailureResult>;
       listRecoverableRecordings: () => Promise<RecoverableRecording[]>;
       recoverRecording: (meetingId: string) => Promise<RecordingStopResult>;
       openRecordingFolder: () => Promise<void>;
@@ -51,6 +61,7 @@ declare global {
       closeWindow: () => Promise<void>;
       openReadme: () => Promise<void>;
       openBlackHoleSite: () => Promise<void>;
+      openMicrophoneSettings: () => Promise<void>;
       ready: () => void;
     };
   }

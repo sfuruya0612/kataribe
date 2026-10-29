@@ -2,6 +2,7 @@ import { createInitialRecordingAppState } from '../shared/recording-state';
 import type {
   InputSource,
   RecordingAppState,
+  RecordingEvent,
   RecordingLevel,
   RecordingLevelUpdate,
   RecordingSession,
@@ -30,6 +31,7 @@ export class RecordingStateStore {
   private chunkCount = 0;
   private lastResult: RecordingStopResult | null = null;
   private lastMeetingDir: string | null = null;
+  private notice: RecordingEvent | null = null;
   private error: string | null = null;
   private readonly now: () => number;
   private readonly onStateChange: (state: RecordingAppState) => void;
@@ -53,6 +55,7 @@ export class RecordingStateStore {
       chunkCount: this.chunkCount,
       lastResult: this.lastResult,
       lastMeetingDir: this.lastMeetingDir,
+      notice: this.notice,
       error: this.error,
     };
   }
@@ -102,6 +105,7 @@ export class RecordingStateStore {
     this.captureStats = null;
     this.chunkCount = 0;
     this.lastResult = null;
+    this.notice = null;
     this.error = null;
     this.emitState();
     return true;
@@ -121,6 +125,7 @@ export class RecordingStateStore {
     this.level = null;
     this.captureStats = null;
     this.chunkCount = 0;
+    this.notice = null;
     this.error = null;
     this.emitState();
   }
@@ -165,7 +170,27 @@ export class RecordingStateStore {
     this.level = null;
     this.captureStats = null;
     this.lastResult = null;
+    this.notice = null;
     this.error = message;
+    this.emitState();
+  }
+
+  markStartupFailure(event: RecordingEvent, meetingDir: string): void {
+    this.status = 'error';
+    this.session = null;
+    this.startedAtMs = null;
+    this.level = null;
+    this.captureStats = null;
+    this.chunkCount = 0;
+    this.lastResult = null;
+    this.lastMeetingDir = meetingDir;
+    this.notice = event;
+    this.error = event.message;
+    this.emitState();
+  }
+
+  setNotice(event: RecordingEvent): void {
+    this.notice = event;
     this.emitState();
   }
 

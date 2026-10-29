@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-29
 優先度: P0
 対応 ADR: ADR-0002 (docs/adr/0002-web-audio-recording-and-chunks.md)、ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0012 (docs/adr/0012-menu-bar-and-main-window.md)
 関連 PRD: R-2、R-3、非機能要件の録音の信頼性と権限
@@ -52,6 +53,52 @@ BlackHole の消失、USB マイクの抜去、マイク権限の拒否を検出
 - 別の入力へ自動で切り替わらない。
 - `meta.json` にデバイス消失と権限拒否の時刻と種類が残る。
 - 録音中に音声出力を外した場合は、issue 0002 の無音検出と矛盾しない。
+
+## 解決方法
+
+2026-10-29 にデバイス消失と権限拒否の処理を実装した。
+
+- `RecordingEvent` を追加した。
+  種類は `permission-denied`、`device-lost`、`device-open-failed` とし、デバイス、重要度、時刻、メッセージを持つ。
+- `RecordingManager.recordEvent` を追加した。
+  録音中に発生したイベントを `meta.json` の `events` に追記する。
+  `RecordingManager.recordStartupFailure` は、録音を開始できなかった場合の `meta.json` を `status: error` で作る。
+  どちらも一時ファイル、fsync、rename で書き込む。
+- Renderer で各入力トラックの `ended` と `navigator.mediaDevices` の `devicechange` を監視する。
+  選択中のデバイス ID が入力一覧から消えた場合も消失として扱う。
+- BlackHole 2ch が消失した場合と、マイクだけを選んでいてマイクが消失した場合は、メインプロセスが録音を停止する。
+  Renderer は停止コマンドを受けて最終チャンクを保存する。
+- マイクとシステム音声の両方を録音中にマイクが消失した場合は、マイクトラックだけを外し、システム音声の録音を続ける。
+  残ったシステム音声のゲインを 1 に戻す。
+- 入力ソースは自動で切り替えない。
+- マイク権限が拒否された場合は、マイク権限の警告と「システム設定を開く」ボタンを表示する。
+  権限を確認できた場合は、録音開始を再試行できる。
+- BlackHole 2ch が見つからない場合と、マイクが見つからない場合は、該当する入力ソースの選択肢を無効にする。
+  録音開始時にデバイスを開けなかった場合は、`device-open-failed` のイベントを `meta.json` に残す。
+- メインウィンドウの録音パネルに、デバイス消失の警告と権限拒否の案内を表示する。
+
+確認結果:
+
+- `npm run typecheck`: 成功。
+- `npm test`: 77 件成功。
+  デバイス消失の判定、`meta.json` のイベント、起動失敗のメタ、状態ストアをテストする。
+- `npm run build`、`npm run smoke`、`npm run test:window`: 成功。
+- 開発版の実機確認:
+  - `devicechange` でマイクを入力一覧から外すと、警告が表示され、録音中のステータスは `recording` のままだった。
+  - その後 BlackHole 2ch を入力一覧から外すと、録音が停止し、883,840 サンプル、2 チャンクを保存した。
+  - `meta.json` にマイク消失と BlackHole 消失の 2 件のイベントが残った。
+  - マイクだけを選んで録音中にマイクを外すと、録音が停止し、1,215,616 サンプルを保存した。
+  - `getUserMedia` が `NotAllowedError` を返す状態で録音を開始すると、`permission-denied` のメタが作られ、マイク権限の警告とシステム設定へのボタンが表示された。
+    マイクの入力ソースは無効になった。
+  - BlackHole 2ch を入力一覧から外した状態で録音を開始すると、`device-open-failed` のメタが作られた。
+- 物理的な USB マイクの抜去と BlackHole 2ch の削除は未実施である。
+  リリース前にリリースチェックリストの実機項目で確認する。
+
+残っている作業:
+
+- 音声出力を Multi-Output Device から外したときの無音警告は issue 0002 で扱う。
+- 60 分の連続録音は issue 0006 の回帰テストで確認する。
+- 物理的なデバイス抜去の確認はリリースチェックリストで行う。
 
 ## 参照
 

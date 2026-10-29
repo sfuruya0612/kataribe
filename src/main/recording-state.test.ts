@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type {
   RecordingAppState,
+  RecordingEvent,
   RecordingLevelUpdate,
   RecordingSession,
   RecordingStopResult,
@@ -35,6 +36,14 @@ const result: RecordingStopResult = {
     currentTime: 1,
   },
   hadChunkFailure: false,
+};
+
+const event: RecordingEvent = {
+  at: '2026-10-29T05:06:00.000Z',
+  kind: 'device-lost',
+  device: 'microphone',
+  severity: 'warning',
+  message: 'マイクが切断されました。',
 };
 
 const level: RecordingLevelUpdate = {
@@ -82,6 +91,7 @@ describe('RecordingStateStore', () => {
       level: null,
       chunkCount: 0,
       lastResult: null,
+      notice: null,
       error: null,
     });
 
@@ -193,6 +203,35 @@ describe('RecordingStateStore', () => {
     expect(store.canStart()).toBe(true);
     expect(store.startRequested()).toBe(true);
     expect(store.getState().error).toBeNull();
+  });
+
+  it('stores and clears device notices', () => {
+    const { store, states } = createStore();
+    store.startRequested('both');
+    store.setNotice(event);
+
+    expect(store.getState().notice).toEqual(event);
+    expect(states.at(-1)?.notice).toEqual(event);
+
+    store.markRecording(session);
+    expect(store.getState().notice).toBeNull();
+  });
+
+  it('marks a startup failure with the event and meeting folder', () => {
+    const { store } = createStore();
+    store.startRequested('both');
+    store.markStartupFailure(event, session.meetingDir);
+
+    expect(store.getState()).toMatchObject({
+      status: 'error',
+      session: null,
+      chunkCount: 0,
+      lastResult: null,
+      lastMeetingDir: session.meetingDir,
+      notice: event,
+      error: event.message,
+    });
+    expect(store.canStart()).toBe(true);
   });
 
   it('ignores levels when no recording is active', () => {

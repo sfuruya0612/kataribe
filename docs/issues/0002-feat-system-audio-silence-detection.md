@@ -63,6 +63,6 @@ R-3 は Should だが、M0 で出力変更による無音が確認されたた�
 
 - `docs/adr/0003-system-audio-virtual-device.md` の「結果」
 - `docs/adr/0002-web-audio-recording-and-chunks.md` の「結果」
-- `docs/issues/0012-feat-device-loss-and-permission-handling.md`
+- `docs/issues/closed/0012-feat-device-loss-and-permission-handling.md`
 - `docs/m0/0003-system-audio/README.md`
 - `docs/prd/kataribe.md` の R-3、非機能要件

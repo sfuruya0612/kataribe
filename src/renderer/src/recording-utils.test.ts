@@ -3,6 +3,7 @@ import type { RecordingCaptureStats } from '../../shared/types';
 import {
   buildAudioConstraints,
   deviceLabel,
+  deviceLossAction,
   errorText,
   formatDateTime,
   recordingErrorText,
@@ -156,6 +157,18 @@ describe('formatDateTime', () => {
   it('formats a valid ISO timestamp and preserves invalid values', () => {
     expect(formatDateTime('2026-10-29T05:05:00.000Z')).toContain('2026');
     expect(formatDateTime('not a date')).toBe('not a date');
+  });
+});
+
+describe('deviceLossAction', () => {
+  it('stops for system audio loss and microphone-only loss', () => {
+    expect(deviceLossAction('system', 'both')).toBe('stop');
+    expect(deviceLossAction('system', 'system')).toBe('stop');
+    expect(deviceLossAction('microphone', 'microphone')).toBe('stop');
+  });
+
+  it('continues with system audio when the microphone is lost', () => {
+    expect(deviceLossAction('microphone', 'both')).toBe('continue');
   });
 });
 

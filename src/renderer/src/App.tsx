@@ -111,6 +111,7 @@ export default function App() {
           error={appState.error}
           warning={recorder.warning}
           uiError={recorder.uiError}
+          notice={appState.notice}
           permission={recorder.permission}
           microphones={recorder.microphones}
           systemDevices={recorder.systemDevices}
@@ -121,6 +122,7 @@ export default function App() {
           onRequestStart={() => void recorder.requestStart()}
           onRequestStop={() => void recorder.requestStop()}
           onRequestPermission={() => void recorder.requestPermission()}
+          onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
           onSetInputSource={(source) => void recorder.setInputSource(source)}
         />
         <LevelPanel status={appState.status} chunkCount={appState.chunkCount} />
@@ -189,8 +191,11 @@ export default function App() {
               version={info?.version ?? '0.1.0'}
               inputSource={appState.inputSource}
               permission={recorder.permission}
+              microphones={recorder.microphones}
+              systemDevices={recorder.systemDevices}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
               onRequestPermission={() => void recorder.requestPermission()}
+              onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
               onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
               onOpenBlackHoleSite={() =>
                 void runShellAction(() => window.kataribe.openBlackHoleSite())

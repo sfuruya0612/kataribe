@@ -13,7 +13,7 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 ## ステータス
 
 開発中です。
-アプリ基盤、録音中核、メニューバー、会議一覧、会議詳細、設定の土台は実装済みです。
+アプリ基盤、録音中核、メニューバー、会議一覧、会議詳細、設定の土台、デバイス消失と権限拒否の処理は実装済みです。
 M0 のシステム音声検証は完了しています。
 会議一覧と会議詳細の本実装、設定値の保存、mp3 への変換、文字起こし、要約はまだ実装されていません。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
@@ -176,6 +176,11 @@ npm run package
 mp3 と 16 kHz wav の生成はまだ実装していません。
 録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
 
+録音中に BlackHole 2ch が消えた場合は、録音を停止してチャンクを保存します。
+録音中にマイクだけが消えた場合は、システム音声の録音を続け、警告を表示します。
+入力ソースは自動で切り替えません。
+デバイスの消失と権限拒否の時刻と種類は `meta.json` に記録します。
+
 会議一覧、会議詳細、設定は画面の土台だけを実装しています。
 会議一覧と会議詳細の本実装、設定値の保存、モデルのダウンロードは次の issue で追加します。
 設定画面の入力ソースは、メニューバーとメインウィンドウの録音パネルに同期します。
@@ -195,6 +200,7 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 ## 権限
 
 - マイク: 入力デバイスの検出とマイク録音に使います。初回の入力デバイス検出時または録音開始時に要求します。システム音声だけを使う場合も、BlackHole 2ch の検出のためにマイク権限が必要です。
+  権限を拒否した場合は、録音パネルと設定画面からシステム設定のマイクを開けます。
 - 書類フォルダ: 会議の保存先に使います。
 - 画面収録: 使いません。Kataribe は画面収録権限を要求しません。
 
@@ -277,6 +283,6 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
-アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md) は実装済みです。
-次は issue 0012 以降を進めます。
+アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md) は実装済みです。
+次は issue 0013 以降を進めます。
 保留中の issue は `docs/issues/pending/` にあります。

@@ -8,9 +8,13 @@ import type {
   RecordingCaptureStats,
   RecordingChunk,
   RecordingCommand,
+  RecordingDeviceEventResult,
+  RecordingEvent,
   RecordingLevelUpdate,
   RecordingRequestResult,
   RecordingSession,
+  RecordingStartupFailure,
+  RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
@@ -56,6 +60,12 @@ const api = {
     ipcRenderer.invoke('recording:level', update),
   reportRecordingError: (message: string): Promise<void> =>
     ipcRenderer.invoke('recording:capture-error', message),
+  reportDeviceEvent: (event: RecordingEvent): Promise<RecordingDeviceEventResult> =>
+    ipcRenderer.invoke('recording:device-event', event),
+  recordStartupFailure: (
+    payload: RecordingStartupFailure,
+  ): Promise<RecordingStartupFailureResult> =>
+    ipcRenderer.invoke('recording:startup-failure', payload),
   listRecoverableRecordings: (): Promise<RecoverableRecording[]> =>
     ipcRenderer.invoke('recording:list-recoverable'),
   recoverRecording: (meetingId: string): Promise<RecordingStopResult> =>
@@ -66,6 +76,8 @@ const api = {
   closeWindow: (): Promise<void> => ipcRenderer.invoke('app:close-window'),
   openReadme: (): Promise<void> => ipcRenderer.invoke('app:open-readme'),
   openBlackHoleSite: (): Promise<void> => ipcRenderer.invoke('app:open-blackhole'),
+  openMicrophoneSettings: (): Promise<void> =>
+    ipcRenderer.invoke('app:open-microphone-settings'),
   ready: (): void => {
     ipcRenderer.send('app:renderer-ready');
   },

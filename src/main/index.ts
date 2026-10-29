@@ -17,8 +17,12 @@ import type {
   RecordingCaptureStats,
   RecordingChunk,
   RecordingCommand,
+  RecordingDeviceEventResult,
+  RecordingEvent,
   RecordingLevelUpdate,
   RecordingRequestResult,
+  RecordingStartupFailure,
+  RecordingStartupFailureResult,
   StartRecordingOptions,
 } from '../shared/types';
 import { RecordingCoordinator } from './recording-coordinator';
@@ -289,6 +293,12 @@ function registerIpc(recordingManager: RecordingManager): void {
     await shell.openExternal(BLACKHOLE_URL);
   });
 
+  ipcMain.handle('app:open-microphone-settings', async (): Promise<void> => {
+    await shell.openExternal(
+      'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+    );
+  });
+
   ipcMain.handle('permissions:microphone-status', (): MicrophonePermissionStatus => {
     return systemPreferences.getMediaAccessStatus(
       'microphone',
@@ -380,6 +390,50 @@ function registerIpc(recordingManager: RecordingManager): void {
   ipcMain.handle('recording:level', (_event, update: RecordingLevelUpdate) => {
     stateStore.setLevel(update);
   });
+
+  ipcMain.handle(
+    'recording:device-event',
+    async (_event, event: RecordingEvent): Promise<RecordingDeviceEventResult> => {
+      const status = stateStore.getStatus();
+      if (status !== 'recording' && status !== 'stopping') {
+        return { recorded: false, stopping: false };
+      }
+
+      let recorded = false;
+      try {
+        recorded = await recordingManager.recordEvent(event);
+      } catch (error) {
+        console.error('failed to record device event', error);
+      }
+      stateStore.setNotice(event);
+
+      const sessionSource = stateStore.getState().session?.inputSource;
+      const fatal =
+        event.device === 'system' ||
+        (event.device === 'microphone' && sessionSource === 'microphone');
+      if (fatal && status === 'recording') {
+        const result = coordinator.stop();
+        return { recorded, stopping: result.accepted };
+      }
+      return { recorded, stopping: false };
+    },
+  );
+
+  ipcMain.handle(
+    'recording:startup-failure',
+    async (_event, payload: RecordingStartupFailure): Promise<RecordingStartupFailureResult> => {
+      const status = stateStore.getStatus();
+      if (status !== 'starting' && !stateStore.canStart()) {
+        throw new Error('recording cannot be started');
+      }
+      const failure = await recordingManager.recordStartupFailure(
+        payload.options,
+        payload.event,
+      );
+      stateStore.markStartupFailure(payload.event, failure.meetingDir);
+      return failure;
+    },
+  );
 
   ipcMain.handle('recording:capture-error', (_event, message: string) => {
     const status = stateStore.getStatus();
