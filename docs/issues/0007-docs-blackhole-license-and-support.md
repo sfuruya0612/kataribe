@@ -5,7 +5,7 @@ Model: DeepSeek V4.1 Flash 1017
 優先度: P2
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)
 関連 PRD: 非機能要件のプライバシー、配布、権限
-依存: 0001
+依存: 0010、0011、0013
 
 ## 背景
 
@@ -20,24 +20,40 @@ BlackHole 2ch のライセンスと配布の条件を明確にし、利用者向
 
 ## やること
 
-- アプリ内の設定画面と About 画面に、BlackHole 2ch を同梱していないこと、GPLv3 のソフトウェアであること、公式の配布元を表示する。
-- 対応する BlackHole 2ch のバージョンを固定し、インストール手順とアンインストール手順を書く。
-- Multi-Output Device の作成、出力の選択、テスト録音、音が出ない場合のトラブルシュートを、スクリーンショット付きで整理する。
-- Bluetooth ヘッドホンで HFP に切り替わる問題と、入力に AirPods を選ばない推奨を書く。
+- README と About 画面に、BlackHole 2ch を同梱していないこと、GPLv3 のソフトウェアであること、公式の配布元を表示する。
+  About 画面は ADR-0015 で定義されている。
+  BlackHole 2ch を再配布しないため GPLv3 の表示義務は生じないが、利用者が入手先を確認できるよう出典を書く。
+- 動作確認済みの BlackHole 2ch のバージョンを明記し、インストール手順とアンインストール手順を書く。
+- README に、Multi-Output Device の作成、出力の選択、短いテスト録音、音が出ない場合のトラブルシュートを、スクリーンショット付きで整理する。
+- README に、Multi-Output Device の主デバイスをスピーカーまたはヘッドホンにすること、Bluetooth 出力で音が飛ぶ場合の Drift Correction、Multi-Output Device では音量キーが効かない場合があることを書く。
+- README に、Bluetooth の品質と推奨構成を書く。
+  - AirPods では、Bluetooth 出力は A2DP の 48 kHz ステレオ、Bluetooth 入力は HFP の 24 kHz モノラルになる。
+    これは M0 で確認した値であり、機種とファームウェアは記録していない。
+  - Bluetooth ヘッドホンのマイクを入力に使うと、macOS は HFP に切り替え、出力も HFP に切り替わり品質が下がる。
+  - HFP は、Kataribe のマイクだけでなく、macOS の既定入力や会議アプリのマイクが AirPods を開いた場合にも起きる。
+  - システム音声とマイクを同時に録る場合の推奨構成は、出力に AirPods などの Bluetooth ヘッドホン、入力に内蔵マイクまたは USB マイクを使うこと。
+  - Multi-Output Device には Bluetooth 出力と BlackHole 2ch を入れ、macOS の音声出力に設定する。
+  - macOS の既定入力、会議アプリのマイク、Kataribe のマイクを、内蔵マイクまたは USB マイクにする。
+  - Kataribe のシステム音声入力は BlackHole 2ch にする。
+  - Bluetooth ヘッドホンを入力と出力の両方に使わない。
+  - 接続した状態で Multi-Output Device を作成し、切断したら再接続して出力を選び直す。遅延があることも書く。
 - 出力デバイスを変更したときに、システム音声が届かなくなることを書く。
 - macOS のアップデート後に BlackHole が見つからない場合の再インストール手順を書く。
 - 配布物に BlackHole のバイナリやインストーラを含めないことを、リリースチェックリストで確認する。
+- README の手順どおりに Multi-Output Device を作り、録音を 1 回通す。
 
 ## 完了条件
 
-- 設定画面と About 画面に、BlackHole のライセンスと公式の配布元が表示される。
-- インストール、設定、アンインストール、トラブルシュートの手順が `docs/` にある。
+- README と About 画面に、BlackHole 2ch を同梱していないこと、GPLv3 であること、公式の配布元が書かれている。
+- インストール、設定、アンインストール、トラブルシュートの手順が利用者向けの README にある。
+- README に、Bluetooth 入力の HFP による品質低下と、Bluetooth 出力 + 内蔵/USB マイクの推奨構成、macOS の既定入力と会議アプリのマイクの設定が書かれている。
+- README の手順どおりに作った Multi-Output Device で、録音を 1 回通せる。
 - リリースチェックリストに、BlackHole を同梱していないことの確認がある。
-- AirPods と Multi-Output Device の注意点が、利用者向けの文書に含まれている。
 
 ## 参照
 
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/adr/0014-distribution-dmg-notarization.md`
+- `docs/issues/0013-feat-release-checklist-and-entitlements.md`
 - `docs/m0/0003-system-audio/README.md`
 - `docs/prd/kataribe.md` の非機能要件

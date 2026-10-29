@@ -1,0 +1,26 @@
+appId: com.kataribe.app
+productName: Kataribe
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+asar: true
+afterPack: scripts/after-pack.cjs
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    CFBundleDisplayName: Kataribe 会議録
+    CFBundleName: Kataribe
+    NSMicrophoneUsageDescription: 会議のマイク音声を録音するために使用します。
+    NSDocumentsFolderUsageDescription: 会議の録音と文字起こしを保存するために使用します。
+    LSMinimumSystemVersion: "14.2"
+dmg:
+  artifactName: Kataribe-${version}-${arch}.${ext}
+  title: Kataribe ${version}

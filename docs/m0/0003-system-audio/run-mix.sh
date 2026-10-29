@@ -84,7 +84,7 @@ fi
 echo "マイク + BlackHole 2ch のミックスを測定する。measureMs=$MEASURE_MS toneSeconds=$TONE_SECONDS output=$OUTPUT_NAME"
 KATARIBE_M0_MODE=mix KATARIBE_M0_MEASURE_MS="$MEASURE_MS" npx --yes electron@45.1.0 . || true
 
-WAIT_SECONDS=$(( MEASURE_MS / 1000 + 120 ))
+WAIT_SECONDS="${KATARIBE_M0_WAIT_SECONDS:-$(( MEASURE_MS / 1000 + 120 ))}"
 for _ in $(seq 1 "$WAIT_SECONDS"); do
   if [[ -f "$LOG" ]] && grep -q '"phase":"mix_summary"' "$LOG"; then
     break

@@ -5,12 +5,16 @@ const {
   session,
   systemPreferences,
   ipcMain,
+  powerMonitor,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const MODE = process.env.KATARIBE_M0_MODE || 'display';
 const MEASURE_MS = Number(process.env.KATARIBE_M0_MEASURE_MS || 5000);
+const WATCHDOG_MS = Number(
+  process.env.KATARIBE_M0_WATCHDOG_MS || Math.max(180000, MEASURE_MS + 120000),
+);
 let logPath;
 
 function log(event, payload = {}) {
@@ -31,6 +35,7 @@ app.whenReady().then(async () => {
   log('app_ready', {
     mode: MODE,
     measureMs: MEASURE_MS,
+    watchdogMs: WATCHDOG_MS,
     platform: process.platform,
     arch: process.arch,
     electron: process.versions.electron,
@@ -39,6 +44,13 @@ app.whenReady().then(async () => {
     screenAccess: systemPreferences.getMediaAccessStatus('screen'),
     microphoneAccess: systemPreferences.getMediaAccessStatus('microphone'),
     logPath,
+  });
+
+  powerMonitor.on('suspend', () => {
+    log('power_suspend');
+  });
+  powerMonitor.on('resume', () => {
+    log('power_resume');
   });
 
   const win = new BrowserWindow({
@@ -81,6 +93,20 @@ app.whenReady().then(async () => {
     );
   }
 
+  ipcMain.handle('m0:askMicrophone', async () => {
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+    log('microphone_permission', { status });
+    if (status === 'granted') {
+      return true;
+    }
+    if (status === 'denied' || status === 'restricted') {
+      return false;
+    }
+    const granted = await systemPreferences.askForMediaAccess('microphone');
+    log('microphone_permission_result', { granted });
+    return granted;
+  });
+
   ipcMain.on('m0:report', (_event, payload) => {
     log('renderer', payload);
     if (payload && payload.done) {
@@ -114,4 +140,4 @@ app.on('window-all-closed', () => {
 setTimeout(() => {
   log('watchdog_timeout');
   app.quit();
-}, Math.max(180000, MEASURE_MS + 120000));
+}, WATCHDOG_MS);

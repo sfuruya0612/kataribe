@@ -5,7 +5,7 @@ Model: DeepSeek V4.1 Flash 1017
 優先度: P1
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)
 関連 PRD: 非機能要件の権限、R-2
-依存: 0001
+依存: 0009、0013
 
 ## 背景
 
@@ -36,8 +36,15 @@ MVP の権限要求をマイクと書類フォルダだけに整理し、desktop
 - マイク権限と書類フォルダ権限だけで録音できる。
 - リリースチェックリストに、画面収録権限を要求しないことの確認が入る。
 
+## pending にした理由
+
+アプリ基盤の issue 0009 ができるまで、削除する desktopCapturer のコードも `Info.plist` も存在しない。
+0013 で署名済みビルドの権限検証を行うため、この issue の画面収録権限の確認と重複する。
+0009 と 0013 の完了後に、MVP のコードに desktopCapturer の経路が残っていないかの確認として再開する。
+
 ## 参照
 
 - `docs/adr/0003-system-audio-virtual-device.md`
 - `docs/adr/0014-distribution-dmg-notarization.md`
+- `docs/issues/0013-feat-release-checklist-and-entitlements.md`
 - `docs/prd/kataribe.md` の非機能要件

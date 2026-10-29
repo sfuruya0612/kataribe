@@ -19,6 +19,8 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
 
 - 配布には electron-builder を使い、DMG を作る。
 - アプリは Apple Developer ID Application の証明書で署名し、hardened runtime を有効にする。
+  hardened runtime の entitlement に `com.apple.security.device.audio-input` を含める。
+  マイクと BlackHole 2ch の取得に必要である。
 - 公証は Apple の公証サービスに提出し、発行されたチケットをアプリに添付する。
   DMG 自体にも署名し、配布前に Gatekeeper の検査を通す。
 - Apple Silicon 向けの arm64 の DMG を出す。
@@ -33,6 +35,7 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
   preload の API と IPC の引数はメインプロセスで検証する（ADR-0001、ADR-0013）。
 - `extraResources` は arm64 用の ffmpeg と whisper.cpp を含める。
 - `Info.plist` に `LSMinimumSystemVersion` を設定し、macOS 14.2 Sonoma 以降を対象にする。
+  検証済みは macOS 26.7.1 のみとし、macOS 14.2 から 26.7.0 はベストエフォートとする。
   マイクと書類フォルダの利用目的として、`NSMicrophoneUsageDescription` と `NSDocumentsFolderUsageDescription` を記載する。
   システム音声は BlackHole 2ch などの仮想オーディオデバイスを入力として使うため、画面収録権限とシステム音声録音権限は要求しない（ADR-0003）。
 - アプリのバージョンはセマンティックバージョニングとし、ビルド番号を別に持つ。
@@ -47,6 +50,7 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
   - Gatekeeper の警告なしに起動できる。
   - マイクの権限を要求できる。
   - BlackHole 2ch を入力デバイスとして検出し、システム音声を録音できる。
+  - 画面収録権限のダイアログが出ない。
   - ffmpeg と whisper.cpp を子プロセスとして起動できる。
   - モデルをダウンロードして文字起こしができる。
   - アプリを終了したときに子プロセスが残らない。
@@ -92,7 +96,7 @@ Apple Silicon のみを対象にするため、配布するアーキテクチャ
 ## 未決事項
 
 - アプリの bundle identifier、Team ID、配布用のドメイン。
-- hardened runtime で必要な entitlement の正確な一覧。
+- `com.apple.security.device.audio-input` 以外の hardened runtime の entitlement の一覧。
   Electron と子プロセスの起動に必要な項目を、署名の検証で確定する。
 - 自動更新の仕組みを入れるか。
   入れる場合の配信経路、署名、録音中の適用の保留。

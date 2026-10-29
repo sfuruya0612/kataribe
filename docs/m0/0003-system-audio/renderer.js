@@ -18,45 +18,216 @@ function trackInfo(track) {
   };
 }
 
-function measure(audioContext, audioTrack, durationMs) {
-  return new Promise((resolve) => {
-    const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 2048;
-    source.connect(analyser);
+async function listInputs() {
+  const microphoneGranted = window.m0 && window.m0.askMicrophone
+    ? await window.m0.askMicrophone()
+    : false;
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const inputs = devices
+    .filter((device) => device.kind === 'audioinput')
+    .map((device) => ({ deviceId: device.deviceId, label: device.label }));
+  report({ phase: 'devices', microphoneGranted, inputs });
+  return devices;
+}
 
-    const samples = new Float32Array(analyser.fftSize);
-    let frames = 0;
-    let nonZero = 0;
-    let peak = 0;
-    let sumSquares = 0;
-    const startedAt = performance.now();
-
-    const interval = setInterval(() => {
-      analyser.getFloatTimeDomainData(samples);
-      for (const value of samples) {
-        const absolute = Math.abs(value);
-        if (absolute > peak) peak = absolute;
-        if (absolute > 0) nonZero += 1;
-        sumSquares += value * value;
-        frames += 1;
+const frameCounterWorkletSource = `
+class FrameCounterProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super();
+    const processorOptions = options.processorOptions || {};
+    this.reportIntervalFrames = processorOptions.reportIntervalFrames || sampleRate;
+    this.warmupFrames = processorOptions.warmupFrames || 0;
+    this.warmupSeen = 0;
+    this.started = this.warmupFrames === 0;
+    this.stats = {
+      name: processorOptions.name || 'input',
+      sampleRate,
+      channels: 0,
+      blocks: 0,
+      frames: 0,
+      samples: 0,
+      nonZero: 0,
+      nonZeroFrames: 0,
+      peak: 0,
+      sumSquares: 0,
+      gaps: 0,
+      maxGapFrames: 0,
+      firstFrame: null,
+      lastFrame: null,
+      lastBlockSize: 0,
+      warmupFrames: processorOptions.warmupFrames || 0,
+    };
+    this.lastFrame = null;
+    this.lastBlockSize = 0;
+    this.framesSinceReport = 0;
+    this.port.onmessage = (event) => {
+      if (event.data === 'stop') {
+        this.port.postMessage({ type: 'stopped', stats: this.snapshot() });
       }
-    }, 100);
+    };
+  }
 
-    setTimeout(() => {
-      clearInterval(interval);
-      source.disconnect();
-      resolve({
-        elapsedMs: Math.round(performance.now() - startedAt),
-        peak,
-        rms: Math.sqrt(sumSquares / Math.max(frames, 1)),
-        frames,
-        nonZero,
-        readyState: audioTrack.readyState,
-        muted: audioTrack.muted,
-      });
-    }, durationMs);
+  process(inputs) {
+    const input = inputs[0] || [];
+    const channels = input.length;
+    const blockSize = channels > 0 ? input[0].length : 0;
+    const frame = currentFrame;
+    if (!this.started) {
+      this.warmupSeen += blockSize;
+      if (this.warmupSeen < this.warmupFrames) {
+        return true;
+      }
+      this.started = true;
+      this.stats.firstFrame = frame;
+      this.lastFrame = frame;
+      this.lastBlockSize = blockSize;
+    }
+    if (this.stats.firstFrame === null) {
+      this.stats.firstFrame = frame;
+    }
+    if (this.lastFrame !== null) {
+      const delta = frame - this.lastFrame;
+      if (delta > this.lastBlockSize) {
+        this.stats.gaps += 1;
+        this.stats.maxGapFrames = Math.max(this.stats.maxGapFrames, delta - this.lastBlockSize);
+      }
+    }
+    this.lastFrame = frame;
+    this.lastBlockSize = blockSize;
+    this.stats.lastFrame = frame;
+    this.stats.lastBlockSize = blockSize;
+    this.stats.blocks += 1;
+    this.stats.frames += blockSize;
+    this.stats.channels = Math.max(this.stats.channels, channels);
+    let frameNonZero = false;
+    for (let channel = 0; channel < channels; channel += 1) {
+      const samples = input[channel];
+      for (let index = 0; index < samples.length; index += 1) {
+        const value = samples[index];
+        const absolute = Math.abs(value);
+        if (absolute > this.stats.peak) this.stats.peak = absolute;
+        if (absolute > 0) {
+          this.stats.nonZero += 1;
+          frameNonZero = true;
+        }
+        this.stats.sumSquares += value * value;
+        this.stats.samples += 1;
+      }
+    }
+    if (frameNonZero) this.stats.nonZeroFrames += 1;
+    this.framesSinceReport += blockSize;
+    if (this.framesSinceReport >= this.reportIntervalFrames) {
+      this.framesSinceReport = 0;
+      this.port.postMessage({ type: 'progress', stats: this.snapshot() });
+    }
+    return true;
+  }
+
+  snapshot() {
+    const expectedFrames = this.stats.firstFrame === null
+      ? 0
+      : this.stats.lastFrame + this.stats.lastBlockSize - this.stats.firstFrame;
+    return {
+      ...this.stats,
+      expectedFrames,
+      missedFrames: Math.max(0, expectedFrames - this.stats.frames),
+      rms: Math.sqrt(this.stats.sumSquares / Math.max(this.stats.samples, 1)),
+      elapsedAudioSeconds: expectedFrames / sampleRate,
+      currentTime,
+    };
+  }
+}
+
+registerProcessor('frame-counter', FrameCounterProcessor);
+`;
+
+const workletModules = new WeakMap();
+
+async function ensureFrameCounterModule(audioContext) {
+  if (!workletModules.has(audioContext)) {
+    const url = `data:text/javascript;charset=utf-8,${encodeURIComponent(frameCounterWorkletSource)}`;
+    workletModules.set(audioContext, audioContext.audioWorklet.addModule(url));
+  }
+  await workletModules.get(audioContext);
+}
+
+async function createFrameCounter(audioContext, source, name) {
+  await ensureFrameCounterModule(audioContext);
+  const node = new AudioWorkletNode(audioContext, 'frame-counter', {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    channelCountMode: 'max',
+    processorOptions: {
+      name,
+      reportIntervalFrames: Math.max(1, Math.round(audioContext.sampleRate)),
+      // 起動直後の 1 秒はカウンタの数え落としがあるため、ウォームアップとして除外する。
+      warmupFrames: Math.max(0, Math.round(audioContext.sampleRate * 1)),
+    },
   });
+  const sink = audioContext.createGain();
+  sink.gain.value = 0;
+  source.connect(node);
+  node.connect(sink);
+  sink.connect(audioContext.destination);
+  const state = {
+    node,
+    sink,
+    stats: null,
+    resolveStop: null,
+  };
+  node.port.onmessage = (event) => {
+    const data = event.data || {};
+    if (data.stats) {
+      state.stats = data.stats;
+    }
+    if (data.type === 'stopped' && state.resolveStop) {
+      state.resolveStop(data.stats || state.stats);
+    }
+  };
+  return state;
+}
+
+function stopFrameCounter(state) {
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => resolve(state.stats), 2000);
+    state.resolveStop = (stats) => {
+      clearTimeout(timeout);
+      resolve(stats || state.stats);
+    };
+    state.node.port.postMessage('stop');
+  });
+}
+
+function disposeFrameCounter(state) {
+  try {
+    state.node.disconnect();
+  } catch (_) {
+    // already disconnected
+  }
+  try {
+    state.sink.disconnect();
+  } catch (_) {
+    // already disconnected
+  }
+}
+
+async function measure(audioContext, audioTrack, durationMs) {
+  const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+  const counter = await createFrameCounter(audioContext, source, 'input');
+  const startedAt = performance.now();
+
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  const stats = await stopFrameCounter(counter);
+  const elapsedMs = Math.round(performance.now() - startedAt);
+
+  disposeFrameCounter(counter);
+  source.disconnect();
+  return {
+    elapsedMs,
+    ...stats,
+    readyState: audioTrack.readyState,
+    muted: audioTrack.muted,
+  };
 }
 
 async function attemptCapture(attempt) {
@@ -135,17 +306,14 @@ async function startBlackHole(durationMs = 5000) {
   report({ phase: 'blackhole_start', durationMs });
 
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-    probe.getTracks().forEach((track) => track.stop());
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const inputs = devices
-      .filter((device) => device.kind === 'audioinput')
-      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
-    report({ phase: 'devices', inputs });
+    const devices = await listInputs();
 
     const blackHole = devices.find(
-      (device) => device.kind === 'audioinput' && /blackhole/i.test(device.label),
+      (device) =>
+        device.kind === 'audioinput'
+        && device.deviceId !== 'default'
+        && device.deviceId !== 'communications'
+        && /blackhole/i.test(device.label),
     );
     if (!blackHole) {
       report({
@@ -204,81 +372,57 @@ async function startBlackHole(durationMs = 5000) {
   }
 }
 
-function measureMany(context, entries, durationMs, onProgress) {
-  return new Promise((resolve) => {
-    const stats = {};
-    for (const entry of entries) {
-      stats[entry.name] = {
-        peak: 0,
-        rms: 0,
-        frames: 0,
-        nonZero: 0,
-        sumSquares: 0,
-      };
-    }
-    const samples = new Float32Array(2048);
-    const startedAt = performance.now();
+async function measureMany(audioContext, entries, durationMs, onProgress) {
+  const counters = [];
+  for (const entry of entries) {
+    counters.push({
+      name: entry.name,
+      counter: await createFrameCounter(audioContext, entry.source, entry.name),
+    });
+  }
+  const startedAt = performance.now();
 
-    const interval = setInterval(() => {
-      for (const entry of entries) {
-        entry.analyser.getFloatTimeDomainData(samples);
-        const current = stats[entry.name];
-        for (const value of samples) {
-          const absolute = Math.abs(value);
-          if (absolute > current.peak) current.peak = absolute;
-          if (absolute > 0) current.nonZero += 1;
-          current.sumSquares += value * value;
-          current.frames += 1;
+  const progress = onProgress
+    ? setInterval(() => {
+        const snapshot = {};
+        for (const { name, counter } of counters) {
+          snapshot[name] = counter.stats || {};
         }
-      }
-    }, 100);
+        onProgress(Math.round(performance.now() - startedAt), snapshot);
+      }, 60000)
+    : null;
 
-    const progress = onProgress
-      ? setInterval(() => {
-          const snapshot = {};
-          for (const [name, current] of Object.entries(stats)) {
-            snapshot[name] = {
-              peak: current.peak,
-              frames: current.frames,
-              nonZero: current.nonZero,
-            };
-          }
-          onProgress(Math.round(performance.now() - startedAt), snapshot);
-        }, 60000)
-      : null;
+  await new Promise((resolve) => setTimeout(resolve, durationMs));
+  if (progress) {
+    clearInterval(progress);
+  }
 
-    setTimeout(() => {
-      clearInterval(interval);
-      if (progress) clearInterval(progress);
-      for (const entry of entries) {
-        const current = stats[entry.name];
-        current.rms = Math.sqrt(current.sumSquares / Math.max(current.frames, 1));
-        delete current.sumSquares;
-      }
-      resolve(stats);
-    }, durationMs);
-  });
+  const stats = {};
+  for (const { name, counter } of counters) {
+    stats[name] = await stopFrameCounter(counter);
+    disposeFrameCounter(counter);
+  }
+  return stats;
 }
 
 async function startMix(durationMs = 5000) {
   report({ phase: 'mix_start', durationMs });
 
   try {
-    const probe = await navigator.mediaDevices.getUserMedia({ audio: true });
-    probe.getTracks().forEach((track) => track.stop());
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const inputs = devices
-      .filter((device) => device.kind === 'audioinput')
-      .map((device) => ({ deviceId: device.deviceId, label: device.label }));
-    report({ phase: 'devices', inputs });
+    const devices = await listInputs();
 
     const blackHole = devices.find(
-      (device) => device.kind === 'audioinput' && /blackhole/i.test(device.label),
+      (device) =>
+        device.kind === 'audioinput'
+        && device.deviceId !== 'default'
+        && device.deviceId !== 'communications'
+        && /blackhole/i.test(device.label),
     );
     const microphone = devices.find(
       (device) =>
         device.kind === 'audioinput'
+        && device.deviceId !== 'default'
+        && device.deviceId !== 'communications'
         && /macbook|built-in|マイク|microphone/i.test(device.label)
         && !/blackhole/i.test(device.label),
     );
@@ -310,37 +454,33 @@ async function startMix(durationMs = 5000) {
       },
     });
 
+    report({
+      phase: 'mix_streams',
+      blackhole: trackInfo(blackHoleStream.getAudioTracks()[0]),
+      microphone: trackInfo(microphoneStream.getAudioTracks()[0]),
+    });
+
     const audioContext = new AudioContext();
     await audioContext.resume();
 
     const blackHoleSource = audioContext.createMediaStreamSource(blackHoleStream);
     const microphoneSource = audioContext.createMediaStreamSource(microphoneStream);
-    const blackHoleAnalyser = audioContext.createAnalyser();
-    const microphoneAnalyser = audioContext.createAnalyser();
-    const mixedAnalyser = audioContext.createAnalyser();
-    blackHoleAnalyser.fftSize = 2048;
-    microphoneAnalyser.fftSize = 2048;
-    mixedAnalyser.fftSize = 2048;
-
     const mixedGain = audioContext.createGain();
     mixedGain.gain.value = 0.5;
     const sink = audioContext.createGain();
     sink.gain.value = 0;
 
-    blackHoleSource.connect(blackHoleAnalyser);
-    microphoneSource.connect(microphoneAnalyser);
     blackHoleSource.connect(mixedGain);
     microphoneSource.connect(mixedGain);
-    mixedGain.connect(mixedAnalyser);
-    mixedAnalyser.connect(sink);
+    mixedGain.connect(sink);
     sink.connect(audioContext.destination);
 
     const stats = await measureMany(
       audioContext,
       [
-        { name: 'blackhole', analyser: blackHoleAnalyser },
-        { name: 'microphone', analyser: microphoneAnalyser },
-        { name: 'mixed', analyser: mixedAnalyser },
+        { name: 'blackhole', source: blackHoleSource },
+        { name: 'microphone', source: microphoneSource },
+        { name: 'mixed', source: mixedGain },
       ],
       durationMs,
       (elapsedMs, snapshot) => {
