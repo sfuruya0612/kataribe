@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  advanceClipping,
+  DEFAULT_CLIPPING_CONFIG,
+  INITIAL_CLIPPING_TRACKER,
+  type ClippingConfig,
+  type ClippingTracker,
+} from '../../shared/clipping';
 import { createInitialRecordingAppState } from '../../shared/recording-state';
 import type {
   InputSource,
@@ -61,6 +68,8 @@ type RecorderInput = {
   source: MediaStreamAudioSourceNode;
   gain: GainNode;
   track: MediaStreamTrack | null;
+  analyser: AnalyserNode | null;
+  analyserBuffer: Float32Array<ArrayBuffer> | null;
 };
 
 type RecorderGraph = {
@@ -88,6 +97,7 @@ export type RecorderController = {
   requestStart: () => Promise<void>;
   requestStop: () => Promise<void>;
   setInputSource: (source: InputSource) => Promise<void>;
+  setClippingConfig: (config: Partial<ClippingConfig>) => Promise<void>;
   recover: (recording: RecoverableRecording) => Promise<void>;
   openFolder: () => Promise<void>;
   openMicrophoneSettings: () => Promise<void>;
@@ -138,6 +148,13 @@ function removeInput(graph: RecorderGraph, role: RecorderInput['role']): void {
   } catch {
     // The node may already be disconnected.
   }
+  if (input.analyser) {
+    try {
+      input.analyser.disconnect();
+    } catch {
+      // The node may already be disconnected.
+    }
+  }
   for (const track of input.stream.getTracks()) {
     track.stop();
   }
@@ -164,6 +181,13 @@ async function teardownGraph(graph: RecorderGraph): Promise<void> {
       input.gain.disconnect();
     } catch {
       // The node may already be disconnected.
+    }
+    if (input.analyser) {
+      try {
+        input.analyser.disconnect();
+      } catch {
+        // The node may already be disconnected.
+      }
     }
     for (const track of input.stream.getTracks()) {
       track.stop();
@@ -212,6 +236,11 @@ export function useRecorder(): RecorderController {
     system: string | null;
   } | null>(null);
   const deviceLossReportedRef = useRef({ microphone: false, system: false });
+  const clippingRef = useRef<ClippingTracker>({ ...INITIAL_CLIPPING_TRACKER });
+  const clippingConfigRef = useRef<ClippingConfig>({
+    ...DEFAULT_CLIPPING_CONFIG,
+  });
+  const clippingErrorRef = useRef(false);
 
   const refreshDevices = useCallback(async (): Promise<{
     microphones: InputDevice[];
@@ -281,6 +310,44 @@ export function useRecorder(): RecorderController {
         setWarning(`入力レベルの送信に失敗しました: ${errorText(reason)}`);
       }
     });
+
+    const graph = graphRef.current;
+    const microphone = graph?.inputs.find((input) => input.role === 'microphone');
+    if (
+      captureSourceRef.current &&
+      captureSourceRef.current !== 'system' &&
+      microphone
+    ) {
+      let clippingPeak = message.peak;
+      if (microphone.analyser && microphone.analyserBuffer) {
+        microphone.analyser.getFloatTimeDomainData(microphone.analyserBuffer);
+        clippingPeak = 0;
+        for (const value of microphone.analyserBuffer) {
+          clippingPeak = Math.max(clippingPeak, Math.abs(value));
+        }
+      }
+      const next = advanceClipping(
+        clippingRef.current,
+        clippingPeak,
+        clippingConfigRef.current,
+      );
+      clippingRef.current = next.tracker;
+      if (next.transition) {
+        void window.kataribe
+          .reportClipping({
+            active: next.transition === 'started',
+            peak: next.transition === 'started' ? next.tracker.peak : message.peak,
+            intervals: next.tracker.consecutive,
+            at: new Date().toISOString(),
+          })
+          .catch((reason: unknown) => {
+            if (!clippingErrorRef.current) {
+              clippingErrorRef.current = true;
+              setWarning(`クリッピング状態の送信に失敗しました: ${errorText(reason)}`);
+            }
+          });
+      }
+    }
   }, []);
 
   const handleWorkletMessage = useCallback(
@@ -359,6 +426,18 @@ export function useRecorder(): RecorderController {
       };
 
       if (role === 'microphone' && !fatal) {
+        const wasClipping = clippingRef.current.active;
+        clippingRef.current = { ...INITIAL_CLIPPING_TRACKER };
+        if (wasClipping) {
+          void window.kataribe
+            .reportClipping({
+              active: false,
+              peak: 0,
+              intervals: 0,
+              at: new Date().toISOString(),
+            })
+            .catch(() => undefined);
+        }
         removeInput(graph, 'microphone');
       }
 
@@ -431,6 +510,8 @@ export function useRecorder(): RecorderController {
       captureSourceRef.current = null;
       captureDeviceIdsRef.current = null;
       deviceLossReportedRef.current = { microphone: false, system: false };
+      clippingRef.current = { ...INITIAL_CLIPPING_TRACKER };
+      clippingErrorRef.current = false;
 
       let streams: MediaStream[] = [];
       let context: AudioContext | null = null;
@@ -547,12 +628,23 @@ export function useRecorder(): RecorderController {
           sourceNode.connect(gain);
           gain.connect(node);
           const track = spec.stream.getAudioTracks()[0] ?? null;
+          let analyser: AnalyserNode | null = null;
+          let analyserBuffer: Float32Array<ArrayBuffer> | null = null;
+          if (spec.role === 'microphone') {
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 8192;
+            analyserBuffer = new Float32Array(analyser.fftSize);
+            gain.connect(analyser);
+            analyser.connect(sink);
+          }
           const input: RecorderInput = {
             role: spec.role,
             stream: spec.stream,
             source: sourceNode,
             gain,
             track,
+            analyser,
+            analyserBuffer,
           };
           if (track) {
             track.onended = () => reportInputLoss(spec.role);
@@ -706,6 +798,7 @@ export function useRecorder(): RecorderController {
         setUiError(message);
       }
     } finally {
+      clippingRef.current = { ...INITIAL_CLIPPING_TRACKER };
       await teardownGraph(graph);
       deviceLossReportedRef.current = { microphone: false, system: false };
       await refreshRecoverable();
@@ -745,6 +838,10 @@ export function useRecorder(): RecorderController {
       navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     };
   }, [refreshDevices]);
+
+  useEffect(() => {
+    clippingConfigRef.current = appState.clippingConfig;
+  }, [appState.clippingConfig]);
 
   useEffect(() => {
     let cancelled = false;
@@ -861,6 +958,17 @@ export function useRecorder(): RecorderController {
     }
   }, []);
 
+  const setClippingConfig = useCallback(
+    async (config: Partial<ClippingConfig>) => {
+      try {
+        await window.kataribe.setClippingConfig(config);
+      } catch (reason: unknown) {
+        setUiError(`クリッピング設定を変更できませんでした: ${errorText(reason)}`);
+      }
+    },
+    [],
+  );
+
   const recover = useCallback(
     async (recording: RecoverableRecording) => {
       setRecoveringId(recording.meetingId);
@@ -910,6 +1018,7 @@ export function useRecorder(): RecorderController {
     requestStart,
     requestStop,
     setInputSource,
+    setClippingConfig,
     recover,
     openFolder,
     openMicrophoneSettings,

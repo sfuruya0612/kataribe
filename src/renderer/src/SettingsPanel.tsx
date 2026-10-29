@@ -1,3 +1,4 @@
+import type { ClippingConfig } from '../../shared/clipping';
 import type { InputSource } from '../../shared/types';
 import type { InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
@@ -9,7 +10,9 @@ type SettingsPanelProps = {
   permission: PermissionState;
   microphones: InputDevice[];
   systemDevices: InputDevice[];
+  clippingConfig: ClippingConfig;
   onSetInputSource: (source: InputSource) => void;
+  onClippingConfigChange: (config: Partial<ClippingConfig>) => void;
   onRequestPermission: () => void;
   onOpenMicrophoneSettings: () => void;
   onOpenReadme: () => void;
@@ -30,7 +33,9 @@ export function SettingsPanel({
   permission,
   microphones,
   systemDevices,
+  clippingConfig,
   onSetInputSource,
+  onClippingConfigChange,
   onRequestPermission,
   onOpenMicrophoneSettings,
   onOpenReadme,
@@ -128,6 +133,67 @@ export function SettingsPanel({
             <option value="ja">日本語</option>
             <option value="en">English</option>
           </select>
+        </section>
+
+        <section className="setting-card setting-card-wide">
+          <h3>クリッピング警告</h3>
+          <p className="muted">
+            マイク入力のピークがしきい値を超えた状態が続くと警告します。値は 100 ms
+            単位の連続回数で指定します。
+          </p>
+          <div className="clipping-settings">
+            <label className="field">
+              <span>ピークしきい値（0.5〜1.0）</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="0.5"
+                max="1"
+                step="0.005"
+                value={clippingConfig.peakThreshold}
+                onChange={(event) =>
+                  onClippingConfigChange({
+                    peakThreshold: Number(event.target.value),
+                  })
+                }
+                data-testid="clipping-threshold"
+              />
+            </label>
+            <label className="field">
+              <span>警告までの連続回数</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="1"
+                max="50"
+                step="1"
+                value={clippingConfig.intervalsToWarn}
+                onChange={(event) =>
+                  onClippingConfigChange({
+                    intervalsToWarn: Number(event.target.value),
+                  })
+                }
+                data-testid="clipping-warn-intervals"
+              />
+            </label>
+            <label className="field">
+              <span>解除までの連続回数</span>
+              <input
+                className="setting-input"
+                type="number"
+                min="1"
+                max="50"
+                step="1"
+                value={clippingConfig.recoveryIntervals}
+                onChange={(event) =>
+                  onClippingConfigChange({
+                    recoveryIntervals: Number(event.target.value),
+                  })
+                }
+                data-testid="clipping-recovery-intervals"
+              />
+            </label>
+          </div>
         </section>
 
         <section className="setting-card">

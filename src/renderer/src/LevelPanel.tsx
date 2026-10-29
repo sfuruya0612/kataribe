@@ -2,22 +2,23 @@ import { useEffect, useState } from 'react';
 import type {
   RecordingAppStatus,
   RecordingCaptureStats,
+  RecordingClippingReport,
   RecordingLevel,
   RecordingLevelUpdate,
 } from '../../shared/types';
 import {
   formatLevel,
   frameClockDeltaSeconds,
-  isClipping,
   levelPercent,
 } from './recording-utils';
 
 type LevelPanelProps = {
   status: RecordingAppStatus;
   chunkCount: number;
+  clipping: RecordingClippingReport | null;
 };
 
-export function LevelPanel({ status, chunkCount }: LevelPanelProps) {
+export function LevelPanel({ status, chunkCount, clipping }: LevelPanelProps) {
   const [level, setLevel] = useState<RecordingLevel | null>(null);
   const [stats, setStats] = useState<RecordingCaptureStats | null>(null);
 
@@ -94,9 +95,9 @@ export function LevelPanel({ status, chunkCount }: LevelPanelProps) {
         </div>
       </div>
 
-      {isClipping(level?.peak ?? 0) ? (
+      {clipping?.active ? (
         <p className="alert alert-warning">
-          入力レベルが 0 dB に近づいています。マイクのゲインを下げてください。
+          マイク入力がクリップしています。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。
         </p>
       ) : null}
 

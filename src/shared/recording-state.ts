@@ -1,3 +1,4 @@
+import { DEFAULT_CLIPPING_CONFIG } from './clipping';
 import type { RecordingAppState } from './types';
 
 export function createInitialRecordingAppState(): RecordingAppState {
@@ -13,6 +14,8 @@ export function createInitialRecordingAppState(): RecordingAppState {
     lastResult: null,
     lastMeetingDir: null,
     notice: null,
+    clipping: null,
+    clippingConfig: { ...DEFAULT_CLIPPING_CONFIG },
     error: null,
   };
 }

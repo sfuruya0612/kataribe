@@ -10,12 +10,14 @@ import {
   systemPreferences,
 } from 'electron';
 import type { MenuItemConstructorOptions } from 'electron';
+import type { ClippingConfig } from '../shared/clipping';
 import type {
   AppInfo,
   InputSource,
   MicrophonePermissionStatus,
   RecordingCaptureStats,
   RecordingChunk,
+  RecordingClippingReport,
   RecordingCommand,
   RecordingDeviceEventResult,
   RecordingEvent,
@@ -333,6 +335,14 @@ function registerIpc(recordingManager: RecordingManager): void {
     return stateStore.getState();
   });
 
+  ipcMain.handle('recording:set-clipping-config', (_event, config: unknown) => {
+    if (typeof config !== 'object' || config === null) {
+      throw new Error('invalid clipping config');
+    }
+    stateStore.setClippingConfig(config as Partial<ClippingConfig>);
+    return stateStore.getState();
+  });
+
   ipcMain.handle('recording:start', async (_event, options: StartRecordingOptions) => {
     const status = stateStore.getStatus();
     if (status !== 'starting' && status !== 'idle' && status !== 'encoding' && status !== 'error') {
@@ -389,6 +399,43 @@ function registerIpc(recordingManager: RecordingManager): void {
 
   ipcMain.handle('recording:level', (_event, update: RecordingLevelUpdate) => {
     stateStore.setLevel(update);
+  });
+
+  ipcMain.handle('recording:clipping', async (_event, report: RecordingClippingReport) => {
+    const status = stateStore.getStatus();
+    if (status !== 'recording' && status !== 'stopping') {
+      return;
+    }
+
+    const previous = stateStore.getState().clipping;
+    if (report.active && !previous?.active) {
+      const event: RecordingEvent = {
+        at: report.at,
+        kind: 'clipping',
+        device: 'microphone',
+        severity: 'warning',
+        message: `マイク入力がクリップしています（ピーク ${Math.round(report.peak * 100)}%）。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。`,
+      };
+      try {
+        await recordingManager.recordEvent(event);
+      } catch (error) {
+        console.error('failed to record clipping event', error);
+      }
+    } else if (!report.active && previous?.active) {
+      const event: RecordingEvent = {
+        at: report.at,
+        kind: 'clipping-recovered',
+        device: 'microphone',
+        severity: 'warning',
+        message: 'マイク入力のクリッピングが収まりました。',
+      };
+      try {
+        await recordingManager.recordEvent(event);
+      } catch (error) {
+        console.error('failed to record clipping recovery event', error);
+      }
+    }
+    stateStore.setClipping(report);
   });
 
   ipcMain.handle(

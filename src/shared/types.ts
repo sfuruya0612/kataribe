@@ -4,6 +4,8 @@ export type AppInfo = {
   saveRoot: string;
 };
 
+import type { ClippingConfig } from './clipping';
+
 export type InputSource = 'microphone' | 'system' | 'both';
 
 export type RecordingStatus = 'idle' | 'recording' | 'encoding' | 'error';
@@ -89,7 +91,9 @@ export type RecordingAppStatus =
 export type RecordingEventKind =
   | 'permission-denied'
   | 'device-lost'
-  | 'device-open-failed';
+  | 'device-open-failed'
+  | 'clipping'
+  | 'clipping-recovered';
 
 export type RecordingEventDevice = 'microphone' | 'system' | 'output' | 'unknown';
 
@@ -118,6 +122,13 @@ export type RecordingDeviceEventResult = {
   stopping: boolean;
 };
 
+export type RecordingClippingReport = {
+  active: boolean;
+  peak: number;
+  intervals: number;
+  at: string;
+};
+
 export type RecordingLevel = {
   peak: number;
   rms: number;
@@ -135,6 +146,8 @@ export type RecordingAppState = {
   lastResult: RecordingStopResult | null;
   lastMeetingDir: string | null;
   notice: RecordingEvent | null;
+  clipping: RecordingClippingReport | null;
+  clippingConfig: ClippingConfig;
   error: string | null;
 };
 

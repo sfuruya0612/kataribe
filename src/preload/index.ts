@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
+import type { ClippingConfig } from '../shared/clipping';
 import type {
   AppInfo,
   InputSource,
@@ -7,6 +8,7 @@ import type {
   RecordingAppState,
   RecordingCaptureStats,
   RecordingChunk,
+  RecordingClippingReport,
   RecordingCommand,
   RecordingDeviceEventResult,
   RecordingEvent,
@@ -44,6 +46,10 @@ const api = {
     ipcRenderer.invoke('recording:request-stop'),
   setInputSource: (source: InputSource): Promise<RecordingAppState> =>
     ipcRenderer.invoke('recording:set-source', source),
+  setClippingConfig: (
+    config: Partial<ClippingConfig>,
+  ): Promise<RecordingAppState> =>
+    ipcRenderer.invoke('recording:set-clipping-config', config),
   onRecordingState: (listener: (state: RecordingAppState) => void): (() => void) =>
     subscribe('recording:state', listener),
   onRecordingLevel: (listener: (update: RecordingLevelUpdate) => void): (() => void) =>
@@ -62,6 +68,8 @@ const api = {
     ipcRenderer.invoke('recording:capture-error', message),
   reportDeviceEvent: (event: RecordingEvent): Promise<RecordingDeviceEventResult> =>
     ipcRenderer.invoke('recording:device-event', event),
+  reportClipping: (report: RecordingClippingReport): Promise<void> =>
+    ipcRenderer.invoke('recording:clipping', report),
   recordStartupFailure: (
     payload: RecordingStartupFailure,
   ): Promise<RecordingStartupFailureResult> =>

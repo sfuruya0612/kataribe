@@ -92,6 +92,7 @@ describe('RecordingStateStore', () => {
       chunkCount: 0,
       lastResult: null,
       notice: null,
+      clipping: null,
       error: null,
     });
 
@@ -215,6 +216,50 @@ describe('RecordingStateStore', () => {
 
     store.markRecording(session);
     expect(store.getState().notice).toBeNull();
+  });
+
+  it('stores and clears the clipping state', () => {
+    const { store } = createStore();
+    store.startRequested('both');
+    store.markRecording(session);
+
+    const report = {
+      active: true,
+      peak: 1,
+      intervals: 3,
+      at: new Date(2026, 9, 29, 14, 5, 33).toISOString(),
+    };
+    store.setClipping(report);
+    expect(store.getState().clipping).toEqual(report);
+
+    store.setClipping({ ...report, active: false, peak: 0, intervals: 0 });
+    expect(store.getState().clipping).toBeNull();
+
+    store.setClipping(report);
+    store.markStopped(result);
+    expect(store.getState().clipping).toBeNull();
+  });
+
+  it('normalizes clipping settings', () => {
+    const { store, states } = createStore();
+    expect(store.getState().clippingConfig).toEqual({
+      peakThreshold: 0.985,
+      intervalsToWarn: 3,
+      recoveryIntervals: 5,
+    });
+
+    const updated = store.setClippingConfig({
+      peakThreshold: 1.2,
+      intervalsToWarn: 0,
+      recoveryIntervals: 10,
+    });
+    expect(updated).toEqual({
+      peakThreshold: 1,
+      intervalsToWarn: 1,
+      recoveryIntervals: 10,
+    });
+    expect(store.getState().clippingConfig).toEqual(updated);
+    expect(states.at(-1)?.clippingConfig).toEqual(updated);
   });
 
   it('marks a startup failure with the event and meeting folder', () => {

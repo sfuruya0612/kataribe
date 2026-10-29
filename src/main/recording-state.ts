@@ -1,7 +1,13 @@
+import {
+  DEFAULT_CLIPPING_CONFIG,
+  normalizeClippingConfig,
+  type ClippingConfig,
+} from '../shared/clipping';
 import { createInitialRecordingAppState } from '../shared/recording-state';
 import type {
   InputSource,
   RecordingAppState,
+  RecordingClippingReport,
   RecordingEvent,
   RecordingLevel,
   RecordingLevelUpdate,
@@ -32,6 +38,8 @@ export class RecordingStateStore {
   private lastResult: RecordingStopResult | null = null;
   private lastMeetingDir: string | null = null;
   private notice: RecordingEvent | null = null;
+  private clipping: RecordingClippingReport | null = null;
+  private clippingConfig: ClippingConfig = { ...DEFAULT_CLIPPING_CONFIG };
   private error: string | null = null;
   private readonly now: () => number;
   private readonly onStateChange: (state: RecordingAppState) => void;
@@ -56,6 +64,8 @@ export class RecordingStateStore {
       lastResult: this.lastResult,
       lastMeetingDir: this.lastMeetingDir,
       notice: this.notice,
+      clipping: this.clipping,
+      clippingConfig: this.clippingConfig,
       error: this.error,
     };
   }
@@ -106,6 +116,7 @@ export class RecordingStateStore {
     this.chunkCount = 0;
     this.lastResult = null;
     this.notice = null;
+    this.clipping = null;
     this.error = null;
     this.emitState();
     return true;
@@ -126,6 +137,7 @@ export class RecordingStateStore {
     this.captureStats = null;
     this.chunkCount = 0;
     this.notice = null;
+    this.clipping = null;
     this.error = null;
     this.emitState();
   }
@@ -147,6 +159,7 @@ export class RecordingStateStore {
     this.captureStats = result.captureStats ?? null;
     this.lastResult = result;
     this.lastMeetingDir = result.meetingDir;
+    this.clipping = null;
     this.error = null;
     this.emitState();
   }
@@ -159,6 +172,7 @@ export class RecordingStateStore {
     this.captureStats = result.captureStats ?? null;
     this.lastResult = result;
     this.lastMeetingDir = result.meetingDir;
+    this.clipping = null;
     this.error = null;
     this.emitState();
   }
@@ -171,6 +185,7 @@ export class RecordingStateStore {
     this.captureStats = null;
     this.lastResult = null;
     this.notice = null;
+    this.clipping = null;
     this.error = message;
     this.emitState();
   }
@@ -185,6 +200,7 @@ export class RecordingStateStore {
     this.lastResult = null;
     this.lastMeetingDir = meetingDir;
     this.notice = event;
+    this.clipping = null;
     this.error = event.message;
     this.emitState();
   }
@@ -192,6 +208,20 @@ export class RecordingStateStore {
   setNotice(event: RecordingEvent): void {
     this.notice = event;
     this.emitState();
+  }
+
+  setClipping(report: RecordingClippingReport): void {
+    if (this.status !== 'recording' && this.status !== 'stopping') {
+      return;
+    }
+    this.clipping = report.active ? report : null;
+    this.emitState();
+  }
+
+  setClippingConfig(config: Partial<ClippingConfig>): ClippingConfig {
+    this.clippingConfig = normalizeClippingConfig(config);
+    this.emitState();
+    return this.clippingConfig;
   }
 
   setLevel(update: RecordingLevelUpdate): void {

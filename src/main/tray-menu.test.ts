@@ -20,6 +20,12 @@ function createState(overrides: Partial<RecordingAppState> = {}): RecordingAppSt
     lastResult: null,
     lastMeetingDir: null,
     notice: null,
+    clipping: null,
+    clippingConfig: {
+      peakThreshold: 0.985,
+      intervalsToWarn: 3,
+      recoveryIntervals: 5,
+    },
     error: null,
     ...overrides,
   };

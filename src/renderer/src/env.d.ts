@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import type { ClippingConfig } from '../../shared/clipping';
 import type {
   AppInfo,
   InputSource,
@@ -7,6 +8,7 @@ import type {
   RecordingAppState,
   RecordingCaptureStats,
   RecordingChunk,
+  RecordingClippingReport,
   RecordingCommand,
   RecordingDeviceEventResult,
   RecordingEvent,
@@ -30,6 +32,9 @@ declare global {
       requestStartRecording: () => Promise<RecordingRequestResult>;
       requestStopRecording: () => Promise<RecordingRequestResult>;
       setInputSource: (source: InputSource) => Promise<RecordingAppState>;
+      setClippingConfig: (
+        config: Partial<ClippingConfig>,
+      ) => Promise<RecordingAppState>;
       onRecordingState: (
         listener: (state: RecordingAppState) => void,
       ) => () => void;
@@ -51,6 +56,7 @@ declare global {
       reportDeviceEvent: (
         event: RecordingEvent,
       ) => Promise<RecordingDeviceEventResult>;
+      reportClipping: (report: RecordingClippingReport) => Promise<void>;
       recordStartupFailure: (
         payload: RecordingStartupFailure,
       ) => Promise<RecordingStartupFailureResult>;

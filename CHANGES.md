@@ -16,6 +16,8 @@
   - @shoichi.furuya
 - [ADD] BlackHole 2ch の検出と入力デバイスの優先順位を追加する
   - @shoichi.furuya
+- [ADD] マイク入力のクリッピング警告と設定を追加する
+  - @shoichi.furuya
 
 ### FIX
 

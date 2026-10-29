@@ -868,6 +868,12 @@ input.setting-input:read-only {
   gap: 10px;
 }
 
+.clipping-settings {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .settings-source {
   margin: 0;
 }
@@ -892,7 +898,8 @@ input.setting-input:read-only {
   .recording-layout,
   .workspace,
   .settings-grid,
-  .detail-meta {
+  .detail-meta,
+  .clipping-settings {
     grid-template-columns: 1fr;
   }
 

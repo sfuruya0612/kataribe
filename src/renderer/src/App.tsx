@@ -126,7 +126,11 @@ export default function App() {
           onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
           onSetInputSource={(source) => void recorder.setInputSource(source)}
         />
-        <LevelPanel status={appState.status} chunkCount={appState.chunkCount} />
+        <LevelPanel
+          status={appState.status}
+          chunkCount={appState.chunkCount}
+          clipping={appState.clipping}
+        />
       </div>
 
       {lastResult ? (
@@ -194,7 +198,11 @@ export default function App() {
               permission={recorder.permission}
               microphones={recorder.microphones}
               systemDevices={recorder.systemDevices}
+              clippingConfig={appState.clippingConfig}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
+              onClippingConfigChange={(config) =>
+                void recorder.setClippingConfig(config)
+              }
               onRequestPermission={() => void recorder.requestPermission()}
               onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
               onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
