@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kataribe のアプリアイコン (L1 記号) の原稿。
+  1024 x 1024 のキャンバスに macOS 標準の 824 px スクワークルを置き、
+  その上に白い絵札と横を向いて語る和装の人物を描く。
+  scripts/build-icons.cjs が rsvg-convert でラスタライズして .iconset / .icns を生成する。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6563DE"/>
+      <stop offset="1" stop-color="#4F4DCB"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dy="10" result="blur"/>
+      <feComponentTransfer in="blur" result="faded">
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="faded"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="card">
+      <rect x="20" y="6" width="60" height="88" rx="3"/>
+    </clipPath>
+  </defs>
+
+  <!-- スクワークル (824 px、角丸は辺の 22.4%) -->
+  <rect x="100" y="100" width="824" height="824" rx="184" fill="url(#bg)" filter="url(#shadow)"/>
+
+  <!-- L1 の図柄 (100 x 100 の座標系を 8.24 倍してスクワークルに重ねる) -->
+  <g transform="translate(100 100) scale(8.24)">
+    <rect x="20" y="6" width="60" height="88" rx="3" fill="#FFFFFF"/>
+    <g clip-path="url(#card)">
+      <circle cx="44" cy="40" r="19" fill="#1C1B4B"/>
+      <circle cx="26" cy="36" r="7" fill="#1C1B4B"/>
+      <circle cx="50" cy="46" r="16" fill="#5856D6"/>
+      <path d="M64 41 Q73 46 64 51 Z" fill="#5856D6"/>
+      <circle cx="62" cy="56" r="1.8" fill="#1C1B4B"/>
+      <path d="M14 100 C18 84 30 78 44 76 L54 76 C70 78 84 86 90 100 Z" fill="#5856D6"/>
+      <path d="M44 76 L58 100" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+      <path d="M69 50 a7 7 0 0 1 0 12M74 46 a12 12 0 0 1 0 20" stroke="#5856D6" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    </g>
+    <rect x="66" y="12" width="7" height="7" fill="#D7261E"/>
+  </g>
+</svg>

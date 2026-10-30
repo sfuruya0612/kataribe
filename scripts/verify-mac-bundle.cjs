@@ -88,6 +88,17 @@ if (existsSync(entitlementsPath)) {
 
 if (existsSync(resources)) {
   check(existsSync(join(resources, 'README.md')), 'README.md is bundled as a resource');
+  const iconFile = existsSync(infoPlist) ? plistJson(infoPlist).CFBundleIconFile : undefined;
+  const bundledIcon = typeof iconFile === 'string' ? join(resources, iconFile) : undefined;
+  check(bundledIcon !== undefined && existsSync(bundledIcon), 'CFBundleIconFile points to a bundled icon');
+  const sourceIcon = join(process.cwd(), 'build', 'icon.icns');
+  check(
+    bundledIcon !== undefined &&
+      existsSync(bundledIcon) &&
+      existsSync(sourceIcon) &&
+      readFileSync(bundledIcon).equals(readFileSync(sourceIcon)),
+    'bundled icon matches build/icon.icns',
+  );
   check(existsSync(join(resources, 'trayTemplate.png')), 'trayTemplate.png is bundled');
   check(existsSync(join(resources, 'trayTemplate@2x.png')), 'trayTemplate@2x.png is bundled');
 

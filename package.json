@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "icons": "node scripts/build-icons.cjs",
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "test": "vitest run",
     "smoke": "npm run build && KATARIBE_SMOKE_TEST=1 electron .",

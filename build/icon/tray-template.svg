@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kataribe のメニューバー用テンプレートアイコン (L1 記号) の原稿。
+  macOS のテンプレート画像は黒とアルファだけで描く必要があるため、
+  黒い絵札から人物の形をマスクで抜き、透過で表現する。
+  scripts/build-icons.cjs が 16 px と 32 px (@2x) の PNG を生成する。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 100 100">
+  <defs>
+    <mask id="cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
+      <rect x="0" y="0" width="100" height="100" fill="#000000"/>
+      <rect x="14" y="2" width="72" height="96" rx="10" fill="#FFFFFF"/>
+      <circle cx="44" cy="40" r="20" fill="#000000"/>
+      <circle cx="25" cy="36" r="8" fill="#000000"/>
+      <path d="M60 40 Q74 46 60 52 Z" fill="#000000"/>
+      <path d="M14 98 C18 84 30 76 44 74 L54 74 C70 76 84 84 86 98 Z" fill="#000000"/>
+    </mask>
+  </defs>
+  <rect x="0" y="0" width="100" height="100" fill="#000000" mask="url(#cutout)"/>
+</svg>

@@ -24,6 +24,8 @@
   - @shoichi.furuya
 - [ADD] About に BlackHole 2ch の出典を追加する
   - @shoichi.furuya
+- [ADD] L1 の絵札アイコンから .icns とメニューバー用テンプレート PNG を生成するコマンドを追加する
+  - @shoichi.furuya
 
 ### FIX
 
