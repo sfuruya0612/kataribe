@@ -1,4 +1,4 @@
-import type { InputSource, RecordingCaptureStats } from '../../shared/types';
+import type { InputSource, MeetingStatus, RecordingCaptureStats } from '../../shared/types';
 
 export type InputDevice = {
   deviceId: string;
@@ -135,6 +135,39 @@ export function formatDateTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+export function formatMeetingDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hour = String(date.getHours()).padStart(2, '0');
+  const minute = String(date.getMinutes()).padStart(2, '0');
+  return `${month}-${day} ${hour}:${minute}`;
+}
+
+export function meetingStatusLabel(status: MeetingStatus): string {
+  switch (status) {
+    case 'recording':
+      return '録音中';
+    case 'encoding':
+      return '変換待ち';
+    case 'transcribing':
+      return '文字起こし中';
+    case 'transcribed':
+      return '文字起こし済み';
+    case 'summarized':
+      return '要約済み';
+    case 'error':
+      return 'エラー';
+  }
+}
+
+export function meetingStatusClass(status: MeetingStatus): string {
+  return `status-${status}`;
 }
 
 export function inputSourceLabel(source: InputSource): string {

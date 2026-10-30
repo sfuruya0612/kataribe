@@ -4,6 +4,54 @@ export type AppInfo = {
   saveRoot: string;
 };
 
+export type MeetingStatus =
+  | 'recording'
+  | 'encoding'
+  | 'transcribing'
+  | 'transcribed'
+  | 'summarized'
+  | 'error';
+
+export type MeetingSummary = {
+  id: string;
+  title: string;
+  meetingDir: string;
+  startedAt: string;
+  duration: number;
+  status: MeetingStatus;
+  inputSource: InputSource | null;
+  sampleRate: number;
+  audioUrl: string | null;
+  chunkCount: number;
+};
+
+export type MeetingWaveform = {
+  peaks: number[];
+  duration: number;
+};
+
+export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
+
+export type LlmProvider =
+  | 'claude'
+  | 'chatgpt'
+  | 'gemini'
+  | 'ollama'
+  | 'fireworks'
+  | 'custom';
+
+export type SummaryLanguage = 'ja' | 'en';
+
+export type AppSettings = {
+  inputSource: InputSource;
+  whisperModel: WhisperModel;
+  llmProvider: LlmProvider;
+  llmModel: string;
+  summaryLanguage: SummaryLanguage;
+  clippingConfig: ClippingConfig;
+  silenceConfig: SilenceConfig;
+};
+
 import type { ClippingConfig } from './clipping';
 import type { SilenceConfig } from './silence';
 

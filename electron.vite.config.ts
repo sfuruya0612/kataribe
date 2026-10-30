@@ -10,6 +10,7 @@ const devPolicy = [
   "connect-src 'self' ws://localhost:* http://localhost:*",
   "img-src 'self' data:",
   "font-src 'self'",
+  "media-src 'self' kataribe-audio:",
 ].join('; ');
 
 const productionPolicy = [
@@ -19,6 +20,7 @@ const productionPolicy = [
   "connect-src 'self'",
   "img-src 'self' data:",
   "font-src 'self'",
+  "media-src 'self' kataribe-audio:",
 ].join('; ');
 
 function contentSecurityPolicy(): Plugin {

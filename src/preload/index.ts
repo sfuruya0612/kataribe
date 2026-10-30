@@ -4,7 +4,10 @@ import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
+  AppSettings,
   InputSource,
+  MeetingSummary,
+  MeetingWaveform,
   MicrophonePermissionStatus,
   RecordingAppState,
   RecordingCaptureStats,
@@ -93,6 +96,15 @@ const api = {
     ipcRenderer.invoke('recording:recover', meetingId),
   openRecordingFolder: (): Promise<void> =>
     ipcRenderer.invoke('recording:open-folder'),
+  listMeetings: (): Promise<MeetingSummary[]> =>
+    ipcRenderer.invoke('meetings:list'),
+  getMeetingWaveform: (meetingId: string): Promise<MeetingWaveform> =>
+    ipcRenderer.invoke('meetings:waveform', meetingId),
+  openMeetingFolder: (meetingId: string): Promise<void> =>
+    ipcRenderer.invoke('meetings:open-folder', meetingId),
+  getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
+  updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
+    ipcRenderer.invoke('settings:set', patch),
   showAbout: (): Promise<void> => ipcRenderer.invoke('app:show-about'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('app:close-window'),
   openReadme: (): Promise<void> => ipcRenderer.invoke('app:open-readme'),

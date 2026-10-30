@@ -1,49 +1,44 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
 import type {
   AppInfo,
-  RecordingAppStatus,
+  AppSettings,
+  MeetingSummary,
   RecordingStopResult,
 } from '../../shared/types';
-import { LevelPanel } from './LevelPanel';
 import { MeetingDetail } from './MeetingDetail';
-import { MeetingList } from './MeetingList';
-import { RecordingPanel } from './RecordingPanel';
-import { RecoveryPanel } from './RecoveryPanel';
-import { ResultPanel } from './ResultPanel';
+import { MeetingTable } from './MeetingTable';
+import { RecordingView } from './RecordingView';
 import { SettingsPanel } from './SettingsPanel';
-import {
-  errorText,
-  formatDuration,
-  inputSourceLabel,
-} from './recording-utils';
+import { Sidebar, type MeetingFilter } from './Sidebar';
+import { TopBar } from './TopBar';
+import { errorText } from './recording-utils';
 import { useRecorder } from './use-recorder';
 
-type View = 'meetings' | 'detail' | 'settings';
-
-function statusBadge(status: RecordingAppStatus): string {
-  switch (status) {
-    case 'starting':
-      return '準備中';
-    case 'recording':
-      return '録音中';
-    case 'stopping':
-      return '保存中';
-    case 'encoding':
-      return '変換待ち';
-    case 'error':
-      return 'エラー';
-    default:
-      return '待機中';
-  }
-}
+type View = 'meetings' | 'detail' | 'recording' | 'settings';
 
 export default function App() {
   const recorder = useRecorder();
   const [info, setInfo] = useState<AppInfo | null>(null);
-  const [infoError, setInfoError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [view, setView] = useState<View>('meetings');
-  const [selectedResult, setSelectedResult] = useState<RecordingStopResult | null>(null);
-  const [shellError, setShellError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<MeetingFilter>('all');
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const refreshMeetings = useCallback(async () => {
+    setMeetingsLoading(true);
+    try {
+      const list = await window.kataribe.listMeetings();
+      setMeetings(list);
+    } catch (reason: unknown) {
+      setToast(`会議一覧を読み込めませんでした: ${errorText(reason)}`);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +51,19 @@ export default function App() {
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
-          setInfoError(`アプリ情報の取得に失敗しました: ${errorText(reason)}`);
+          setToast(`アプリ情報を取得できませんでした: ${errorText(reason)}`);
+        }
+      });
+    void window.kataribe
+      .getSettings()
+      .then((value) => {
+        if (!cancelled) {
+          setSettings(value);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setToast(`設定を読み込めませんでした: ${errorText(reason)}`);
         }
       });
     return () => {
@@ -64,177 +71,188 @@ export default function App() {
     };
   }, []);
 
-  const openDetail = (result: RecordingStopResult) => {
-    setSelectedResult(result);
+  useEffect(() => {
+    void refreshMeetings();
+  }, [refreshMeetings]);
+
+  useEffect(() => {
+    if (recorder.appState.lastResult) {
+      void refreshMeetings();
+    }
+  }, [refreshMeetings, recorder.appState.lastResult]);
+
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+    const timer = window.setTimeout(() => setToast(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  const updateSettings = useCallback(async (patch: Partial<AppSettings>) => {
+    try {
+      const next = await window.kataribe.updateSettings(patch);
+      setSettings(next);
+    } catch (reason: unknown) {
+      setToast(`設定を保存できませんでした: ${errorText(reason)}`);
+    }
+  }, []);
+
+  const filteredMeetings = useMemo(() => {
+    switch (filter) {
+      case 'processing':
+        return meetings.filter(
+          (meeting) =>
+            meeting.status === 'encoding' || meeting.status === 'transcribing',
+        );
+      case 'error':
+        return meetings.filter((meeting) => meeting.status === 'error');
+      case 'recording':
+        return meetings.filter((meeting) => meeting.status === 'recording');
+      case 'all':
+        return meetings;
+      default: {
+        const year = filter.slice('year:'.length);
+        return meetings.filter(
+          (meeting) =>
+            meeting.startedAt.length >= 4 && meeting.startedAt.slice(0, 4) === year,
+        );
+      }
+    }
+  }, [filter, meetings]);
+
+  const selectedMeeting =
+    meetings.find((meeting) => meeting.id === selectedMeetingId) ?? null;
+
+  const openDetail = (meeting: MeetingSummary) => {
+    setSelectedMeetingId(meeting.id);
     setView('detail');
+  };
+
+  const openDetailFromResult = (result: RecordingStopResult) => {
+    setSelectedMeetingId(result.meetingId);
+    setView('detail');
+    void refreshMeetings();
   };
 
   const runShellAction = async (action: () => Promise<void>) => {
     try {
       await action();
-      setShellError(null);
     } catch (reason: unknown) {
-      setShellError(`操作に失敗しました: ${errorText(reason)}`);
+      setToast(`操作に失敗しました: ${errorText(reason)}`);
     }
   };
 
-  const appState = recorder.appState;
-  const lastResult = appState.lastResult;
-  const detailResult = selectedResult ?? lastResult;
-  const saveRoot = info?.saveRoot ?? '~/Documents/Kataribe';
+  const toggleRecording = () => {
+    if (recorder.appState.status === 'recording') {
+      void recorder.requestStop();
+      return;
+    }
+    if (
+      recorder.appState.status === 'starting' ||
+      recorder.appState.status === 'stopping'
+    ) {
+      return;
+    }
+    setView('recording');
+    void recorder.requestStart();
+  };
+
+  const openMeetingFolder = () => {
+    if (selectedMeeting) {
+      void runShellAction(() =>
+        window.kataribe.openMeetingFolder(selectedMeeting.id),
+      );
+    }
+  };
 
   return (
-    <main className="app">
-      <header className="app-header">
-        <div className="header-copy">
-          <p className="eyebrow">Kataribe</p>
-          <h1>会議の録音</h1>
-          <p className="lead">
-            メニューバーから録音を開始し、マイクと BlackHole 2ch の音声を 1
-            つの会議フォルダにまとめます。
-          </p>
-        </div>
-        <div className="header-meta">
-          <span className={`state state-${appState.status}`} data-testid="header-state">
-            {statusBadge(appState.status)}
-          </span>
-          <span className="version">{info ? `v${info.version}` : 'v...'}</span>
-        </div>
-      </header>
-
-      <div className="recording-layout">
-        <RecordingPanel
-          status={appState.status}
-          inputSource={appState.inputSource}
-          session={appState.session}
-          elapsedSeconds={appState.elapsedSeconds}
-          error={appState.error}
-          warning={recorder.warning}
-          uiError={recorder.uiError}
-          notice={appState.notice}
-          permission={recorder.permission}
-          microphones={recorder.microphones}
-          systemDevices={recorder.systemDevices}
-          micDeviceId={recorder.micDeviceId}
-          systemDeviceId={recorder.systemDeviceId}
-          onMicDeviceChange={recorder.setMicDeviceId}
-          onSystemDeviceChange={recorder.setSystemDeviceId}
-          onRequestStart={() => void recorder.requestStart()}
-          onRequestStop={() => void recorder.requestStop()}
-          onRequestPermission={() => void recorder.requestPermission()}
-          onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
-          onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
-          onSetInputSource={(source) => void recorder.setInputSource(source)}
-        />
-        <LevelPanel
-          status={appState.status}
-          chunkCount={appState.chunkCount}
-          clipping={appState.clipping}
-          silence={appState.silence}
-        />
-      </div>
-
-      {lastResult ? (
-        <ResultPanel
-          result={lastResult}
-          onOpenFolder={() => void recorder.openFolder()}
-          onOpenDetail={() => openDetail(lastResult)}
-        />
-      ) : null}
-
-      <RecoveryPanel
-        recordings={recorder.recoverable}
-        recoveringId={recorder.recoveringId}
-        onRecover={(recording) => void recorder.recover(recording)}
+    <div className="app-shell">
+      <TopBar
+        appState={recorder.appState}
+        saveRoot={info?.saveRoot ?? '~/Documents/Kataribe'}
+        meetingCount={meetings.length}
+        onToggleRecording={toggleRecording}
       />
 
       <div className="workspace">
-        <aside className="sidebar" aria-label="画面の切り替え">
-          <p className="sidebar-label">メニュー</p>
-          <button
-            type="button"
-            className={`nav-button ${view === 'meetings' ? 'is-active' : ''}`}
-            onClick={() => setView('meetings')}
-            data-testid="nav-meetings"
-          >
-            会議一覧
-          </button>
-          <button
-            type="button"
-            className={`nav-button ${view === 'detail' ? 'is-active' : ''}`}
-            onClick={() => setView('detail')}
-            data-testid="nav-detail"
-          >
-            会議詳細
-          </button>
-          <button
-            type="button"
-            className={`nav-button ${view === 'settings' ? 'is-active' : ''}`}
-            onClick={() => setView('settings')}
-            data-testid="nav-settings"
-          >
-            設定
-          </button>
+        <Sidebar
+          meetings={meetings}
+          view={view}
+          filter={filter}
+          onFilter={(next) => {
+            setFilter(next);
+            setView('meetings');
+          }}
+          onOpenRecording={() => setView('recording')}
+          onOpenSettings={() => setView('settings')}
+        />
 
-          <div className="sidebar-status">
-            <span>録音状態</span>
-            <strong>{statusBadge(appState.status)}</strong>
-            <span>経過時間</span>
-            <strong>{formatDuration(appState.elapsedSeconds)}</strong>
-            <span>入力ソース</span>
-            <strong>{inputSourceLabel(appState.inputSource)}</strong>
-          </div>
-        </aside>
-
-        <div className="view-area">
+        <main className="main-pane">
           {view === 'meetings' ? (
-            <MeetingList lastResult={appState.lastResult} onOpenDetail={openDetail} />
+            <MeetingTable
+              meetings={filteredMeetings}
+              loading={meetingsLoading}
+              selectedId={selectedMeetingId}
+              isRecording={recorder.appState.status === 'recording'}
+              recordingBusy={
+                recorder.appState.status === 'starting' ||
+                recorder.appState.status === 'stopping'
+              }
+              onSelect={openDetail}
+              onRefresh={() => void refreshMeetings()}
+              onToggleRecording={toggleRecording}
+            />
           ) : null}
-          {view === 'detail' ? <MeetingDetail result={detailResult} /> : null}
+
+          {view === 'detail' ? (
+            <MeetingDetail
+              meeting={selectedMeeting}
+              onBack={() => setView('meetings')}
+              onOpenFolder={openMeetingFolder}
+            />
+          ) : null}
+
+          {view === 'recording' ? (
+            <RecordingView
+              recorder={recorder}
+              onOpenDetail={openDetailFromResult}
+              onOpenReadme={() =>
+                void runShellAction(() => window.kataribe.openReadme())
+              }
+            />
+          ) : null}
+
           {view === 'settings' ? (
             <SettingsPanel
-              saveRoot={saveRoot}
+              saveRoot={info?.saveRoot ?? '~/Documents/Kataribe'}
               version={info?.version ?? '0.1.0'}
-              inputSource={appState.inputSource}
+              settings={settings}
+              inputSource={recorder.appState.inputSource}
               permission={recorder.permission}
               microphones={recorder.microphones}
               systemDevices={recorder.systemDevices}
-              clippingConfig={appState.clippingConfig}
-              silenceConfig={appState.silenceConfig}
+              onUpdateSettings={(patch) => void updateSettings(patch)}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
-              onClippingConfigChange={(config) =>
-                void recorder.setClippingConfig(config)
-              }
-              onSilenceConfigChange={(config) =>
-                void recorder.setSilenceConfig(config)
-              }
               onRequestPermission={() => void recorder.requestPermission()}
               onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}
-              onOpenReadme={() => void runShellAction(() => window.kataribe.openReadme())}
+              onOpenReadme={() =>
+                void runShellAction(() => window.kataribe.openReadme())
+              }
               onOpenBlackHoleSite={() =>
                 void runShellAction(() => window.kataribe.openBlackHoleSite())
               }
               onShowAbout={() => void runShellAction(() => window.kataribe.showAbout())}
             />
           ) : null}
-        </div>
+        </main>
       </div>
 
-      {infoError ? (
-        <p className="alert alert-error" role="alert">
-          {infoError}
-        </p>
+      {toast ? (
+        <div className="toast" role="status">
+          {toast}
+        </div>
       ) : null}
-      {shellError ? (
-        <p className="alert alert-error" role="alert">
-          {shellError}
-        </p>
-      ) : null}
-
-      <footer className="app-footer">
-        <span>macOS 14.2 以降 / Apple Silicon</span>
-        <span>保存先: {saveRoot}</span>
-      </footer>
-    </main>
+    </div>
   );
 }

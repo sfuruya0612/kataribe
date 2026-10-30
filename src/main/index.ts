@@ -1,11 +1,14 @@
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   app,
   BrowserWindow,
   ipcMain,
   Menu,
+  net,
   powerMonitor,
   powerSaveBlocker,
+  protocol,
   session,
   shell,
   systemPreferences,
@@ -15,6 +18,7 @@ import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
+  AppSettings,
   InputSource,
   MicrophonePermissionStatus,
   RecordingCaptureStats,
@@ -31,9 +35,11 @@ import type {
   RecordingStartupFailureResult,
   StartRecordingOptions,
 } from '../shared/types';
+import { MeetingStore } from './meetings';
 import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
+import { SettingsStore } from './settings';
 import {
   isAllowedPermission,
   type PermissionDetails,
@@ -53,6 +59,18 @@ let isQuitting = false;
 let stateTimer: NodeJS.Timeout | null = null;
 
 app.setName('Kataribe');
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'kataribe-audio',
+    privileges: {
+      standard: false,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+    },
+  },
+]);
 
 const stateStore = new RecordingStateStore({
   now: () => Date.now(),
@@ -99,6 +117,35 @@ function configureSession(): void {
   });
 }
 
+function meetingIdFromAudioUrl(rawUrl: string): string | null {
+  const prefix = 'kataribe-audio://meeting/';
+  if (!rawUrl.startsWith(prefix)) {
+    return null;
+  }
+  const value = decodeURIComponent(rawUrl.slice(prefix.length).split('?')[0]);
+  return value.length > 0 ? value : null;
+}
+
+function registerAudioProtocol(meetingStore: MeetingStore): void {
+  protocol.handle('kataribe-audio', async (request) => {
+    const meetingId = meetingIdFromAudioUrl(request.url);
+    if (!meetingId) {
+      return new Response('Not found', { status: 404 });
+    }
+    const audioPath = await meetingStore.audioPath(meetingId);
+    if (!audioPath) {
+      return new Response('Not found', { status: 404 });
+    }
+
+    try {
+      return await net.fetch(pathToFileURL(audioPath).toString());
+    } catch (error) {
+      console.error(`failed to serve meeting audio: ${meetingId}`, error);
+      return new Response('Not found', { status: 404 });
+    }
+  });
+}
+
 function registerAppMenu(): void {
   app.setAboutPanelOptions({
     applicationName: 'Kataribe 会議録',
@@ -137,13 +184,15 @@ function registerAppMenu(): void {
 
 function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
-    width: 1180,
-    height: 820,
-    minWidth: 960,
-    minHeight: 680,
+    width: 1280,
+    height: 860,
+    minWidth: 1024,
+    minHeight: 720,
     show: false,
     title: 'Kataribe',
-    backgroundColor: '#f6f4ff',
+    backgroundColor: '#E9E9EE',
+    titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -273,7 +322,11 @@ function readmePath(): string {
     : join(app.getAppPath(), 'README.md');
 }
 
-function registerIpc(recordingManager: RecordingManager): void {
+function registerIpc(
+  recordingManager: RecordingManager,
+  meetingStore: MeetingStore,
+  settingsStore: SettingsStore,
+): void {
   ipcMain.handle('app:info', (): AppInfo => {
     return {
       version: app.getVersion(),
@@ -334,27 +387,57 @@ function registerIpc(recordingManager: RecordingManager): void {
     return coordinator.stop();
   });
 
-  ipcMain.handle('recording:set-source', (_event, source: InputSource) => {
+  ipcMain.handle('recording:set-source', async (_event, source: InputSource) => {
     if (!stateStore.setInputSource(source)) {
       throw new Error('invalid input source');
     }
+    await settingsStore.save({ inputSource: source });
     return stateStore.getState();
   });
 
-  ipcMain.handle('recording:set-clipping-config', (_event, config: unknown) => {
+  ipcMain.handle('recording:set-clipping-config', async (_event, config: unknown) => {
     if (typeof config !== 'object' || config === null) {
       throw new Error('invalid clipping config');
     }
-    stateStore.setClippingConfig(config as Partial<ClippingConfig>);
+    const updated = stateStore.setClippingConfig(config as Partial<ClippingConfig>);
+    await settingsStore.save({ clippingConfig: updated });
     return stateStore.getState();
   });
 
-  ipcMain.handle('recording:set-silence-config', (_event, config: unknown) => {
+  ipcMain.handle('recording:set-silence-config', async (_event, config: unknown) => {
     if (typeof config !== 'object' || config === null) {
       throw new Error('invalid silence config');
     }
-    stateStore.setSilenceConfig(config as Partial<SilenceConfig>);
+    const updated = stateStore.setSilenceConfig(config as Partial<SilenceConfig>);
+    await settingsStore.save({ silenceConfig: updated });
     return stateStore.getState();
+  });
+
+  ipcMain.handle('settings:get', () => settingsStore.get());
+
+  ipcMain.handle('settings:set', async (_event, patch: unknown) => {
+    if (typeof patch !== 'object' || patch === null) {
+      throw new Error('invalid settings');
+    }
+    const settings = await settingsStore.save(patch as Partial<AppSettings>);
+    stateStore.setInputSource(settings.inputSource);
+    stateStore.setClippingConfig(settings.clippingConfig);
+    stateStore.setSilenceConfig(settings.silenceConfig);
+    return settings;
+  });
+
+  ipcMain.handle('meetings:list', () => meetingStore.list());
+
+  ipcMain.handle('meetings:waveform', (_event, meetingId: string) => {
+    return meetingStore.waveform(meetingId);
+  });
+
+  ipcMain.handle('meetings:open-folder', async (_event, meetingId: string) => {
+    const meeting = await meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error('meeting not found');
+    }
+    shell.showItemInFolder(meeting.meetingDir);
   });
 
   ipcMain.handle('recording:start', async (_event, options: StartRecordingOptions) => {
@@ -618,12 +701,22 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     configureSession();
     registerAppMenu();
 
+    const saveRoot = join(app.getPath('documents'), 'Kataribe');
+    const meetingStore = new MeetingStore(saveRoot);
+    const settingsStore = new SettingsStore(
+      join(app.getPath('userData'), 'settings.json'),
+    );
+    const storedSettings = await settingsStore.load();
+    stateStore.setInputSource(storedSettings.inputSource);
+    stateStore.setClippingConfig(storedSettings.clippingConfig);
+    stateStore.setSilenceConfig(storedSettings.silenceConfig);
+
     const recordingManager = new RecordingManager({
-      saveRoot: join(app.getPath('documents'), 'Kataribe'),
+      saveRoot,
       tempRoot: join(app.getPath('userData'), 'tmp'),
       appVersion: app.getVersion(),
       blocker: {
@@ -639,7 +732,8 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     activeRecordingManager = recordingManager;
-    registerIpc(recordingManager);
+    registerAudioProtocol(meetingStore);
+    registerIpc(recordingManager, meetingStore, settingsStore);
 
     let suspendedAt: number | null = null;
     powerMonitor.on('suspend', () => {
@@ -717,6 +811,7 @@ if (!app.requestSingleInstanceLock()) {
         },
         selectInputSource: (source) => {
           stateStore.setInputSource(source);
+          void settingsStore.save({ inputSource: source });
         },
         openWindow: () => focusMainWindow(),
         quit: () => {

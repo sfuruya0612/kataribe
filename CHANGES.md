@@ -18,6 +18,8 @@
   - @shoichi.furuya
 - [ADD] マイク入力のクリッピング警告と設定を追加する
   - @shoichi.furuya
+- [ADD] P6 の新 UI、会議一覧、波形オーディオプレイヤー、タブ式設定と設定保存を追加する
+  - @shoichi.furuya
 - [ADD] システム音声の無音検出と設定を追加する
   - @shoichi.furuya
 - [ADD] スリープ復帰時の録音再開と無音ギャップ補填を追加する

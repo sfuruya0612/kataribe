@@ -4,7 +4,10 @@ import type { ClippingConfig } from '../../shared/clipping';
 import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
+  AppSettings,
   InputSource,
+  MeetingSummary,
+  MeetingWaveform,
   MicrophonePermissionStatus,
   RecordingAppState,
   RecordingCaptureStats,
@@ -74,6 +77,11 @@ declare global {
       listRecoverableRecordings: () => Promise<RecoverableRecording[]>;
       recoverRecording: (meetingId: string) => Promise<RecordingStopResult>;
       openRecordingFolder: () => Promise<void>;
+      listMeetings: () => Promise<MeetingSummary[]>;
+      getMeetingWaveform: (meetingId: string) => Promise<MeetingWaveform>;
+      openMeetingFolder: (meetingId: string) => Promise<void>;
+      getSettings: () => Promise<AppSettings>;
+      updateSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
       showAbout: () => Promise<void>;
       closeWindow: () => Promise<void>;
       openReadme: () => Promise<void>;

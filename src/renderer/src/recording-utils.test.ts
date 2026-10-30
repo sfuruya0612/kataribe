@@ -6,6 +6,9 @@ import {
   deviceLossAction,
   errorText,
   formatDateTime,
+  formatMeetingDate,
+  meetingStatusClass,
+  meetingStatusLabel,
   recordingErrorText,
   formatDuration,
   formatLevel,
@@ -184,6 +187,28 @@ describe('inputSourceLabel', () => {
     expect(inputSourceLabel('microphone')).toBe('マイク');
     expect(inputSourceLabel('system')).toBe('システム音声');
     expect(inputSourceLabel('both')).toBe('マイク + システム音声');
+  });
+});
+
+describe('formatMeetingDate', () => {
+  it('formats a meeting timestamp for the table', () => {
+    expect(formatMeetingDate('2026-10-29T05:05:00.000Z')).toMatch(/^10-29 \d{2}:\d{2}$/);
+    expect(formatMeetingDate('not a date')).toBe('not a date');
+  });
+});
+
+describe('meeting status helpers', () => {
+  it('labels every meeting status', () => {
+    expect(meetingStatusLabel('recording')).toBe('録音中');
+    expect(meetingStatusLabel('encoding')).toBe('変換待ち');
+    expect(meetingStatusLabel('transcribing')).toBe('文字起こし中');
+    expect(meetingStatusLabel('transcribed')).toBe('文字起こし済み');
+    expect(meetingStatusLabel('summarized')).toBe('要約済み');
+    expect(meetingStatusLabel('error')).toBe('エラー');
+  });
+
+  it('builds a CSS status class', () => {
+    expect(meetingStatusClass('encoding')).toBe('status-encoding');
   });
 });
 
