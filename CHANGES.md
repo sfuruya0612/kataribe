@@ -38,3 +38,5 @@
   - @shoichi.furuya
 - [ADD] 録音のリリース回帰テスト手順と結果テンプレートを追加する
   - @shoichi.furuya
+- [CHANGE] 配布予定がないため署名・公証の検証を対象外にする
+  - @shoichi.furuya

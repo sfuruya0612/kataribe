@@ -2,6 +2,7 @@
 
 Created: 2026-10-29
 Model: DeepSeek V4.1 Flash 1017
+Completed: 2026-10-30
 優先度: P1
 対応 ADR: ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)、ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)
 関連 PRD: 非機能要件の配布と権限
@@ -69,6 +70,18 @@ Apple Developer ID Application の証明書と Apple の公証サービスの資
 - README と ADR-0014 の更新
 
 資格情報が用意できたら `docs/issues/` に戻し、署名と公証をしたビルドで残りの完了条件を確認する。
+
+## 解決方法
+
+2026-10-30 に、Kataribe を配布する予定がないことを確認した。
+ADR-0017 で、DMG の作成、Apple Developer ID Application での署名、Apple の公証、Gatekeeper の評価を行わないと決めた。
+
+- 署名と公証をしたビルドの検証は、配布しないため対象外とする。
+- Gatekeeper の警告なしの起動確認も対象外とする。
+- `docs/release-checklist.md` は、将来配布する場合の参考として残す。
+- ローカルビルドでは、`npm run verify:mac`、実機の録音確認、回帰テストを使う。
+- `Info.plist`、entitlement、`scripts/verify-mac-bundle.cjs` は将来の配布に備えて残す。
+- 未完了だった署名、公証、Gatekeeper、署名済みビルドの権限確認は、配布しないため不要になった。
 
 ## 参照
 

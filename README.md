@@ -16,6 +16,7 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 アプリ基盤、録音中核、メニューバー、会議一覧、会議詳細、設定の土台、デバイス消失と権限拒否の処理は実装済みです。
 M0 のシステム音声検証は完了しています。
 会議一覧と会議詳細の本実装、設定値の保存、mp3 への変換、文字起こし、要約はまだ実装されていません。
+配布予定はなく、ローカルの開発ビルドのみを対象にしています。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
 ## ドキュメント
@@ -33,7 +34,8 @@ M0 のシステム音声検証は完了しています。
 - [ADR-0002: Web Audio 録音とチャンク](docs/adr/0002-web-audio-recording-and-chunks.md)
 - [ADR-0003: システム音声は BlackHole 経由](docs/adr/0003-system-audio-virtual-device.md)
 - [ADR-0012: メニューバーとメインウィンドウ](docs/adr/0012-menu-bar-and-main-window.md)
-- [ADR-0014: DMG 配布と署名、公証](docs/adr/0014-distribution-dmg-notarization.md)
+- [ADR-0014: DMG 配布と署名、公証（ADR-0017 で置き換え）](docs/adr/0014-distribution-dmg-notarization.md)
+- [ADR-0017: 配布は行わず、ローカルビルドのみを使う](docs/adr/0017-local-build-only.md)
 
 ## 動作環境
 
@@ -127,8 +129,9 @@ Bluetooth 出力には遅延があります。
 
 ### 配布版
 
-配布版はまだありません。
-リリース後は GitHub Releases から DMG をダウンロードし、Applications に移動して起動します。
+配布版はありません。
+現在は配布予定がないため、DMG の配布、署名、公証は行いません。
+ローカルの開発版を使います。
 初回の録音時または入力デバイスの検出時に、マイク権限のダイアログが出ます。
 
 ### 開発版
@@ -157,9 +160,8 @@ npm run verify:mac
 
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
 `npm run verify:mac` は、`Info.plist`、entitlement、同梱物、アプリサイズを検査する。
-署名済みビルドでは `npm run verify:mac:release` を使う。
 `npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
-署名と公証は [issue 0013](docs/issues/pending/0013-feat-release-checklist-and-entitlements.md) で行う。
+署名と公証は行いません（[ADR-0017](docs/adr/0017-local-build-only.md)）。
 
 起動するとメニューバーにマイクのアイコンが表示されます。
 
@@ -287,11 +289,10 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [PRD](docs/prd/kataribe.md)
 - [ADR 一覧](docs/adr/)
 - [Issue 一覧](docs/issues/)
-- [リリースチェックリスト](docs/release-checklist.md)
+- [配布する場合のリリースチェックリスト](docs/release-checklist.md)
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
 アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、スリープ復帰の [issue 0003](docs/issues/closed/0003-feat-sleep-recovery.md)、回帰テストの [issue 0006](docs/issues/closed/0006-test-m0-regression-harness.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md) は実装済みです。
-[issue 0013](docs/issues/pending/0013-feat-release-checklist-and-entitlements.md) は署名と公証の資格情報が必要なため、ローカルでできる検証だけを実装して pending にしています。
-保留中の issue は `docs/issues/pending/` にあります。
+配布予定がないため、[issue 0013](docs/issues/closed/0013-feat-release-checklist-and-entitlements.md) の署名、公証、Gatekeeper の検証は対象外にしました。
 保留中の issue は `docs/issues/pending/` にあります。

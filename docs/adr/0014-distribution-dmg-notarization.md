@@ -2,7 +2,10 @@
 
 Created: 2026-10-28
 Model: DeepSeek V4.1 Flash 1017
-Status: Accepted
+Status: Superseded by [ADR-0017](0017-local-build-only.md)
+
+2026-10-30: 配布予定がないため、ADR-0017 でローカルビルドのみを使う決定に置き換えた。
+以下の内容は、将来配布する場合の参考として残す。
 
 ## 背景
 
