@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Kataribe 案 06 採用案</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Old+Mincho:wght@700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#E9E9EE}
+a{color:#4B49C9;text-decoration:none}a:hover{text-decoration:underline}
+.serif{font-family:"Zen Old Mincho",serif;font-weight:700}
+.mono{font-family:"JetBrains Mono",ui-monospace,monospace}
+.win{display:flex;flex-direction:column;background:#FFFFFF;border:1px solid rgba(0,0,0,.14);border-radius:12px;overflow:hidden;box-shadow:0 18px 40px rgba(0,0,0,.14),0 1px 2px rgba(0,0,0,.08);font-size:12px;line-height:1.5;color:#1D1D1F}
+.tb{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;background:#F6F6F8;border-bottom:1px solid rgba(0,0,0,.1);flex:none}
+.tl{width:12px;height:12px;border-radius:50%;flex:none}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:500;white-space:nowrap;line-height:20px;background:#F0F0F5;color:#1D1D1F}
+.tr{display:grid;grid-template-columns:112px minmax(0,1fr) 60px 140px;gap:12px;align-items:center;padding:8px 14px;border-bottom:1px solid #EFEFF3}
+.swb{height:44px;border-radius:8px;border:1px solid rgba(0,0,0,.1)}
+.lbl{font-size:11px;color:#6E6E73;letter-spacing:.06em;text-transform:uppercase}
+.fld{display:flex;align-items:center;height:28px;padding:0 10px;border-radius:6px;border:1px solid rgba(0,0,0,.16);background:#FFFFFF;color:#1D1D1F;font-size:12px;box-shadow:inset 0 1px 1px rgba(0,0,0,.04)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.btn{height:28px;padding:0 12px;border-radius:7px;border:1px solid rgba(0,0,0,.16);background:#FFFFFF;color:#1D1D1F;font-weight:500;font-size:12px;box-shadow:0 1px 1px rgba(0,0,0,.06)}
+.pri{background:#5856D6;color:#FFFFFF;border-color:#4B49C9}
+.side{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:#1D1D1F}
+.card{border:1px solid rgba(0,0,0,.1);border-radius:10px;background:#FFFFFF;overflow:hidden}
+.seg{display:flex;background:#E9E9EE;border-radius:8px;padding:2px}
+.seg button{flex:1;height:24px;border-radius:6px;font-size:11px;font-weight:500;color:#6E6E73}
+.seg button[aria-pressed="true"]{background:#FFFFFF;color:#1D1D1F;box-shadow:0 1px 2px rgba(0,0,0,.14)}
+button{font:inherit;cursor:pointer;border:0;color:inherit;background:none;padding:0}
+h1,h2,h3,p,ul{margin:0}
+ul{padding:0;list-style:none}
+</style>
+</helmet>
+<div style="width: 1680px; height: 1240px; box-sizing: border-box; padding: 48px; background: #E9E9EE; color: #1D1D1F; font-family: 'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif; display: flex; flex-direction: column; gap: 28px">
+
+  <header style="display: flex; align-items: flex-end; justify-content: space-between; gap: 32px; flex: none">
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div class="mono" style="font-size: 12px; letter-spacing: .22em; color: #6E6E73">PATTERN 06 / FINAL</div>
+      <h1 class="serif" style="font-size: 44px; font-weight: 900; line-height: 1.1; letter-spacing: .02em">Kataribe<span style="font-family: 'JetBrains Mono', monospace; font-weight: 400; font-size: 20px; color: #6E6E73; margin-left: 16px">adopted direction</span></h1>
+      <p style="font-size: 14px; color: #6E6E73; max-width: 860px">03 の macOS ネイティブ配色 (藍紫 #5856D6 の 1 色) に、見出しは Zen Old Mincho、本文はヒラギノ角ゴシック、時刻や数値は JetBrains Mono を重ねる。アプリ名は常にローマ字の Kataribe。アイコンは 08 の L1: 絵札に入れた、横を向いて語る和装の人物。</p>
+    </div>
+    <ul style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; max-width: 460px">
+      <li class="chip">macOS HIG の配色</li>
+      <li class="chip">見出し Zen Old Mincho</li>
+      <li class="chip">本文 ヒラギノ角ゴ</li>
+      <li class="chip">時刻 JetBrains Mono</li>
+      <li class="chip" style="background: #5856D6; color: #FFFFFF">絵札の横顔アイコン (L1)</li>
+    </ul>
+  </header>
+
+  <div style="display: flex; gap: 32px; flex: 1; min-height: 0">
+
+    <aside style="width: 420px; flex: none; display: flex; flex-direction: column; gap: 24px">
+
+      <section style="display: flex; flex-direction: column; gap: 12px">
+        <div class="lbl">アプリアイコン (08 の L1 を採用)</div>
+        <div style="display: flex; align-items: flex-end; gap: 20px">
+          <div style="width: 200px; height: 200px; border-radius: 45px; background: linear-gradient(180deg, #6563DE 0%, #4F4DCB 100%); box-shadow: 0 12px 30px rgba(88,86,214,.4), inset 0 1px 0 rgba(255,255,255,.3); display: flex; align-items: center; justify-content: center; flex: none">
+            <svg viewBox="0 0 100 100" width="200" height="200" role="img" aria-label="Kataribe アイコン: 絵札の中に横を向いて語る和装の人物">
+              <defs><clipPath id="c6a"><rect x="20" y="6" width="60" height="88" rx="3"/></clipPath></defs>
+              <rect x="20" y="6" width="60" height="88" rx="3" fill="#FFFFFF"/>
+              <g clip-path="url(#c6a)">
+                <circle cx="44" cy="40" r="19" fill="#1C1B4B"/><circle cx="26" cy="36" r="7" fill="#1C1B4B"/>
+                <circle cx="50" cy="46" r="16" fill="#5856D6"/><path d="M64 41 Q73 46 64 51 Z" fill="#5856D6"/>
+                <circle cx="62" cy="56" r="1.8" fill="#1C1B4B"/>
+                <path d="M14 100 C18 84 30 78 44 76 L54 76 C70 78 84 86 90 100 Z" fill="#5856D6"/>
+                <path d="M44 76 L58 100" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+                <path d="M69 50 a7 7 0 0 1 0 12M74 46 a12 12 0 0 1 0 20" stroke="#5856D6" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+              </g>
+              <rect x="66" y="12" width="7" height="7" fill="#D7261E"/>
+            </svg>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 14px; align-items: flex-start">
+            <div style="display: flex; align-items: flex-end; gap: 12px">
+              <div style="width: 64px; height: 64px; border-radius: 14px; background: #5856D6; display: flex; align-items: center; justify-content: center; flex: none">
+                <svg viewBox="0 0 100 100" width="64" height="64" aria-hidden="true">
+                  <defs><clipPath id="c6b"><rect x="20" y="6" width="60" height="88" rx="3"/></clipPath></defs>
+                  <rect x="20" y="6" width="60" height="88" rx="3" fill="#FFFFFF"/>
+                  <g clip-path="url(#c6b)">
+                    <circle cx="44" cy="40" r="19" fill="#1C1B4B"/><circle cx="26" cy="36" r="7" fill="#1C1B4B"/>
+                    <circle cx="50" cy="46" r="16" fill="#5856D6"/><path d="M64 41 Q73 46 64 51 Z" fill="#5856D6"/>
+                    <circle cx="62" cy="56" r="1.8" fill="#1C1B4B"/>
+                    <path d="M14 100 C18 84 30 78 44 76 L54 76 C70 78 84 86 90 100 Z" fill="#5856D6"/>
+                    <path d="M44 76 L58 100" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+                    <path d="M69 50 a7 7 0 0 1 0 12M74 46 a12 12 0 0 1 0 20" stroke="#5856D6" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+                  </g>
+                  <rect x="66" y="12" width="7" height="7" fill="#D7261E"/>
+                </svg>
+              </div>
+              <div style="width: 32px; height: 32px; border-radius: 7px; background: #5856D6; display: flex; align-items: center; justify-content: center; flex: none">
+                <svg viewBox="0 0 100 100" width="32" height="32" aria-hidden="true">
+                  <defs><clipPath id="c6c"><rect x="20" y="6" width="60" height="88" rx="3"/></clipPath></defs>
+                  <rect x="20" y="6" width="60" height="88" rx="3" fill="#FFFFFF"/>
+                  <g clip-path="url(#c6c)">
+                    <circle cx="44" cy="40" r="19" fill="#1C1B4B"/><circle cx="26" cy="36" r="7" fill="#1C1B4B"/>
+                    <circle cx="50" cy="46" r="16" fill="#5856D6"/><path d="M64 41 Q73 46 64 51 Z" fill="#5856D6"/>
+                    <circle cx="62" cy="56" r="1.8" fill="#1C1B4B"/>
+                    <path d="M14 100 C18 84 30 78 44 76 L54 76 C70 78 84 86 90 100 Z" fill="#5856D6"/>
+                    <path d="M44 76 L58 100" stroke="#FFFFFF" stroke-width="3" fill="none"/>
+                    <path d="M69 50 a7 7 0 0 1 0 12M74 46 a12 12 0 0 1 0 20" stroke="#5856D6" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+                  </g>
+                  <rect x="66" y="12" width="7" height="7" fill="#D7261E"/>
+                </svg>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div class="lbl" style="font-size: 10px">メニューバー (単色テンプレート)</div>
+              <div style="display: flex; align-items: center; gap: 10px; height: 26px; padding: 0 10px; border-radius: 6px; background: #1C1C1E; color: #FFFFFF; font-size: 12px">
+                <svg viewBox="0 0 100 100" width="16" height="16" aria-hidden="true"><rect x="14" y="2" width="72" height="96" rx="10" fill="#FFFFFF"/><circle cx="44" cy="40" r="20" fill="#1C1C1E"/><circle cx="25" cy="36" r="8" fill="#1C1C1E"/><path d="M60 40 Q74 46 60 52 Z" fill="#1C1C1E"/><path d="M14 98 C18 84 30 76 44 74 L54 74 C70 76 84 84 86 98 Z" fill="#1C1C1E"/></svg>
+                <span class="mono">00:23:41</span>
+                <span class="dot" style="background: #FF453A"></span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 10px; height: 26px; padding: 0 10px; border-radius: 6px; background: #E8E8EA; color: #1D1D1F; font-size: 12px">
+                <svg viewBox="0 0 100 100" width="16" height="16" aria-hidden="true"><rect x="14" y="2" width="72" height="96" rx="10" fill="#1D1D1F"/><circle cx="44" cy="40" r="20" fill="#E8E8EA"/><circle cx="25" cy="36" r="8" fill="#E8E8EA"/><path d="M60 40 Q74 46 60 52 Z" fill="#E8E8EA"/><path d="M14 98 C18 84 30 76 44 74 L54 74 C70 76 84 84 86 98 Z" fill="#E8E8EA"/></svg>
+                <span class="mono">00:23:41</span>
+                <span class="dot" style="background: #D7261E"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p style="font-size: 11px; color: #6E6E73">絵札 (白) に円と三角だけの横顔と朱印。色数 4。全サイズ同じ図形で潰れず、単色テンプレートは札から人物を抜いた形にする。</p>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <div class="lbl">カラーパレット (03 を採用)</div>
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px">
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #5856D6"></div><div style="font-size: 11px; font-weight: 500">藍紫 / アクセント</div><div class="mono" style="font-size: 10px; color: #6E6E73">#5856D6</div></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #1D1D1F"></div><div style="font-size: 11px; font-weight: 500">ラベル</div><div class="mono" style="font-size: 10px; color: #6E6E73">#1D1D1F</div></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #6E6E73"></div><div style="font-size: 11px; font-weight: 500">補助ラベル</div><div class="mono" style="font-size: 10px; color: #6E6E73">#6E6E73</div></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #F6F6F8"></div><div style="font-size: 11px; font-weight: 500">ウィンドウクローム</div><div class="mono" style="font-size: 10px; color: #6E6E73">#F6F6F8</div></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #FF3B30"></div><div style="font-size: 11px; font-weight: 500">録音 / エラー</div><div class="mono" style="font-size: 10px; color: #6E6E73">#FF3B30</div></div>
+          <div style="display: flex; flex-direction: column; gap: 4px"><div class="swb" style="background: #34C759"></div><div style="font-size: 11px; font-weight: 500">完了</div><div class="mono" style="font-size: 10px; color: #6E6E73">#34C759</div></div>
+        </div>
+      </section>
+
+      <section style="display: flex; flex-direction: column; gap: 10px">
+        <div class="lbl">タイポグラフィ</div>
+        <div class="card" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 18px">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px">
+            <span class="serif" style="font-size: 30px; font-weight: 900">Kataribe 週次定例</span>
+            <span class="lbl" style="text-transform: none">Zen Old Mincho / 見出し</span>
+          </div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px">
+            <span style="font-size: 13px">今日は先週のリリース後の障害対応について話します。</span>
+            <span class="lbl" style="text-transform: none; white-space: nowrap">ヒラギノ角ゴシック / 本文</span>
+          </div>
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px">
+            <span class="mono" style="font-size: 13px">00:00:04 · 52:13 · 2026-10-29 · -18 dB</span>
+            <span class="lbl" style="text-transform: none; white-space: nowrap">JetBrains Mono / 時刻・数値・パス</span>
+          </div>
+          <p style="font-size: 10px; color: #6E6E73">ヒラギノ角ゴシックは macOS 同梱のため配布不要。等幅が要る時刻・長さ・パス・モデル名にだけ JetBrains Mono を当てる。</p>
+        </div>
+      </section>
+
+    </aside>
+
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 24px">
+
+      <div style="display: flex; gap: 24px; height: 480px; flex: none">
+
+        <div style="width: 320px; flex: none; display: flex; flex-direction: column; gap: 16px">
+          <section class="win" aria-label="メニューバーのポップオーバー" style="border-radius: 14px">
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 0">
+              <span class="serif" style="font-size: 15px">Kataribe</span>
+              <span class="chip" style="background: #FFE5E3; color: #B3261E"><span class="dot" style="background: #FF3B30"></span>録音中</span>
+            </div>
+            <div class="mono" style="font-size: 40px; font-weight: 500; text-align: center; padding: 8px 0 2px; letter-spacing: -.02em">00:23:41</div>
+            <div style="padding: 4px 14px 0; display: flex; flex-direction: column; gap: 6px; font-size: 11px">
+              <div style="display: flex; align-items: center; gap: 8px"><span style="width: 56px; color: #6E6E73">マイク</span><span style="flex: 1; height: 6px; border-radius: 3px; background: #E9E9EE; overflow: hidden"><span style="display: block; width: 62%; height: 100%; background: #5856D6"></span></span><span class="mono" style="width: 44px; text-align: right">-18 dB</span></div>
+              <div style="display: flex; align-items: center; gap: 8px"><span style="width: 56px; color: #6E6E73">システム</span><span style="flex: 1; height: 6px; border-radius: 3px; background: #E9E9EE; overflow: hidden"><span style="display: block; width: 44%; height: 100%; background: #5856D6"></span></span><span class="mono" style="width: 44px; text-align: right">-24 dB</span></div>
+            </div>
+            <div style="padding: 14px 14px 0; display: flex; flex-direction: column; gap: 6px">
+              <div class="lbl" style="font-size: 10px">入力ソース</div>
+              <div class="seg">
+                <button type="button">マイク</button>
+                <button type="button">システム</button>
+                <button type="button" aria-pressed="true">両方</button>
+              </div>
+            </div>
+            <div style="padding: 14px 14px 0">
+              <button type="button" class="btn pri" style="width: 100%; height: 38px; font-size: 13px; border-radius: 9px">■ 停止して文字起こし</button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 12px; font-size: 12px; border-top: 1px solid #EFEFF3; margin-top: 14px">
+              <a href="#">メインウィンドウを開く</a>
+              <span class="mono" style="font-size: 11px; color: #6E6E73">⌘⇧K</span>
+            </div>
+          </section>
+
+          <section class="win" aria-label="送信前の確認ダイアログ" style="flex: 1; min-height: 0; border-radius: 14px">
+            <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; flex: 1">
+              <h3 class="serif" style="font-size: 14px">文字起こしを送信します</h3>
+              <div style="font-size: 10.5px; display: flex; flex-direction: column; gap: 1px">
+                <span><span style="color: #6E6E73">送信先  </span>Claude · <span class="mono">claude-sonnet-5-5</span></span>
+                <span><span style="color: #6E6E73">内容    </span><span class="mono">transcript.md</span> · <span class="mono">12,480</span> 文字</span>
+                <span><span style="color: #6E6E73">トークン</span>約 <span class="mono">9,800</span></span>
+                <span><span style="color: #6E6E73">音声    </span><span style="color: #1E8E3E">送信しません</span></span>
+              </div>
+              <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: auto">
+                <button type="button" class="btn">キャンセル</button>
+                <button type="button" class="btn pri">送信</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <section class="win" aria-label="会議一覧" style="flex: 1; min-width: 0">
+          <div class="tb">
+            <span class="tl" style="background: #FF5F57"></span><span class="tl" style="background: #FEBC2E"></span><span class="tl" style="background: #28C840"></span>
+            <span class="serif" style="margin-left: 8px; font-size: 14px">Kataribe</span>
+            <span class="mono" style="color: #6E6E73; font-size: 11px">~/Documents/Kataribe · 38 件</span>
+            <span style="flex: 1"></span>
+            <span class="fld" style="height: 26px; font-size: 11px">両方 ▾</span>
+            <button type="button" class="btn pri" style="height: 26px; display: inline-flex; align-items: center; gap: 6px"><span class="dot" style="background: #FFFFFF"></span>録音を開始</button>
+          </div>
+          <div style="display: flex; flex: 1; min-height: 0">
+            <nav aria-label="フィルタ" style="width: 172px; flex: none; background: #F6F6F8; border-right: 1px solid rgba(0,0,0,.08); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; font-size: 12px">
+              <a href="#" class="side" style="background: #5856D6; color: #FFFFFF; font-weight: 500">すべての会議</a>
+              <a href="#" class="side">処理中 <span style="margin-left: auto; color: #6E6E73">2</span></a>
+              <a href="#" class="side">エラー <span style="margin-left: auto; color: #6E6E73">1</span></a>
+              <div class="lbl" style="padding: 10px 10px 4px; font-size: 10px">年</div>
+              <a href="#" class="side">2026</a>
+              <a href="#" class="side">2025</a>
+              <a href="#" class="side" style="margin-top: auto">設定</a>
+            </nav>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+              <div class="tr lbl" style="padding-top: 6px; padding-bottom: 6px; background: #FAFAFC"><span>日付</span><span>タイトル</span><span style="text-align:right">長さ</span><span>状態</span></div>
+              <div class="tr">
+                <span class="mono" style="color: #6E6E73">10-29 09:30</span>
+                <span style="color: #6E6E73">タイトル未入力</span>
+                <span class="mono" style="text-align: right">23:41</span>
+                <span class="chip" style="background: #FFE5E3; color: #B3261E; justify-self: start"><span class="dot" style="background: #FF3B30"></span>録音中</span>
+              </div>
+              <div class="tr">
+                <span class="mono" style="color: #6E6E73">10-29 11:00</span>
+                <span>1 on 1 田中さん</span>
+                <span class="mono" style="text-align: right">28:40</span>
+                <span style="font-size: 11px; display: flex; flex-direction: column; gap: 3px"><span>文字起こし中 <span class="mono">63%</span></span><span style="height: 4px; border-radius: 2px; background: #E9E9EE; overflow: hidden"><span style="display: block; width: 63%; height: 100%; background: #5856D6"></span></span></span>
+              </div>
+              <div class="tr" style="background: #EEEEFB">
+                <span class="mono" style="color: #6E6E73">10-29 14:00</span>
+                <span class="serif" style="font-size: 13px">週次定例</span>
+                <span class="mono" style="text-align: right">52:13</span>
+                <span class="chip" style="background: #E3F6E8; color: #1E8E3E; justify-self: start">要約済み</span>
+              </div>
+              <div class="tr">
+                <span class="mono" style="color: #6E6E73">10-28 16:30</span>
+                <span>障害ふりかえり</span>
+                <span class="mono" style="text-align: right">41:05</span>
+                <span class="chip" style="background: #E3F6E8; color: #1E8E3E; justify-self: start">要約済み</span>
+              </div>
+              <div class="tr">
+                <span class="mono" style="color: #6E6E73">10-28 10:00</span>
+                <span>来期計画キックオフ</span>
+                <span class="mono" style="text-align: right">1:12:48</span>
+                <span class="chip" style="justify-self: start">文字起こし済み</span>
+              </div>
+              <div class="tr">
+                <span class="mono" style="color: #6E6E73">10-27 15:00</span>
+                <span>デザインレビュー</span>
+                <span class="mono" style="text-align: right">35:20</span>
+                <span style="display: flex; align-items: center; gap: 8px"><span class="chip" style="background: #FFE5E3; color: #B3261E">エラー</span><a href="#" style="font-size: 11px">再試行</a></span>
+              </div>
+              <div class="tr" style="border-bottom: 0">
+                <span class="mono" style="color: #6E6E73">10-27 10:30</span>
+                <span>採用面談ふりかえり</span>
+                <span class="mono" style="text-align: right">18:02</span>
+                <span class="chip" style="background: #E3F6E8; color: #1E8E3E; justify-self: start">要約済み</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 680px minmax(0, 1fr); gap: 24px; height: 480px; flex: none">
+
+        <section class="win" aria-label="会議詳細">
+          <div class="tb">
+            <span class="tl" style="background: #FF5F57"></span><span class="tl" style="background: #FEBC2E"></span><span class="tl" style="background: #28C840"></span>
+            <a href="#" style="margin-left: 8px; font-size: 12px">‹ 会議一覧</a>
+            <span style="flex: 1"></span>
+            <button type="button" class="btn" style="height: 26px">コピー</button>
+            <button type="button" class="btn pri" style="height: 26px">要約を生成</button>
+          </div>
+          <div style="padding: 12px 16px 10px; display: flex; flex-direction: column; gap: 4px; border-bottom: 1px solid #EFEFF3">
+            <div style="display: flex; align-items: baseline; gap: 10px">
+              <h2 class="serif" style="font-size: 22px; font-weight: 900">週次定例</h2>
+              <button type="button" style="font-size: 11px; color: #4B49C9">タイトルを編集</button>
+            </div>
+            <div class="mono" style="font-size: 11px; color: #6E6E73">2026-10-29 14:00 · 52:13 · mic+system · ggml-large-v3-turbo</div>
+            <div style="display: flex; align-items: center; gap: 10px; margin-top: 8px">
+              <button type="button" class="btn pri" aria-label="再生" style="width: 30px; height: 28px; padding: 0; border-radius: 50%">▶</button>
+              <span class="mono" style="font-size: 11px">12:34</span>
+              <div style="flex: 1; height: 22px; display: flex; align-items: center; gap: 2px" aria-hidden="true">
+                <span style="width: 3px; height: 8px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 14px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 20px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 12px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 18px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 9px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 16px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 22px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 11px; background: #5856D6; border-radius: 2px"></span><span style="width: 3px; height: 15px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 8px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 19px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 13px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 6px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 17px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 10px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 21px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 12px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 7px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 16px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 20px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 9px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 14px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 18px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 11px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 6px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 15px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 10px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 19px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 13px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 8px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 17px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 12px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 21px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 9px; background: #C9C8FF; border-radius: 2px"></span><span style="width: 3px; height: 14px; background: #C9C8FF; border-radius: 2px"></span>
+              </div>
+              <span class="mono" style="font-size: 11px; color: #6E6E73">52:13</span>
+              <span class="chip mono">1.0×</span>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 250px; flex: 1; min-height: 0">
+            <div style="display: flex; flex-direction: column; min-height: 0; border-right: 1px solid #EFEFF3">
+              <div style="display: flex; align-items: center; gap: 12px; padding: 6px 16px; border-bottom: 1px solid #EFEFF3; background: #FAFAFC">
+                <div class="seg" style="width: 200px">
+                  <button type="button" aria-pressed="true">文字起こし</button>
+                  <button type="button">要約</button>
+                </div>
+                <span style="flex: 1"></span>
+                <button type="button" style="font-size: 11px; color: #4B49C9">編集</button>
+              </div>
+              <ul style="padding: 6px 0; display: flex; flex-direction: column; font-size: 12px; overflow: hidden">
+                <li style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 16px"><span class="mono" style="font-size: 11px; color: #4B49C9">00:00:04</span><span>今日は先週のリリース後の障害対応と、来期の計画について話します。</span></li>
+                <li style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 16px; background: #EEEEFB"><span class="mono" style="font-size: 11px; color: #4B49C9; font-weight: 700">00:00:21</span><span>障害の原因はキャッシュの設定ミスで、金曜に修正済みです。</span></li>
+                <li style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 16px"><span class="mono" style="font-size: 11px; color: #4B49C9">00:00:48</span><span>再発防止として、設定値のレビューをデプロイ前に必ず入れたい。</span></li>
+                <li style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 16px"><span class="mono" style="font-size: 11px; color: #4B49C9">00:01:15</span><span>来期は検索機能を優先する。話者分離は後回しでいい。</span></li>
+                <li style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 5px 16px"><span class="mono" style="font-size: 11px; color: #4B49C9">00:01:52</span><span>ToDo はこの後まとめて共有します。</span></li>
+              </ul>
+            </div>
+            <div style="display: flex; flex-direction: column; min-height: 0; background: #FAFAFC">
+              <div style="display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid #EFEFF3">
+                <span class="serif" style="font-size: 12px">要約</span>
+                <span style="flex: 1"></span>
+                <button type="button" style="font-size: 11px; color: #4B49C9">再生成</button>
+              </div>
+              <div style="padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; line-height: 1.55; overflow: hidden">
+                <div class="serif" style="font-size: 11px">要約</div>
+                <div>先週の障害対応の報告と、来期の優先順位を確認した。</div>
+                <div class="serif" style="font-size: 11px">決定事項</div>
+                <div>・設定値レビューをデプロイ前に必須化</div>
+                <div class="serif" style="font-size: 11px">ToDo</div>
+                <label style="display: flex; gap: 6px; align-items: flex-start"><input type="checkbox" style="margin: 2px 0 0; accent-color: #5856D6"><span>再発防止策をまとめる (田中 · 10/30)</span></label>
+                <label style="display: flex; gap: 6px; align-items: flex-start"><input type="checkbox" style="margin: 2px 0 0; accent-color: #5856D6"><span>検索機能の設計メモ (古谷 · 11/06)</span></label>
+                <div class="serif" style="font-size: 11px">未決事項</div>
+                <div>・話者分離の着手時期</div>
+              </div>
+              <div style="margin-top: auto; padding: 6px 12px; font-size: 10px; color: #6E6E73; border-top: 1px solid #EFEFF3"><span class="mono">claude · 15:05</span> 生成</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="win" aria-label="設定">
+          <div class="tb" style="height: 52px; gap: 4px">
+            <span class="tl" style="background: #FF5F57"></span><span class="tl" style="background: #FEBC2E"></span><span class="tl" style="background: #28C840"></span>
+            <span style="flex: 1"></span>
+            <button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px; font-size: 10px; color: #6E6E73"><span style="width: 18px; height: 18px; border-radius: 5px; background: #8E8E93"></span>一般</button>
+            <button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px; font-size: 10px; color: #6E6E73"><span style="width: 18px; height: 18px; border-radius: 5px; background: #FF3B30"></span>録音</button>
+            <button type="button" aria-pressed="true" style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px; font-size: 10px; color: #1D1D1F; background: rgba(0,0,0,.06); border-radius: 6px; padding: 3px 0"><span style="width: 18px; height: 18px; border-radius: 5px; background: #5856D6"></span>文字起こし</button>
+            <button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 2px; width: 64px; font-size: 10px; color: #6E6E73"><span style="width: 18px; height: 18px; border-radius: 5px; background: #34C759"></span>要約</button>
+            <span style="flex: 1"></span>
+          </div>
+          <div style="padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; font-size: 12px; overflow: hidden; background: #F6F6F8; flex: 1">
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div class="lbl">保存先</div>
+              <div class="card" style="display: flex; align-items: center; gap: 8px; padding: 8px 10px"><span class="mono" style="flex: 1; font-size: 11px">~/Documents/Kataribe</span><button type="button" class="btn" style="height: 24px">変更</button></div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div class="lbl">whisper.cpp モデル</div>
+              <div class="card" style="display: flex; flex-direction: column">
+                <label style="display: flex; align-items: center; gap: 8px; padding: 6px 10px"><input type="radio" name="m6" checked style="margin: 0; accent-color: #5856D6"><span class="mono" style="flex: 1; font-size: 11px">large-v3-turbo <span style="color: #6E6E73">1.6 GB</span></span><span class="chip" style="background: #E3F6E8; color: #1E8E3E">済</span></label>
+                <label style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #EFEFF3"><input type="radio" name="m6" style="margin: 0; accent-color: #5856D6"><span class="mono" style="flex: 1; font-size: 11px">medium <span style="color: #6E6E73">1.5 GB</span></span><a href="#" style="font-size: 11px">ダウンロード</a></label>
+                <label style="display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid #EFEFF3"><input type="radio" name="m6" style="margin: 0; accent-color: #5856D6"><span class="mono" style="flex: 1; font-size: 11px">small <span style="color: #6E6E73">488 MB</span></span><a href="#" style="font-size: 11px">ダウンロード</a></label>
+              </div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 6px">
+              <div class="lbl">要約 LLM</div>
+              <div class="card" style="display: flex; flex-direction: column; gap: 8px; padding: 10px">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <span class="chip">ChatGPT</span>
+                  <span class="chip" style="background: #5856D6; color: #FFFFFF">Claude</span>
+                  <span class="chip">Gemini</span>
+                  <span class="chip">Ollama Cloud</span>
+                  <span class="chip">Fireworks AI</span>
+                  <span class="chip" style="border: 1px dashed rgba(0,0,0,.25); background: transparent; color: #6E6E73">+ カスタム</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px 8px; align-items: center; font-size: 11px">
+                  <span style="color: #6E6E73">API キー</span><span class="fld" style="justify-content: space-between; font-size: 11px; height: 26px"><span class="mono">sk-ant-••••••••••••</span><span style="color: #1E8E3E">Keychain 保存済み</span></span>
+                  <span style="color: #6E6E73">モデル</span><span class="fld mono" style="font-size: 11px; height: 26px">claude-sonnet-5-5</span>
+                </div>
+              </div>
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <div class="lbl">要約の出力言語</div>
+                <div class="seg"><button type="button" aria-pressed="true">日本語</button><button type="button">English</button></div>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <div class="lbl">システム音声</div>
+                <div class="card" style="display: flex; align-items: center; justify-content: space-between; padding: 0 10px; height: 28px; font-size: 11px"><span class="mono">BlackHole 2ch</span><span style="color: #1E8E3E">検出済み</span></div>
+                <a href="#" style="font-size: 11px">セットアップ手順 (README)</a>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1680,"height":1240}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

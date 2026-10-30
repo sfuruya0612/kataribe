@@ -1,0 +1,90 @@
+{
+  "v": 3,
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-29T00:00:00Z"
+  },
+  "title": "Kataribe デザイン案 5 パターン",
+  "launch": {
+    "view": "canvas"
+  },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "01 囲炉裏 / Hearth"
+    },
+    "P2-Washi.dc.html": {
+      "x": 1760,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "02 和紙 / Washi"
+    },
+    "P3-Native.dc.html": {
+      "x": 3520,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "03 波形 / Native"
+    },
+    "P4-Pixel.dc.html": {
+      "x": 5280,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "04 ドット / Pixel"
+    },
+    "P5-Mono.dc.html": {
+      "x": 7040,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "05 活字 / Mono"
+    },
+    "P6-Final.dc.html": {
+      "x": 8800,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "06 採用案 / Kataribe"
+    },
+    "P7-Icons.dc.html": {
+      "x": 10560,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "07 アイコン構図案"
+    },
+    "P8-Realism.dc.html": {
+      "x": 12320,
+      "y": 0,
+      "w": 1680,
+      "h": 1240,
+      "title": "08 アイコン リアリティ 5 段階"
+    }
+  },
+  "order": [
+    "Main.dc.html",
+    "P2-Washi.dc.html",
+    "P3-Native.dc.html",
+    "P4-Pixel.dc.html",
+    "P5-Mono.dc.html",
+    "P6-Final.dc.html",
+    "P7-Icons.dc.html",
+    "P8-Realism.dc.html"
+  ],
+  "notes": {
+    "title": {
+      "x": 0,
+      "y": -300,
+      "text": "Kataribe デザイン案: 01-05 は比較用、06 が採用案 (03 の配色 + Zen Old Mincho / ヒラギノ / JetBrains Mono + 08 L1 の絵札アイコン)",
+      "kind": "title1",
+      "maxW": 14000
+    }
+  },
+  "designSystems": []
+}
