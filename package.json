@@ -20,7 +20,8 @@
     "package": "npm run build && electron-builder --mac dir",
     "dist": "npm run build && electron-builder --mac dmg",
     "verify:mac": "node scripts/verify-mac-bundle.cjs",
-    "verify:mac:release": "node scripts/verify-mac-bundle.cjs --strict-signing"
+    "verify:mac:release": "node scripts/verify-mac-bundle.cjs --strict-signing",
+    "binaries": "bash scripts/build-binaries.sh"
   },
   "dependencies": {
     "react": "19.3.1",

@@ -200,7 +200,7 @@ describe('formatMeetingDate', () => {
 describe('meeting status helpers', () => {
   it('labels every meeting status', () => {
     expect(meetingStatusLabel('recording')).toBe('録音中');
-    expect(meetingStatusLabel('encoding')).toBe('変換待ち');
+    expect(meetingStatusLabel('encoding')).toBe('変換中');
     expect(meetingStatusLabel('transcribing')).toBe('文字起こし中');
     expect(meetingStatusLabel('transcribed')).toBe('文字起こし済み');
     expect(meetingStatusLabel('summarized')).toBe('要約済み');

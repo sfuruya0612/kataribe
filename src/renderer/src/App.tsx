@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
 import type {
   AppInfo,
   AppSettings,
   MeetingSummary,
+  ProcessingState,
   RecordingStopResult,
 } from '../../shared/types';
 import { MeetingDetail } from './MeetingDetail';
@@ -27,6 +28,16 @@ export default function App() {
   const [filter, setFilter] = useState<MeetingFilter>('all');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [processing, setProcessing] = useState<ProcessingState>({
+    stage: null,
+    meetingId: null,
+    progress: null,
+    etaSeconds: null,
+    message: null,
+    cancellable: false,
+    error: null,
+  });
+  const lastStageRef = useRef<ProcessingState['stage']>(null);
 
   const refreshMeetings = useCallback(async () => {
     setMeetingsLoading(true);
@@ -73,6 +84,38 @@ export default function App() {
 
   useEffect(() => {
     void refreshMeetings();
+  }, [refreshMeetings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.kataribe
+      .getProcessingState()
+      .then((state) => {
+        if (!cancelled) {
+          setProcessing(state);
+          lastStageRef.current = state.stage;
+        }
+      })
+      .catch(() => undefined);
+    const unsubscribeState = window.kataribe.onProcessingState((state) => {
+      setProcessing(state);
+      const stageChanged = lastStageRef.current !== state.stage;
+      lastStageRef.current = state.stage;
+      if (stageChanged) {
+        void refreshMeetings();
+      }
+      if (state.error) {
+        setToast(state.error);
+      }
+    });
+    const unsubscribeMeetings = window.kataribe.onMeetingUpdated(() => {
+      void refreshMeetings();
+    });
+    return () => {
+      cancelled = true;
+      unsubscribeState();
+      unsubscribeMeetings();
+    };
   }, [refreshMeetings]);
 
   useEffect(() => {
@@ -208,8 +251,10 @@ export default function App() {
           {view === 'detail' ? (
             <MeetingDetail
               meeting={selectedMeeting}
+              processing={processing}
               onBack={() => setView('meetings')}
               onOpenFolder={openMeetingFolder}
+              onOpenSettings={() => setView('settings')}
             />
           ) : null}
 
@@ -232,7 +277,7 @@ export default function App() {
               permission={recorder.permission}
               microphones={recorder.microphones}
               systemDevices={recorder.systemDevices}
-              onUpdateSettings={(patch) => void updateSettings(patch)}
+              onUpdateSettings={(patch) => updateSettings(patch)}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
               onRequestPermission={() => void recorder.requestPermission()}
               onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}

@@ -1,12 +1,19 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import {
+  getLlmProviderPreset,
+  LLM_PROVIDER_PRESETS,
+  validateEndpointUrl,
+} from '../../shared/llm';
 import type {
   AppSettings,
   InputSource,
   LlmProvider,
+  LlmRuntimeConfig,
   SummaryLanguage,
   WhisperModel,
+  WhisperModelList,
 } from '../../shared/types';
-import type { InputDevice } from './recording-utils';
+import { errorText, type InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
 
 type SettingsTab = 'general' | 'recording' | 'transcription' | 'summary';
@@ -19,7 +26,7 @@ type SettingsPanelProps = {
   permission: PermissionState;
   microphones: InputDevice[];
   systemDevices: InputDevice[];
-  onUpdateSettings: (patch: Partial<AppSettings>) => void;
+  onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   onSetInputSource: (source: InputSource) => void;
   onRequestPermission: () => void;
   onOpenMicrophoneSettings: () => void;
@@ -47,14 +54,16 @@ const whisperModels: Array<{ value: WhisperModel; label: string; size: string }>
   { value: 'small', label: 'small', size: '488 MB' },
 ];
 
-const providers: Array<{ value: LlmProvider; label: string }> = [
-  { value: 'chatgpt', label: 'ChatGPT' },
-  { value: 'claude', label: 'Claude' },
-  { value: 'gemini', label: 'Gemini' },
-  { value: 'ollama', label: 'Ollama Cloud' },
-  { value: 'fireworks', label: 'Fireworks AI' },
-  { value: 'custom', label: 'カスタム' },
-];
+function formatBytes(value: number | null): string {
+  if (value === null || !Number.isFinite(value) || value <= 0) {
+    return '-';
+  }
+  const gb = value / (1024 * 1024 * 1024);
+  if (gb >= 1) {
+    return `${gb.toFixed(2)} GB`;
+  }
+  return `${Math.round(value / (1024 * 1024))} MB`;
+}
 
 export function SettingsPanel({
   saveRoot,
@@ -73,9 +82,197 @@ export function SettingsPanel({
   onShowAbout,
 }: SettingsPanelProps) {
   const [tab, setTab] = useState<SettingsTab>('general');
+  const [models, setModels] = useState<WhisperModelList | null>(null);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+  const [llm, setLlm] = useState<LlmRuntimeConfig | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [endpointDraft, setEndpointDraft] = useState(settings.llmBaseUrl);
+  const [modelDraft, setModelDraft] = useState(settings.llmModel);
+  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [modelBusy, setModelBusy] = useState<WhisperModel | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
   const permissionDenied = permission === 'denied' || permission === 'restricted';
   const microphoneAvailable = microphones.length > 0;
   const systemAvailable = systemDevices.length > 0;
+
+  const refreshModels = useCallback(async () => {
+    try {
+      setModels(await window.kataribe.listWhisperModels());
+      setModelsError(null);
+    } catch (reason: unknown) {
+      setModelsError(`モデル一覧を取得できませんでした: ${errorText(reason)}`);
+    }
+  }, []);
+
+  const refreshLlm = useCallback(async () => {
+    try {
+      setLlm(await window.kataribe.getLlmRuntime());
+      setLlmError(null);
+    } catch (reason: unknown) {
+      setLlmError(`LLM の状態を取得できませんでした: ${errorText(reason)}`);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshModels();
+    void refreshLlm();
+    const unsubscribeModels = window.kataribe.onModelsChanged((list) => {
+      setModels(list);
+    });
+    const unsubscribeProgress = window.kataribe.onModelProgress((progress) => {
+      setModels((current) =>
+        current
+          ? {
+              ...current,
+              models: current.models.map((entry) =>
+                entry.model === progress.model
+                  ? {
+                      ...entry,
+                      state: 'downloading',
+                      downloadedBytes: progress.downloadedBytes,
+                      progress: progress.progress,
+                      error: null,
+                    }
+                  : entry,
+              ),
+            }
+          : current,
+      );
+    });
+    const unsubscribeLlm = window.kataribe.onLlmChanged((config) => {
+      setLlm(config);
+    });
+    return () => {
+      unsubscribeModels();
+      unsubscribeProgress();
+      unsubscribeLlm();
+    };
+  }, [refreshLlm, refreshModels]);
+
+  useEffect(() => {
+    setEndpointDraft(settings.llmBaseUrl);
+    setModelDraft(settings.llmModel);
+  }, [settings.llmBaseUrl, settings.llmModel, settings.llmProvider]);
+
+  const chooseProvider = async (provider: LlmProvider) => {
+    const preset = getLlmProviderPreset(provider);
+    try {
+      await onUpdateSettings({
+        llmProvider: provider,
+        llmModel: preset.defaultModel || settings.llmModel,
+        llmBaseUrl: preset.defaultBaseUrl,
+      });
+      await refreshLlm();
+    } catch (reason: unknown) {
+      setLlmError(`プロバイダを変更できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const saveEndpoint = async () => {
+    if (endpointDraft === settings.llmBaseUrl) {
+      return;
+    }
+    if (endpointDraft.trim()) {
+      const validation = validateEndpointUrl(endpointDraft);
+      if (!validation.ok) {
+        setLlmError(validation.error);
+        return;
+      }
+    }
+    try {
+      await onUpdateSettings({ llmBaseUrl: endpointDraft });
+      await refreshLlm();
+    } catch (reason: unknown) {
+      setLlmError(`エンドポイントを保存できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const saveModelName = async () => {
+    if (modelDraft === settings.llmModel) {
+      return;
+    }
+    try {
+      await onUpdateSettings({ llmModel: modelDraft });
+      await refreshLlm();
+    } catch (reason: unknown) {
+      setLlmError(`モデル名を保存できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const saveApiKey = async () => {
+    if (!apiKeyDraft.trim()) {
+      return;
+    }
+    setKeyBusy(true);
+    try {
+      if (endpointDraft !== settings.llmBaseUrl || modelDraft !== settings.llmModel) {
+        await onUpdateSettings({
+          llmBaseUrl: endpointDraft,
+          llmModel: modelDraft,
+        });
+      }
+      const config = await window.kataribe.setLlmApiKey(apiKeyDraft);
+      setLlm(config);
+      setApiKeyDraft('');
+      setLlmError(null);
+    } catch (reason: unknown) {
+      setLlmError(`API キーを保存できませんでした: ${errorText(reason)}`);
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const clearApiKey = async () => {
+    if (!window.confirm('保存済みの API キーを削除します。よろしいですか？')) {
+      return;
+    }
+    setKeyBusy(true);
+    try {
+      await window.kataribe.clearLlmApiKey();
+      await refreshLlm();
+    } catch (reason: unknown) {
+      setLlmError(`API キーを削除できませんでした: ${errorText(reason)}`);
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const downloadModel = async (model: WhisperModel) => {
+    setModelBusy(model);
+    setModelNotice(null);
+    try {
+      setModels(await window.kataribe.downloadWhisperModel(model));
+    } catch (reason: unknown) {
+      setModelsError(`モデルのダウンロードを開始できませんでした: ${errorText(reason)}`);
+    } finally {
+      setModelBusy(null);
+    }
+  };
+
+  const cancelModel = async (model: WhisperModel) => {
+    try {
+      setModels(await window.kataribe.cancelWhisperModelDownload(model));
+      setModelNotice('ダウンロードを中断しました。次回は続きから再開します。');
+    } catch (reason: unknown) {
+      setModelsError(`ダウンロードを中断できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const deleteModel = async (model: WhisperModel) => {
+    if (!window.confirm(`${model} のモデルファイルを削除します。よろしいですか？`)) {
+      return;
+    }
+    setModelBusy(model);
+    try {
+      setModels(await window.kataribe.deleteWhisperModel(model));
+      setModelNotice(`${model} を削除しました。`);
+    } catch (reason: unknown) {
+      setModelsError(`モデルを削除できませんでした: ${errorText(reason)}`);
+    } finally {
+      setModelBusy(null);
+    }
+  };
 
   return (
     <section className="settings-panel" aria-labelledby="settings-title">
@@ -372,30 +569,99 @@ export function SettingsPanel({
           <section className="settings-section">
             <p className="settings-label">whisper.cpp モデル</p>
             <div className="setting-card model-list">
-              {whisperModels.map((model) => (
-                <label className="model-row" key={model.value}>
-                  <input
-                    type="radio"
-                    name="whisper-model"
-                    checked={settings.whisperModel === model.value}
-                    onChange={() => onUpdateSettings({ whisperModel: model.value })}
-                  />
-                  <span className="mono model-name">{model.label}</span>
-                  <span className="muted">{model.size}</span>
-                  <span className="model-action">
-                    {settings.whisperModel === model.value ? (
-                      <span className="status-chip status-summarized">選択中</span>
-                    ) : (
-                      <button type="button" className="link-button" disabled>
-                        ダウンロード
-                      </button>
-                    )}
-                  </span>
-                </label>
-              ))}
+              {whisperModels.map((entry) => {
+                const info = models?.models.find((item) => item.model === entry.value);
+                const downloading =
+                  info?.state === 'downloading' || info?.state === 'verifying';
+                return (
+                  <div className="model-row" key={entry.value}>
+                    <input
+                      type="radio"
+                      name="whisper-model"
+                      aria-label={entry.label}
+                      checked={settings.whisperModel === entry.value}
+                      onChange={() => void onUpdateSettings({ whisperModel: entry.value })}
+                    />
+                    <span className="model-name-group">
+                      <span className="mono model-name">{entry.label}</span>
+                      <span className="muted">
+                        {entry.size}
+                        {info?.installed
+                          ? ` · インストール済み ${formatBytes(info.installedBytes)}`
+                          : info?.downloadedBytes
+                            ? ` · 取得済み ${formatBytes(info.downloadedBytes)}`
+                            : ''}
+                      </span>
+                    </span>
+                    <span className="model-action">
+                      {downloading ? (
+                        <span className="model-progress">
+                          <span className="progress-track model-progress-track">
+                            <span
+                              className="progress-bar"
+                              style={{
+                                width: `${Math.round((info?.progress ?? 0) * 100)}%`,
+                              }}
+                            />
+                          </span>
+                          <span className="mono">
+                            {info?.state === 'verifying'
+                              ? '検証中'
+                              : `${Math.round((info?.progress ?? 0) * 100)}%`}
+                          </span>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => void cancelModel(entry.value)}
+                          >
+                            中止
+                          </button>
+                        </span>
+                      ) : info?.installed ? (
+                        <span className="model-installed">
+                          {settings.whisperModel === entry.value ? (
+                            <span className="status-chip status-summarized">選択中</span>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={modelBusy !== null}
+                            onClick={() => void deleteModel(entry.value)}
+                          >
+                            削除
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="link-button"
+                          disabled={modelBusy !== null}
+                          onClick={() => void downloadModel(entry.value)}
+                        >
+                          {modelBusy === entry.value ? '開始中...' : 'ダウンロード'}
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
+            {models?.models.some((item) => item.error) ? (
+              <p className="alert alert-error">
+                {models.models
+                  .filter((item) => item.error)
+                  .map((item) => `${item.model}: ${item.error}`)
+                  .join('\n')}
+              </p>
+            ) : null}
+            {modelsError ? <p className="alert alert-error">{modelsError}</p> : null}
+            {modelNotice ? <p className="notice-text">{modelNotice}</p> : null}
             <p className="muted">
-              モデルのダウンロードと管理はまだ実装されていません。選択値だけを保存します。
+              モデルは HTTPS でダウンロードし、SHA-256 を照合してから保存します。中断しても次回は続きから再開します。
+              {models?.modelsDir ? ` 保存先: ${models.modelsDir}` : ''}
+            </p>
+            <p className="muted">
+              文字起こしは端末内の whisper.cpp で行います。録音停止後、選択中のモデルで自動的に開始します。
             </p>
           </section>
         ) : null}
@@ -406,41 +672,108 @@ export function SettingsPanel({
               <p className="settings-label">要約 LLM</p>
               <div className="setting-card">
                 <div className="provider-chips">
-                  {providers.map((provider) => (
+                  {LLM_PROVIDER_PRESETS.map((provider) => (
                     <button
                       type="button"
                       className={`provider-chip ${
-                        settings.llmProvider === provider.value ? 'is-active' : ''
+                        settings.llmProvider === provider.provider ? 'is-active' : ''
                       }`}
-                      key={provider.value}
-                      onClick={() => onUpdateSettings({ llmProvider: provider.value })}
+                      key={provider.provider}
+                      onClick={() => void chooseProvider(provider.provider)}
                     >
                       {provider.label}
                     </button>
                   ))}
                 </div>
                 <div className="settings-grid api-grid">
-                  <label className="field">
-                    <span>API キー</span>
+                  <label className="field field-span-2">
+                    <span>エンドポイント URL</span>
                     <input
-                      className="setting-input"
-                      value="Keychain 保存は未実装"
-                      readOnly
+                      className="setting-input mono"
+                      value={endpointDraft}
+                      placeholder="https://api.example.com/v1"
+                      onChange={(event) => setEndpointDraft(event.target.value)}
+                      onBlur={() => void saveEndpoint()}
                     />
                   </label>
                   <label className="field">
                     <span>モデル</span>
                     <input
                       className="setting-input mono"
-                      value={settings.llmModel}
-                      onChange={(event) =>
-                        onUpdateSettings({ llmModel: event.target.value })
+                      value={modelDraft}
+                      placeholder={getLlmProviderPreset(settings.llmProvider).defaultModel}
+                      onChange={(event) => setModelDraft(event.target.value)}
+                      onBlur={() => void saveModelName()}
+                    />
+                  </label>
+                  <label className="field">
+                    <span>API キー</span>
+                    <input
+                      className="setting-input"
+                      type="password"
+                      value={apiKeyDraft}
+                      placeholder={
+                        llm?.apiKeyConfigured
+                          ? '設定済み（変更する場合だけ入力）'
+                          : 'API キーを入力'
                       }
+                      disabled={llm?.keychainAvailable === false || keyBusy}
+                      onChange={(event) => setApiKeyDraft(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          void saveApiKey();
+                        }
+                      }}
                     />
                   </label>
                 </div>
+                <div className="setting-actions">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={!apiKeyDraft.trim() || keyBusy || llm?.keychainAvailable === false}
+                    onClick={() => void saveApiKey()}
+                  >
+                    {keyBusy ? '保存中...' : 'API キーを保存'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={!llm?.apiKeyStored || keyBusy}
+                    onClick={() => void clearApiKey()}
+                  >
+                    API キーを削除
+                  </button>
+                </div>
+                <div className="key-status">
+                  <span className={llm?.apiKeyConfigured ? 'ok-text' : 'error-text'}>
+                    {llm?.apiKeyConfigured
+                      ? 'API キー設定済み'
+                      : llm?.apiKeyStored
+                        ? 'エンドポイント変更のため API キーの再入力が必要'
+                        : 'API キー未設定'}
+                  </span>
+                  <span className={llm?.keychainAvailable ? 'ok-text' : 'error-text'}>
+                    {llm?.keychainAvailable
+                      ? 'macOS Keychain 利用可能'
+                      : 'macOS Keychain を利用できません'}
+                  </span>
+                </div>
+                {llm?.apiKeyStored && !llm.hostMatchesKey && llm.storedHost ? (
+                  <p className="alert alert-warning">
+                    保存済みの API キーは {llm.storedHost} 用です。現在のエンドポイントのホストで再入力してください。
+                  </p>
+                ) : null}
+                {llm?.keychainError ? (
+                  <p className="alert alert-error">{llm.keychainError}</p>
+                ) : null}
+                {llmError ? <p className="alert alert-error">{llmError}</p> : null}
                 <p className="muted">
-                  API キーの保存と LLM への送信はまだ実装されていません。音声は送信しません。
+                  API キーは Electron の safeStorage で暗号化し、macOS Keychain に保護された鍵で保存します。
+                  設定ファイルに平文は残しません。別の Mac にコピーした場合は再入力が必要です。
+                </p>
+                <p className="muted">
+                  音声ファイルは送信しません。送信するのは文字起こしの本文だけで、要約の生成を実行したときだけ送ります。
                 </p>
               </div>
             </section>
@@ -456,7 +789,7 @@ export function SettingsPanel({
                     type="button"
                     key={option.value}
                     aria-pressed={settings.summaryLanguage === option.value}
-                    onClick={() => onUpdateSettings({ summaryLanguage: option.value })}
+                    onClick={() => void onUpdateSettings({ summaryLanguage: option.value })}
                   >
                     {option.label}
                   </button>

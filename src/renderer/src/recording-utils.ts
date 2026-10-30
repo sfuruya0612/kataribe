@@ -154,7 +154,7 @@ export function meetingStatusLabel(status: MeetingStatus): string {
     case 'recording':
       return '録音中';
     case 'encoding':
-      return '変換待ち';
+      return '変換中';
     case 'transcribing':
       return '文字起こし中';
     case 'transcribed':

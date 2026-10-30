@@ -30,6 +30,8 @@ async function createMeeting(
     duration: 0.1,
     source: { input: 'both' },
     sample_rate: 48000,
+    channels: 1,
+    bits_per_sample: 16,
     chunks: [{ sequence: 1, file: '000001.wav', frames: 4800 }],
     actual_samples: 4800,
     expected_samples: 4800,

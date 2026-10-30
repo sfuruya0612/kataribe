@@ -1,0 +1,233 @@
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ApiKeyStore } from '../src/main/api-keys';
+import type { LlmClient } from '../src/main/llm';
+import type { MediaEncoder } from '../src/main/media';
+import { writeMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
+import { MeetingStore } from '../src/main/meetings';
+import type { ModelManager } from '../src/main/models';
+import { ProcessingCoordinator } from '../src/main/processing';
+import type { TranscriptionService } from '../src/main/transcription';
+import { formatTranscriptMarkdown } from '../src/shared/markdown';
+import { normalizeAppSettings } from '../src/shared/settings';
+
+const roots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+async function createMeeting() {
+  const root = await mkdtemp(join(tmpdir(), 'kataribe-processing-'));
+  roots.push(root);
+  const saveRoot = join(root, 'Kataribe');
+  const meetingId = '00000000-0000-4000-8000-0000000000aa';
+  const meetingDir = join(saveRoot, '2026', '2026-10-31_1000_要約テスト');
+  await mkdir(meetingDir, { recursive: true });
+  const meta: MeetingMeta = {
+    schema_version: 1,
+    id: meetingId,
+    status: 'transcribed',
+    title: '要約テスト',
+    started_at: '2026-10-31T01:00:00.000Z',
+    duration: 60,
+    source: { input: 'both' },
+    sample_rate: 48000,
+    channels: 1,
+    bits_per_sample: 16,
+    chunks: [],
+    expected_samples: 0,
+    actual_samples: 0,
+    app_version: '0.1.0',
+    audio_path: 'audio.mp3',
+  };
+  await writeMeetingMeta(join(meetingDir, 'meta.json'), meta);
+  await writeFile(
+    join(meetingDir, 'transcript.md'),
+    formatTranscriptMarkdown({
+      title: '要約テスト',
+      startedAt: meta.started_at,
+      durationSeconds: 60,
+      source: 'mic+system',
+      model: 'small',
+      language: 'ja',
+      segments: [
+        { startSeconds: 1, text: 'リリース時期を決めます。' },
+        { startSeconds: 12, text: '担当は田中さんです。' },
+      ],
+    }),
+  );
+  return { root, saveRoot, meetingId, meetingDir };
+}
+
+function createCoordinator(options: {
+  root: string;
+  saveRoot: string;
+  complete: ReturnType<typeof vi.fn>;
+}) {
+  const meetingStore = new MeetingStore(options.saveRoot);
+  const states: string[] = [];
+  const coordinator = new ProcessingCoordinator({
+    tempRoot: join(options.root, 'tmp'),
+    meetingStore,
+    modelManager: {} as ModelManager,
+    apiKeyStore: {
+      status: async () => ({
+        provider: 'chatgpt',
+        configured: true,
+        host: 'api.openai.com',
+        keychainAvailable: true,
+        keychainError: null,
+      }),
+      hostMatches: () => true,
+      getKey: async () => 'sk-test',
+    } as unknown as ApiKeyStore,
+    mediaEncoder: {} as MediaEncoder,
+    transcriptionService: {} as TranscriptionService,
+    llmClient: { complete: options.complete } as unknown as LlmClient,
+    settings: () =>
+      normalizeAppSettings({
+        llmProvider: 'chatgpt',
+        llmBaseUrl: 'https://api.openai.com/v1',
+        llmModel: 'gpt-5.5',
+        summaryLanguage: 'ja',
+        whisperModel: 'small',
+      }),
+    onStateChange: (state) => {
+      states.push(`${state.stage}:${state.progress}`);
+    },
+    onMeetingUpdated: () => undefined,
+  });
+  return { coordinator, meetingStore, states };
+}
+
+const summaryResponse = {
+  text: [
+    '## 要約',
+    '会議の要約です。',
+    '## 決定事項',
+    '- リリースする',
+    '## ToDo',
+    '- 資料をまとめる',
+    '## 未決事項',
+    'なし',
+  ].join('\n'),
+  inputTokens: 100,
+  outputTokens: 40,
+  status: 200,
+};
+
+describe('ProcessingCoordinator summary flow', () => {
+  it('previews, confirms, and writes summary.md with a previous backup', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const complete = vi.fn(async () => summaryResponse);
+    const { coordinator, meetingStore } = createCoordinator({ root, saveRoot, complete });
+
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    expect(preview).toMatchObject({
+      provider: 'chatgpt',
+      model: 'gpt-5.5',
+      endpoint: 'https://api.openai.com/v1/chat/completions',
+      language: 'ja',
+      partial: false,
+    });
+    expect(preview.text).toContain('リリース時期');
+    expect(preview.estimatedTokens).toBeGreaterThan(0);
+    expect(complete).not.toHaveBeenCalled();
+
+    const result = await coordinator.generateSummary(meetingId, preview.token);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result.summary.body).toContain('## 要約');
+    expect(result.summary.body).toContain('- [ ] 資料をまとめる');
+    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 });
+
+    const summaryPath = join(meetingDir, 'summary.md');
+    const markdown = await readFile(summaryPath, 'utf8');
+    expect(markdown).toContain('provider: chatgpt');
+    expect(markdown).toContain('model: gpt-5.5');
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.status).toBe('summarized');
+    expect(meta.summary.state).toBe('completed');
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.summary?.body).toContain('会議の要約です。');
+
+    await expect(
+      coordinator.generateSummary(meetingId, preview.token),
+    ).rejects.toThrow('確認トークンが無効');
+  });
+
+  it('backs up an existing summary before regenerating', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'summary.md'), 'old summary\n');
+    const complete = vi.fn(async () => summaryResponse);
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    await coordinator.generateSummary(meetingId, preview.token);
+    expect(await readFile(join(meetingDir, 'summary.previous.md'), 'utf8')).toBe(
+      'old summary\n',
+    );
+  });
+
+  it('rejects a token when the transcript changed', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const complete = vi.fn(async () => summaryResponse);
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    await writeFile(join(meetingDir, 'transcript.md'), 'changed transcript\n');
+    await expect(
+      coordinator.generateSummary(meetingId, preview.token),
+    ).rejects.toThrow('文字起こしが変更されました');
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('requires a transcript and an API key for the preview', async () => {
+    const { root, saveRoot, meetingId } = await createMeeting();
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    await rm(join(saveRoot, '2026', '2026-10-31_1000_要約テスト', 'transcript.md'));
+    await expect(coordinator.createSummaryPreview(meetingId)).rejects.toThrow(
+      '文字起こしがありません',
+    );
+  });
+});
+
+describe('ProcessingCoordinator interrupted recovery', () => {
+  it('marks unfinished transcription as interrupted', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.status = 'transcribing';
+    meta.transcription = {
+      state: 'running',
+      last_segment_end: 10,
+    };
+    await writeFile(metaPath, JSON.stringify(meta));
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    await coordinator.markInterruptedMeetings();
+    const updated = JSON.parse(await readFile(metaPath, 'utf8'));
+    expect(updated.status).toBe('error');
+    expect(updated.transcription.state).toBe('interrupted');
+    expect(updated.transcription.partial).toBe(true);
+    expect(updated.error).toContain('中断');
+    expect(updated.id).toBe(meetingId);
+  });
+
+  it('recovers a transcription that actually reached the end', async () => {
+    const { root, saveRoot, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.status = 'transcribing';
+    meta.transcription = { state: 'running', last_segment_end: 50 };
+    await writeFile(metaPath, JSON.stringify(meta));
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    await coordinator.markInterruptedMeetings();
+    const updated = JSON.parse(await readFile(metaPath, 'utf8'));
+    expect(updated.status).toBe('transcribed');
+    expect(updated.transcription.state).toBe('completed');
+    expect(updated.transcription.partial).toBe(false);
+  });
+});

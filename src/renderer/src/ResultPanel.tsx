@@ -16,7 +16,7 @@ export function ResultPanel({ result, onOpenFolder, onOpenDetail }: ResultPanelP
           <h2>録音を保存しました</h2>
         </div>
         <span className="state state-finished">
-          {result.hadChunkFailure ? '一部保存' : '変換待ち'}
+          {result.hadChunkFailure ? '一部保存' : '変換と文字起こしを開始'}
         </span>
       </div>
       <p className="path" data-testid="result-path">
@@ -58,7 +58,7 @@ export function ResultPanel({ result, onOpenFolder, onOpenDetail }: ResultPanelP
           会議詳細を開く
         </button>
         <span className="muted">
-          mp3 への変換は次の実装で行います。現在は結合した WAV を保存しています。
+          mp3 への変換と文字起こしはバックグラウンドで自動的に始まります。会議詳細で進捗を確認できます。
         </span>
       </div>
     </section>

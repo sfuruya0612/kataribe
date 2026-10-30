@@ -101,6 +101,27 @@ if (existsSync(resources)) {
   );
   check(existsSync(join(resources, 'trayTemplate.png')), 'trayTemplate.png is bundled');
   check(existsSync(join(resources, 'trayTemplate@2x.png')), 'trayTemplate@2x.png is bundled');
+  check(existsSync(join(resources, 'app-icon.png')), 'app-icon.png is bundled');
+  check(
+    existsSync(join(resources, 'bin', 'arm64', 'whisper-cli')),
+    'whisper-cli is bundled for arm64',
+  );
+  check(
+    existsSync(join(resources, 'bin', 'arm64', 'ffmpeg')),
+    'ffmpeg is bundled for arm64',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'whisper.cpp-LICENSE.txt')),
+    'whisper.cpp license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'ffmpeg-LICENSE.txt')),
+    'ffmpeg license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'lame-LICENSE.txt')),
+    'LAME license is bundled',
+  );
 
   const blackholeFiles = [];
   walk(resources, (fullPath) => {

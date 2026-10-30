@@ -5,10 +5,15 @@ import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  GenerateSummaryResult,
   InputSource,
+  LlmRuntimeConfig,
+  MeetingDetail,
   MeetingSummary,
   MeetingWaveform,
   MicrophonePermissionStatus,
+  ModelDownloadProgress,
+  ProcessingState,
   RecordingAppState,
   RecordingCaptureStats,
   RecordingChunk,
@@ -26,6 +31,9 @@ import type {
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
+  SummaryPreview,
+  WhisperModel,
+  WhisperModelList,
 } from '../shared/types';
 
 function subscribe<T>(channel: string, listener: (value: T) => void): () => void {
@@ -98,10 +106,57 @@ const api = {
     ipcRenderer.invoke('recording:open-folder'),
   listMeetings: (): Promise<MeetingSummary[]> =>
     ipcRenderer.invoke('meetings:list'),
+  getMeetingDetail: (meetingId: string): Promise<MeetingDetail | null> =>
+    ipcRenderer.invoke('meetings:detail', meetingId),
+  saveTranscript: (meetingId: string, markdown: string): Promise<MeetingDetail> =>
+    ipcRenderer.invoke('meetings:save-transcript', meetingId, markdown),
+  saveSummary: (meetingId: string, markdown: string): Promise<MeetingDetail> =>
+    ipcRenderer.invoke('meetings:save-summary', meetingId, markdown),
+  retryTranscription: (meetingId: string): Promise<ProcessingState> =>
+    ipcRenderer.invoke('meetings:retry-transcription', meetingId),
   getMeetingWaveform: (meetingId: string): Promise<MeetingWaveform> =>
     ipcRenderer.invoke('meetings:waveform', meetingId),
   openMeetingFolder: (meetingId: string): Promise<void> =>
     ipcRenderer.invoke('meetings:open-folder', meetingId),
+  getProcessingState: (): Promise<ProcessingState> =>
+    ipcRenderer.invoke('processing:get-state'),
+  cancelProcessing: (): Promise<boolean> =>
+    ipcRenderer.invoke('processing:cancel'),
+  previewSummary: (meetingId: string): Promise<SummaryPreview> =>
+    ipcRenderer.invoke('summary:preview', meetingId),
+  generateSummary: (
+    meetingId: string,
+    token: string,
+  ): Promise<GenerateSummaryResult> =>
+    ipcRenderer.invoke('summary:generate', meetingId, token),
+  getLlmRuntime: (): Promise<LlmRuntimeConfig> =>
+    ipcRenderer.invoke('llm:runtime'),
+  setLlmApiKey: (apiKey: string): Promise<LlmRuntimeConfig> =>
+    ipcRenderer.invoke('llm:set-key', apiKey),
+  clearLlmApiKey: (): Promise<LlmRuntimeConfig> =>
+    ipcRenderer.invoke('llm:clear-key'),
+  listWhisperModels: (): Promise<WhisperModelList> =>
+    ipcRenderer.invoke('models:list'),
+  downloadWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
+    ipcRenderer.invoke('models:download', model),
+  cancelWhisperModelDownload: (model: WhisperModel): Promise<WhisperModelList> =>
+    ipcRenderer.invoke('models:cancel', model),
+  deleteWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
+    ipcRenderer.invoke('models:delete', model),
+  copyText: (text: string): Promise<void> =>
+    ipcRenderer.invoke('app:copy-text', text),
+  onProcessingState: (listener: (state: ProcessingState) => void): (() => void) =>
+    subscribe('processing:state', listener),
+  onMeetingUpdated: (
+    listener: (payload: { meetingId: string }) => void,
+  ): (() => void) => subscribe('meetings:updated', listener),
+  onModelProgress: (
+    listener: (progress: ModelDownloadProgress) => void,
+  ): (() => void) => subscribe('models:progress', listener),
+  onModelsChanged: (listener: (list: WhisperModelList) => void): (() => void) =>
+    subscribe('models:changed', listener),
+  onLlmChanged: (listener: (config: LlmRuntimeConfig) => void): (() => void) =>
+    subscribe('llm:changed', listener),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>
     ipcRenderer.invoke('settings:set', patch),

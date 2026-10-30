@@ -28,10 +28,26 @@
   - @shoichi.furuya
 - [ADD] L1 の絵札アイコンから .icns とメニューバー用テンプレート PNG を生成するコマンドを追加する
   - @shoichi.furuya
+- [ADD] 録音停止後の mp3 変換、16 kHz WAV 生成、波形保存を追加する
+  - @shoichi.furuya
+- [ADD] whisper モデルのダウンロード、SHA-256 検証、再開、削除を追加する
+  - @shoichi.furuya
+- [ADD] whisper.cpp による文字起こし、進捗、部分結果保存、自動再開、キャンセルを追加する
+  - @shoichi.furuya
+- [ADD] safeStorage による API キー保存と、OpenAI 互換 / Anthropic の要約生成を追加する
+  - @shoichi.furuya
+- [ADD] 文字起こしと要約の編集、コピー、送信前確認ダイアログを追加する
+  - @shoichi.furuya
+- [ADD] 同梱する whisper-cli と最小構成 ffmpeg のビルドスクリプト、ライセンス表示を追加する
+  - @shoichi.furuya
+- [ADD] 開発起動時とビルド済みアプリの Dock アイコンに L1 のアプリアイコンを反映する
+  - @shoichi.furuya
 
 ### FIX
 
 - [FIX] 録音停止時に最終チャンクと停止通知が重複する問題を修正する
+  - @shoichi.furuya
+- [FIX] WAV の fmt / data チャンクを解析して、波形と長さを正しく取得する
   - @shoichi.furuya
 
 ### misc
@@ -43,4 +59,6 @@
 - [ADD] 録音のリリース回帰テスト手順と結果テンプレートを追加する
   - @shoichi.furuya
 - [CHANGE] 配布予定がないため署名・公証の検証を対象外にする
+  - @shoichi.furuya
+- [ADD] README に文字起こし、モデル取得、API キー、要約の利用手順を追加する
   - @shoichi.furuya

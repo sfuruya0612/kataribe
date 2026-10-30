@@ -1,3 +1,6 @@
+import type { ClippingConfig } from './clipping';
+import type { SilenceConfig } from './silence';
+
 export type AppInfo = {
   version: string;
   platform: string;
@@ -23,11 +26,51 @@ export type MeetingSummary = {
   sampleRate: number;
   audioUrl: string | null;
   chunkCount: number;
+  hasTranscript: boolean;
+  hasSummary: boolean;
+  transcriptPartial: boolean;
 };
 
 export type MeetingWaveform = {
   peaks: number[];
   duration: number;
+};
+
+export type TranscriptDocument = {
+  markdown: string;
+  body: string;
+  language: string | null;
+  model: string | null;
+  partial: boolean;
+  updatedAt: string | null;
+};
+
+export type SummaryDocument = {
+  markdown: string;
+  body: string;
+  language: string | null;
+  provider: string | null;
+  model: string | null;
+  generatedAt: string | null;
+  updatedAt: string | null;
+};
+
+export type MeetingDetail = {
+  meeting: MeetingSummary;
+  transcript: TranscriptDocument | null;
+  summary: SummaryDocument | null;
+};
+
+export type ProcessingStage = 'encoding' | 'transcribing' | 'summarizing';
+
+export type ProcessingState = {
+  stage: ProcessingStage | null;
+  meetingId: string | null;
+  progress: number | null;
+  etaSeconds: number | null;
+  message: string | null;
+  cancellable: boolean;
+  error: string | null;
 };
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
@@ -47,13 +90,11 @@ export type AppSettings = {
   whisperModel: WhisperModel;
   llmProvider: LlmProvider;
   llmModel: string;
+  llmBaseUrl: string;
   summaryLanguage: SummaryLanguage;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };
-
-import type { ClippingConfig } from './clipping';
-import type { SilenceConfig } from './silence';
 
 export type InputSource = 'microphone' | 'system' | 'both';
 
@@ -233,4 +274,93 @@ export type RecordingLevelUpdate = {
 export type RecordingRequestResult = {
   accepted: boolean;
   reason?: string;
+};
+
+export type LlmProviderPreset = {
+  provider: LlmProvider;
+  label: string;
+  kind: 'openai' | 'anthropic';
+  defaultBaseUrl: string;
+  defaultModel: string;
+};
+
+export type LlmRuntimeConfig = {
+  provider: LlmProvider;
+  providerLabel: string;
+  kind: 'openai' | 'anthropic';
+  baseUrl: string;
+  endpoint: string;
+  model: string;
+  apiKeyConfigured: boolean;
+  apiKeyStored: boolean;
+  storedHost: string | null;
+  keychainAvailable: boolean;
+  keychainError: string | null;
+  host: string;
+  hostMatchesKey: boolean;
+};
+
+export type LlmKeyStatus = {
+  provider: LlmProvider;
+  configured: boolean;
+  host: string | null;
+  keychainAvailable: boolean;
+  keychainError: string | null;
+};
+
+export type WhisperModelInfo = {
+  model: WhisperModel;
+  fileName: string;
+  sizeBytes: number;
+  installed: boolean;
+  installedBytes: number | null;
+  downloadedBytes: number | null;
+  progress: number | null;
+  state: 'missing' | 'downloading' | 'verifying' | 'installed' | 'error';
+  error: string | null;
+};
+
+export type WhisperModelList = {
+  models: WhisperModelInfo[];
+  modelsDir: string;
+};
+
+export type ModelDownloadProgress = {
+  model: WhisperModel;
+  downloadedBytes: number;
+  totalBytes: number;
+  progress: number;
+};
+
+export type SummaryPreview = {
+  token: string;
+  meetingId: string;
+  provider: LlmProvider;
+  providerLabel: string;
+  model: string;
+  endpoint: string;
+  language: SummaryLanguage;
+  charCount: number;
+  estimatedTokens: number;
+  contentHash: string;
+  text: string;
+  partial: boolean;
+  warning: string | null;
+};
+
+export type SummaryUsage = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+};
+
+export type GenerateSummaryResult = {
+  meeting: MeetingSummary;
+  summary: SummaryDocument;
+  usage: SummaryUsage | null;
+};
+
+export type SaveMarkdownResult = {
+  meeting: MeetingSummary;
+  transcript: TranscriptDocument | null;
+  summary: SummaryDocument | null;
 };

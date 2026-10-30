@@ -1,0 +1,1023 @@
+import { createHash, randomUUID } from 'node:crypto';
+import {
+  chmod,
+  mkdir,
+  open,
+  readFile,
+  rename,
+  rm,
+  stat,
+} from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import {
+  estimateTokens,
+  buildChatEndpoint,
+  getLlmProviderPreset,
+  validateEndpointUrl,
+} from '../shared/llm';
+import {
+  formatSummaryMarkdown,
+  formatTranscriptMarkdown,
+  type TranscriptSegment,
+} from '../shared/markdown';
+import type {
+  AppSettings,
+  GenerateSummaryResult,
+  LlmRuntimeConfig,
+  MeetingDetail,
+  ProcessingState,
+  SummaryPreview,
+} from '../shared/types';
+import type { ApiKeyStore } from './api-keys';
+import type { LlmClient } from './llm';
+import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
+import {
+  readMeetingMeta,
+  updateMeetingMeta,
+  type MeetingMeta,
+} from './meeting-meta';
+import type { MeetingStore } from './meetings';
+import type { ModelManager } from './models';
+import { generateSummary } from './summary';
+import type { TranscriptionOutcome, TranscriptionService } from './transcription';
+import { readWavInfo } from './wav';
+
+export type ProcessingCoordinatorOptions = {
+  tempRoot: string;
+  meetingStore: MeetingStore;
+  modelManager: ModelManager;
+  apiKeyStore: ApiKeyStore;
+  mediaEncoder: MediaEncoder;
+  transcriptionService: TranscriptionService;
+  llmClient: LlmClient;
+  settings: () => AppSettings;
+  now?: () => Date;
+  onStateChange: (state: ProcessingState) => void;
+  onMeetingUpdated: (meetingId: string) => void;
+};
+
+type PreviewToken = {
+  meetingId: string;
+  contentHash: string;
+  createdAt: number;
+  expiresAt: number;
+  provider: AppSettings['llmProvider'];
+  baseUrl: string;
+  endpoint: string;
+  model: string;
+  kind: 'openai' | 'anthropic';
+  language: AppSettings['summaryLanguage'];
+};
+
+type ActiveTask = {
+  meetingId: string;
+  controller: AbortController;
+};
+
+const IDLE_STATE: ProcessingState = {
+  stage: null,
+  meetingId: null,
+  progress: null,
+  etaSeconds: null,
+  message: null,
+  cancellable: false,
+  error: null,
+};
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    const info = await stat(path);
+    return info.isFile() && info.size > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function writePrivateText(path: string, text: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.tmp`;
+  const handle = await open(temporary, 'w', 0o600);
+  try {
+    await handle.writeFile(text);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await chmod(temporary, 0o600);
+  await rename(temporary, path);
+}
+
+function sourceLabel(meta: MeetingMeta): string {
+  switch (meta.source.input) {
+    case 'microphone':
+      return 'mic';
+    case 'system':
+      return 'system';
+    case 'both':
+      return 'mic+system';
+  }
+}
+
+function dateOnly(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return new Date().toISOString().slice(0, 10);
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function transcriptionErrorMessage(outcome: TranscriptionOutcome): string {
+  switch (outcome.errorCode) {
+    case 'model-missing':
+      return 'whisper モデルが見つかりません。設定画面からモデルをダウンロードしてください。';
+    case 'binary-missing':
+      return 'whisper-cli が見つかりません。アプリに同梱されたバイナリを確認してください。';
+    case 'stalled':
+      return '文字起こしの進捗が止まったため、処理を中断しました。部分的な結果を保存しています。';
+    case 'hard-limit':
+      return '文字起こしが制限時間を超えたため、処理を中断しました。部分的な結果を保存しています。';
+    case 'empty-output':
+      return '音声から文字起こし結果が得られませんでした。音声に発話が含まれているか確認してください。';
+    case 'incomplete':
+      return '文字起こしが最後まで完了しませんでした。部分的な結果を保存しています。より小さいモデルで再実行してください。';
+    case 'cancelled':
+      return '文字起こしをキャンセルしました。部分的な結果を保存しています。';
+    case 'invalid-audio':
+      return '文字起こし用の音声ファイルを読み込めませんでした。';
+    default:
+      return `whisper.cpp の実行に失敗しました。${outcome.error ?? ''}`.trim();
+  }
+}
+
+function summaryErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+export class ProcessingCoordinator {
+  private readonly tempRoot: string;
+  private readonly meetingStore: MeetingStore;
+  private readonly modelManager: ModelManager;
+  private readonly apiKeyStore: ApiKeyStore;
+  private readonly mediaEncoder: MediaEncoder;
+  private readonly transcriptionService: TranscriptionService;
+  private readonly llmClient: LlmClient;
+  private readonly settings: () => AppSettings;
+  private readonly now: () => Date;
+  private readonly onStateChange: (state: ProcessingState) => void;
+  private readonly onMeetingUpdated: (meetingId: string) => void;
+  private readonly previewTokens = new Map<string, PreviewToken>();
+  private queue: Promise<void> = Promise.resolve();
+  private active: ActiveTask | null = null;
+  private queued = new Set<string>();
+  private state: ProcessingState = { ...IDLE_STATE };
+  private recordingActive = false;
+  private shuttingDown = false;
+
+  constructor(options: ProcessingCoordinatorOptions) {
+    this.tempRoot = options.tempRoot;
+    this.meetingStore = options.meetingStore;
+    this.modelManager = options.modelManager;
+    this.apiKeyStore = options.apiKeyStore;
+    this.mediaEncoder = options.mediaEncoder;
+    this.transcriptionService = options.transcriptionService;
+    this.llmClient = options.llmClient;
+    this.settings = options.settings;
+    this.now = options.now ?? (() => new Date());
+    this.onStateChange = options.onStateChange;
+    this.onMeetingUpdated = options.onMeetingUpdated;
+  }
+
+  getState(): ProcessingState {
+    return { ...this.state };
+  }
+
+  isBusy(): boolean {
+    return this.state.stage !== null;
+  }
+
+  pauseForRecording(): void {
+    this.recordingActive = true;
+    this.active?.controller.abort();
+    this.transcriptionService.pause();
+  }
+
+  pauseTranscription(): void {
+    this.transcriptionService.pause();
+  }
+
+  resumeTranscription(): void {
+    this.transcriptionService.resume();
+  }
+
+  resumeAfterRecording(meetingId: string | null): Promise<void> {
+    this.recordingActive = false;
+    this.transcriptionService.resume();
+    if (!meetingId) {
+      return Promise.resolve();
+    }
+    return this.enqueue(meetingId, () => this.processMeeting(meetingId));
+  }
+
+  requestTranscription(meetingId: string): Promise<void> {
+    return this.enqueue(meetingId, () => this.processMeeting(meetingId));
+  }
+
+  cancel(): boolean {
+    if (!this.active) {
+      return false;
+    }
+    this.active.controller.abort();
+    return true;
+  }
+
+  async shutdown(): Promise<void> {
+    this.shuttingDown = true;
+    this.active?.controller.abort();
+    await Promise.race([
+      this.queue.catch(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, 5000)),
+    ]);
+  }
+
+  async markInterruptedMeetings(): Promise<void> {
+    const meetings = await this.meetingStore.list();
+    for (const meeting of meetings) {
+      if (meeting.status !== 'encoding' && meeting.status !== 'transcribing') {
+        continue;
+      }
+      const metaPath = join(meeting.meetingDir, 'meta.json');
+      try {
+        let completed = false;
+        await updateMeetingMeta(metaPath, (meta) => {
+          if (meta.status === 'transcribing') {
+            const lastEnd = meta.transcription?.last_segment_end ?? 0;
+            if (lastEnd >= Math.max(0, meta.duration - 15)) {
+              meta.status = 'transcribed';
+              meta.transcription = {
+                ...(meta.transcription ?? {}),
+                state: 'completed',
+                partial: false,
+              };
+              delete meta.error;
+              completed = true;
+              return;
+            }
+            meta.status = 'error';
+            meta.error =
+              '前回の文字起こしが中断されました。会議詳細から再実行してください。部分的な結果は保存されています。';
+            meta.transcription = {
+              ...(meta.transcription ?? {}),
+              state: 'interrupted',
+              partial: true,
+              error: 'interrupted',
+            };
+            return;
+          }
+          meta.status = 'error';
+          meta.error =
+            '前回の音声変換が中断されました。会議詳細から文字起こしを再実行してください。';
+          if (meta.encoding?.state === 'running') {
+            meta.encoding = {
+              ...meta.encoding,
+              state: 'failed',
+              error: 'interrupted',
+            };
+          }
+        });
+        if (completed) {
+          await rm(join(this.tempRoot, meeting.id), {
+            recursive: true,
+            force: true,
+          }).catch(() => undefined);
+        }
+      } catch (error) {
+        console.error(
+          `failed to mark interrupted meeting: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
+  async runtimeConfig(): Promise<LlmRuntimeConfig> {
+    const settings = this.settings();
+    const preset = getLlmProviderPreset(settings.llmProvider);
+    const baseUrl = settings.llmBaseUrl;
+    const validation = validateEndpointUrl(baseUrl);
+    const endpoint = validation.ok
+      ? buildChatEndpoint(validation.normalized, preset.kind)
+      : '';
+    const status = await this.apiKeyStore.status(settings.llmProvider, baseUrl);
+    return {
+      provider: settings.llmProvider,
+      providerLabel: preset.label,
+      kind: preset.kind,
+      baseUrl,
+      endpoint,
+      model: settings.llmModel,
+      apiKeyConfigured:
+        status.configured && this.apiKeyStore.hostMatches(settings.llmProvider, baseUrl),
+      apiKeyStored: status.configured,
+      storedHost: status.host,
+      keychainAvailable: status.keychainAvailable,
+      keychainError: status.keychainError,
+      host: validation.ok ? validation.url.host : '',
+      hostMatchesKey:
+        status.configured &&
+        this.apiKeyStore.hostMatches(settings.llmProvider, baseUrl),
+    };
+  }
+
+  async createSummaryPreview(meetingId: string): Promise<SummaryPreview> {
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail?.transcript?.body.trim()) {
+      throw new Error('文字起こしがありません。先に文字起こしを完了してください。');
+    }
+    const config = await this.runtimeConfig();
+    if (!config.endpoint) {
+      throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
+    }
+    if (!config.apiKeyConfigured) {
+      throw new Error('LLM の API キーが設定されていません。設定画面で保存してください。');
+    }
+    const transcript = detail.transcript.body.trim();
+    const hash = createHash('sha256').update(transcript, 'utf8').digest('hex');
+    const token = randomUUID();
+    const now = this.now().getTime();
+    const language = this.settings().summaryLanguage;
+    this.previewTokens.set(token, {
+      meetingId,
+      contentHash: hash,
+      createdAt: now,
+      expiresAt: now + 5 * 60_000,
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      endpoint: config.endpoint,
+      model: config.model,
+      kind: config.kind,
+      language,
+    });
+    return {
+      token,
+      meetingId,
+      provider: config.provider,
+      providerLabel: config.providerLabel,
+      model: config.model,
+      endpoint: config.endpoint,
+      language,
+      charCount: transcript.length,
+      estimatedTokens: estimateTokens(transcript),
+      contentHash: hash,
+      text: transcript,
+      partial: detail.transcript.partial,
+      warning: detail.transcript.partial
+        ? '部分的な文字起こしを送信します。完了済みの文字起こしで再実行することを推奨します。'
+        : null,
+    };
+  }
+
+  async generateSummary(meetingId: string, token: string): Promise<GenerateSummaryResult> {
+    const preview = this.previewTokens.get(token);
+    if (!preview || preview.meetingId !== meetingId) {
+      throw new Error('要約の確認トークンが無効です。もう一度プレビューを開いてください。');
+    }
+    if (this.active || this.state.stage !== null) {
+      throw new Error('別の処理が実行中です。完了してから要約を生成してください。');
+    }
+    if (this.now().getTime() > preview.expiresAt) {
+      this.previewTokens.delete(token);
+      throw new Error('要約の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。');
+    }
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail?.transcript?.body.trim()) {
+      throw new Error('文字起こしがありません。');
+    }
+    const body = detail.transcript.body.trim();
+    if (createHash('sha256').update(body, 'utf8').digest('hex') !== preview.contentHash) {
+      this.previewTokens.delete(token);
+      throw new Error('文字起こしが変更されました。もう一度プレビューを開いてください。');
+    }
+
+    const config = {
+      provider: preview.provider,
+      baseUrl: preview.baseUrl,
+      endpoint: preview.endpoint,
+      model: preview.model,
+      kind: preview.kind,
+      language: preview.language,
+    };
+    let apiKey: string;
+    try {
+      apiKey = (await this.apiKeyStore.getKey(config.provider, config.baseUrl)) ?? '';
+    } catch (error) {
+      throw new Error(
+        `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,
+      );
+    }
+    if (!apiKey) {
+      throw new Error('API キーが設定されていません。');
+    }
+    if (this.active || this.state.stage !== null) {
+      throw new Error('別の処理が実行中です。完了してから要約を生成してください。');
+    }
+    this.previewTokens.delete(token);
+
+    const controller = new AbortController();
+    this.active = { meetingId, controller };
+    this.setState({
+      stage: 'summarizing',
+      meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: '要約を生成しています',
+      cancellable: true,
+      error: null,
+    });
+    const metaPath = join(detail.meeting.meetingDir, 'meta.json');
+    try {
+      const startedAt = this.now().toISOString();
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.summary = {
+          state: 'running',
+          provider: config.provider,
+          model: config.model,
+          language: config.language,
+          generated_at: startedAt,
+        };
+        meta.status = 'transcribed';
+        delete meta.error;
+      });
+
+      const generated = await generateSummary({
+        client: this.llmClient,
+        transcriptBody: body,
+        language: config.language,
+        kind: config.kind,
+        endpoint: config.endpoint,
+        apiKey,
+        model: config.model,
+        signal: controller.signal,
+        onProgress: (message, progress) => {
+          this.setState({
+            ...this.state,
+            progress,
+            message,
+            etaSeconds: null,
+          });
+        },
+      });
+
+      const summaryMarkdown = formatSummaryMarkdown({
+        title: detail.meeting.title,
+        date: dateOnly(detail.meeting.startedAt),
+        provider: config.provider,
+        model: config.model,
+        generatedAt: this.now().toISOString(),
+        language: config.language,
+        body: generated.body,
+      });
+      const summaryPath = join(detail.meeting.meetingDir, 'summary.md');
+      if (await exists(summaryPath)) {
+        const previousPath = join(detail.meeting.meetingDir, 'summary.previous.md');
+        await writePrivateText(previousPath, await readFile(summaryPath, 'utf8'));
+      }
+      await writePrivateText(summaryPath, summaryMarkdown);
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.status = 'summarized';
+        delete meta.error;
+        meta.summary = {
+          state: 'completed',
+          provider: config.provider,
+          model: config.model,
+          language: config.language,
+          generated_at: this.now().toISOString(),
+          usage: {
+            input_tokens: generated.usage.inputTokens,
+            output_tokens: generated.usage.outputTokens,
+          },
+        };
+      });
+
+      const meeting = (await this.meetingStore.find(meetingId)) ?? detail.meeting;
+      const summary = await this.meetingStore.readSummary(meeting);
+      if (!summary) {
+        throw new Error('summary.md の読み込みに失敗しました。');
+      }
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE });
+      return {
+        meeting,
+        summary,
+        usage: generated.usage,
+      };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        await updateMeetingMeta(metaPath, (meta) => {
+          meta.status = 'transcribed';
+          meta.summary = {
+            ...(meta.summary ?? {}),
+            state: 'failed',
+            error: 'cancelled',
+          };
+        }).catch(() => undefined);
+        this.setState({ ...IDLE_STATE, error: '要約をキャンセルしました。' });
+        throw new Error('要約をキャンセルしました。');
+      }
+      const message = summaryErrorMessage(error);
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.status = 'error';
+        meta.error = message;
+        meta.summary = {
+          ...(meta.summary ?? {}),
+          state: 'failed',
+          error: message,
+        };
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      throw error;
+    } finally {
+      this.active = null;
+    }
+  }
+
+  async saveTranscript(meetingId: string, markdown: string): Promise<MeetingDetail> {
+    if (markdown.length > 5 * 1024 * 1024) {
+      throw new Error('文字起こしが大きすぎます。');
+    }
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
+    this.onMeetingUpdated(meetingId);
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail) {
+      throw new Error('会議が見つかりません。');
+    }
+    return detail;
+  }
+
+  async saveSummary(meetingId: string, markdown: string): Promise<MeetingDetail> {
+    if (markdown.length > 5 * 1024 * 1024) {
+      throw new Error('要約が大きすぎます。');
+    }
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    await writePrivateText(join(meeting.meetingDir, 'summary.md'), markdown);
+    this.onMeetingUpdated(meetingId);
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail) {
+      throw new Error('会議が見つかりません。');
+    }
+    return detail;
+  }
+
+  private enqueue(meetingId: string, operation: () => Promise<void>): Promise<void> {
+    if (this.shuttingDown) {
+      return Promise.reject(new Error('application is shutting down'));
+    }
+    if (this.queued.has(meetingId)) {
+      return Promise.reject(new Error('meeting is already queued'));
+    }
+    this.queued.add(meetingId);
+    const task = this.queue.then(
+      () => this.runQueued(meetingId, operation),
+      () => this.runQueued(meetingId, operation),
+    );
+    this.queue = task
+      .catch(() => undefined)
+      .finally(() => {
+        this.queued.delete(meetingId);
+      });
+    return task;
+  }
+
+  private async runQueued(
+    meetingId: string,
+    operation: () => Promise<void>,
+  ): Promise<void> {
+    while (this.recordingActive && !this.shuttingDown) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+    }
+    if (this.shuttingDown) {
+      return;
+    }
+    try {
+      await operation();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`processing failed: ${message}`);
+      this.setState({ ...IDLE_STATE, error: message });
+    } finally {
+      this.active = null;
+    }
+  }
+
+  private async processMeeting(meetingId: string): Promise<void> {
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    const metaPath = join(meeting.meetingDir, 'meta.json');
+    let meta = await readMeetingMeta(metaPath);
+    if (meta.status === 'recording') {
+      throw new Error('録音中の会議は処理できません。');
+    }
+    const controller = new AbortController();
+    this.active = { meetingId, controller };
+    const tempDir = join(this.tempRoot, meetingId);
+    await mkdir(tempDir, { recursive: true, mode: 0o700 });
+
+    const sourceWav = join(meeting.meetingDir, 'audio.wav');
+    const mp3Path = join(meeting.meetingDir, 'audio.mp3');
+    const transcriptionWav = join(tempDir, 'audio.16k.wav');
+    const hasSourceWav = await exists(sourceWav);
+    const hasMp3 = await exists(mp3Path);
+    if (!hasSourceWav && !hasMp3) {
+      throw new Error('変換できる音声ファイルがありません。');
+    }
+    let duration = meta.duration;
+    if (hasSourceWav) {
+      try {
+        duration = (await readWavInfo(sourceWav)).duration;
+      } catch (error) {
+        console.error(`failed to read source wav: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+
+    try {
+      const startedAt = this.now().toISOString();
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'encoding';
+        value.encoding = {
+          state: 'running',
+          started_at: startedAt,
+          mp3_bitrate_kbps: 64,
+        };
+        delete value.error;
+      });
+      this.onMeetingUpdated(meetingId);
+
+      if (!hasMp3) {
+        this.setState({
+          stage: 'encoding',
+          meetingId,
+          progress: 0,
+          etaSeconds: null,
+          message: 'mp3 に変換しています',
+          cancellable: true,
+          error: null,
+        });
+        await this.mediaEncoder.encodeMp3({
+          inputPath: sourceWav,
+          outputPath: mp3Path,
+          durationSeconds: duration,
+          bitrateKbps: 64,
+          signal: controller.signal,
+          onProgress: ({ ratio, etaSeconds }) => {
+            this.setState({
+              ...this.state,
+              progress: ratio,
+              etaSeconds,
+            });
+          },
+        });
+      }
+
+      if (!(await exists(transcriptionWav))) {
+        this.setState({
+          ...this.state,
+          stage: 'encoding',
+          progress: 0,
+          message: '文字起こし用の 16 kHz WAV を生成しています',
+          etaSeconds: null,
+        });
+        await this.mediaEncoder.createTranscriptionWav({
+          inputPath: hasSourceWav ? sourceWav : mp3Path,
+          outputPath: transcriptionWav,
+          durationSeconds: duration,
+          bitrateKbps: 64,
+          signal: controller.signal,
+          onProgress: ({ ratio, etaSeconds }) => {
+            this.setState({
+              ...this.state,
+              progress: ratio,
+              etaSeconds,
+            });
+          },
+        });
+      }
+
+      let waveform: number[] | undefined;
+      if (hasSourceWav) {
+        try {
+          waveform = (await computeWavWaveform(sourceWav)).peaks;
+        } catch (error) {
+          console.error(
+            `failed to compute waveform: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+
+      meta = await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'transcribing';
+        value.audio_path = 'audio.mp3';
+        value.duration = duration;
+        value.encoding = {
+          ...(value.encoding ?? {
+            started_at: startedAt,
+            mp3_bitrate_kbps: 64,
+          }),
+          state: 'completed',
+          finished_at: this.now().toISOString(),
+        };
+        if (waveform && waveform.length > 0) {
+          value.waveform = waveform;
+        }
+        value.transcription = {
+          ...(value.transcription ?? {}),
+          state: 'running',
+          started_at: this.now().toISOString(),
+          model: this.settings().whisperModel,
+          partial: false,
+          resume_count: 0,
+        };
+        delete value.error;
+      });
+      if (hasSourceWav) {
+        await rm(sourceWav, { force: true }).catch((error: unknown) => {
+          console.error(
+            `failed to remove intermediate wav: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      }
+      this.onMeetingUpdated(meetingId);
+      await this.transcribe(meetingId, meeting, metaPath, meta, transcriptionWav, controller);
+    } catch (error) {
+      const message =
+        error instanceof MediaError && error.code === 'cancelled'
+          ? '音声の変換をキャンセルしました。'
+          : error instanceof MediaError
+            ? `音声の変換に失敗しました。${error.message}`
+            : error instanceof Error
+              ? error.message
+              : String(error);
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'error';
+        value.error = message;
+        if (value.encoding?.state === 'running') {
+          value.encoding = {
+            ...value.encoding,
+            state: 'failed',
+            finished_at: this.now().toISOString(),
+            error: message,
+          };
+        }
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      if (error instanceof MediaError && error.code === 'cancelled') {
+        return;
+      }
+      throw error;
+    } finally {
+      this.active = null;
+    }
+  }
+
+  private async transcribe(
+    meetingId: string,
+    meeting: NonNullable<Awaited<ReturnType<MeetingStore['find']>>>,
+    metaPath: string,
+    meta: MeetingMeta,
+    transcriptionWav: string,
+    controller: AbortController,
+  ): Promise<void> {
+    const model = this.settings().whisperModel;
+    const modelPath = await this.modelManager.installedPath(model);
+    if (!modelPath) {
+      const message = `whisper モデル（${model}）がダウンロードされていません。設定画面から取得してください。`;
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'error';
+        value.error = message;
+        value.transcription = {
+          ...(value.transcription ?? {}),
+          state: 'failed',
+          error: 'model-missing',
+        };
+      });
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      return;
+    }
+
+    this.setState({
+      stage: 'transcribing',
+      meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: '文字起こしをしています',
+      cancellable: true,
+      error: null,
+    });
+
+    let lastPartialAt = 0;
+    let lastLanguage = meta.transcription?.language ?? 'auto';
+    let lastSegments: TranscriptSegment[] = [];
+    let partialQueue: Promise<void> = Promise.resolve();
+    const persistPartial = async (
+      segments: TranscriptSegment[],
+      language: string,
+      partial: boolean,
+      outcome?: TranscriptionOutcome,
+    ) => {
+      if (segments.length === 0) {
+        return;
+      }
+      const now = this.now().getTime();
+      if (!outcome && now - lastPartialAt < 5000) {
+        return;
+      }
+      lastPartialAt = now;
+      const markdown = formatTranscriptMarkdown({
+        title: meeting.title,
+        startedAt: meta.started_at,
+        durationSeconds: meta.duration,
+        source: sourceLabel(meta),
+        model,
+        language,
+        segments,
+        partial,
+      });
+      await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
+      await updateMeetingMeta(metaPath, (value) => {
+        value.transcription = {
+          ...(value.transcription ?? {}),
+          state: partial ? 'partial' : 'running',
+          model,
+          language,
+          partial,
+          last_segment_end: segments.reduce(
+            (maximum, segment) =>
+              Math.max(maximum, segment.endSeconds ?? segment.startSeconds),
+            0,
+          ),
+        };
+      });
+      this.onMeetingUpdated(meetingId);
+    };
+    const queuePartial = (
+      segments: TranscriptSegment[],
+      language: string,
+      partial: boolean,
+      outcome?: TranscriptionOutcome,
+    ): Promise<void> => {
+      partialQueue = partialQueue
+        .then(() => persistPartial(segments, language, partial, outcome))
+        .catch((error: unknown) => {
+          console.error(
+            `failed to persist partial transcript: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return partialQueue;
+    };
+
+    let outcome: TranscriptionOutcome | null = null;
+    try {
+      outcome = await this.transcriptionService.transcribe({
+        meetingId,
+        tempDir: dirname(transcriptionWav),
+        audioWavPath: transcriptionWav,
+        model,
+        modelPath,
+        durationSeconds: meta.duration,
+        signal: controller.signal,
+        onUpdate: (progress) => {
+          lastLanguage = progress.language || lastLanguage;
+          lastSegments = progress.segments;
+          this.setState({
+            ...this.state,
+            progress: progress.ratio,
+            etaSeconds: progress.etaSeconds,
+            message: progress.message ?? '文字起こしをしています',
+          });
+          void queuePartial(progress.segments, progress.language, true);
+        },
+        onPartial: async (partial) => {
+          await queuePartial(
+            partial.segments,
+            partial.language,
+            true,
+            partial,
+          );
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'error';
+        value.error = message;
+        value.transcription = {
+          ...(value.transcription ?? {}),
+          state: 'failed',
+          error: message,
+        };
+      });
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      return;
+    }
+
+    const finishedAt = this.now().toISOString();
+    if (outcome.state === 'completed') {
+      await partialQueue;
+      const markdown = formatTranscriptMarkdown({
+        title: meeting.title,
+        startedAt: meta.started_at,
+        durationSeconds: outcome.durationSeconds,
+        source: sourceLabel(meta),
+        model,
+        language: outcome.language,
+        segments: outcome.segments,
+      });
+      await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = 'transcribed';
+        value.transcription = {
+          state: 'completed',
+          started_at: value.transcription?.started_at ?? finishedAt,
+          finished_at: finishedAt,
+          model,
+          language: outcome.language,
+          last_segment_end: outcome.lastEndSeconds,
+          resume_count: outcome.resumed ? 1 : 0,
+          partial: false,
+        };
+        delete value.error;
+      });
+      await rm(dirname(transcriptionWav), { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE });
+      return;
+    }
+
+    const message = transcriptionErrorMessage(outcome);
+    const state =
+      outcome.state === 'cancelled'
+        ? 'cancelled'
+        : outcome.errorCode === 'model-missing' || outcome.errorCode === 'binary-missing'
+          ? 'failed'
+          : 'partial';
+    await partialQueue;
+    const finalSegments =
+      outcome.segments.length > 0 ? outcome.segments : lastSegments;
+    if (finalSegments.length > 0) {
+      await queuePartial(
+        finalSegments,
+        outcome.language || lastLanguage,
+        true,
+        outcome,
+      );
+    }
+    await updateMeetingMeta(metaPath, (value) => {
+      value.status = 'error';
+      value.error = message;
+      value.transcription = {
+        ...(value.transcription ?? {}),
+        state,
+        finished_at: finishedAt,
+        model,
+        language: outcome.language || lastLanguage,
+        partial: finalSegments.length > 0,
+        error: outcome.error ?? message,
+      };
+    });
+    this.onMeetingUpdated(meetingId);
+    this.setState({ ...IDLE_STATE, error: message });
+  }
+
+  private setState(state: ProcessingState): void {
+    this.state = {
+      ...state,
+      progress:
+        state.progress === null || !Number.isFinite(state.progress)
+          ? null
+          : Math.max(0, Math.min(1, state.progress)),
+      etaSeconds:
+        state.etaSeconds === null || !Number.isFinite(state.etaSeconds)
+          ? null
+          : Math.max(0, Math.round(state.etaSeconds)),
+    };
+    this.onStateChange({ ...this.state });
+  }
+}

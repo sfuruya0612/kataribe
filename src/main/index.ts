@@ -3,12 +3,15 @@ import { pathToFileURL } from 'node:url';
 import {
   app,
   BrowserWindow,
+  clipboard,
   ipcMain,
   Menu,
+  nativeImage,
   net,
   powerMonitor,
   powerSaveBlocker,
   protocol,
+  safeStorage,
   session,
   shell,
   systemPreferences,
@@ -34,8 +37,14 @@ import type {
   RecordingStartupFailure,
   RecordingStartupFailureResult,
   StartRecordingOptions,
+  WhisperModel,
 } from '../shared/types';
+import { ApiKeyStore, type SecretCrypto } from './api-keys';
+import { LlmClient } from './llm';
+import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
+import { ModelManager } from './models';
+import { ProcessingCoordinator } from './processing';
 import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
@@ -44,6 +53,7 @@ import {
   isAllowedPermission,
   type PermissionDetails,
 } from './security';
+import { TranscriptionService } from './transcription';
 import { TrayController } from './tray';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
@@ -56,7 +66,21 @@ let trayController: TrayController | null = null;
 let rendererReady = false;
 let hasLoadedRenderer = false;
 let isQuitting = false;
+let shutdownInProgress = false;
 let stateTimer: NodeJS.Timeout | null = null;
+let processingCoordinator: ProcessingCoordinator | null = null;
+
+const electronFetch: typeof fetch = (input, init) => {
+  const value =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.toString()
+        : input instanceof Request
+          ? input.url
+          : String(input);
+  return net.fetch(value, init) as unknown as Promise<Response>;
+};
 
 app.setName('Kataribe');
 
@@ -97,6 +121,24 @@ function sendRecordingCommand(command: RecordingCommand): boolean {
   }
   mainWindow.webContents.send('recording:command', command);
   return true;
+}
+
+function broadcast(channel: string, payload: unknown): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  }
+}
+
+async function broadcastModelList(modelManager: ModelManager): Promise<void> {
+  try {
+    broadcast('models:changed', await modelManager.list());
+  } catch (error) {
+    console.error(
+      `failed to broadcast model list: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const coordinator = new RecordingCoordinator(stateStore, sendRecordingCommand);
@@ -190,6 +232,7 @@ function createWindow(): BrowserWindow {
     minHeight: 720,
     show: false,
     title: 'Kataribe',
+    icon: appIconPath(),
     backgroundColor: '#E9E9EE',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
@@ -322,10 +365,39 @@ function readmePath(): string {
     : join(app.getAppPath(), 'README.md');
 }
 
+function appIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'app-icon.png')
+    : join(app.getAppPath(), 'build', 'icon.iconset', 'icon_512x512@2x.png');
+}
+
+function applyDockIcon(): void {
+  if (process.platform !== 'darwin' || !app.dock) {
+    return;
+  }
+  const candidates = app.isPackaged
+    ? [join(process.resourcesPath, 'app-icon.png'), join(process.resourcesPath, 'icon.icns')]
+    : [
+        join(app.getAppPath(), 'build', 'icon.iconset', 'icon_512x512@2x.png'),
+        join(app.getAppPath(), 'build', 'icon.icns'),
+      ];
+  for (const candidate of candidates) {
+    const image = nativeImage.createFromPath(candidate);
+    if (!image.isEmpty()) {
+      app.dock.setIcon(image);
+      return;
+    }
+  }
+  console.warn('dock icon could not be loaded');
+}
+
 function registerIpc(
   recordingManager: RecordingManager,
   meetingStore: MeetingStore,
   settingsStore: SettingsStore,
+  processing: ProcessingCoordinator,
+  modelManager: ModelManager,
+  apiKeyStore: ApiKeyStore,
 ): void {
   ipcMain.handle('app:info', (): AppInfo => {
     return {
@@ -380,7 +452,12 @@ function registerIpc(
   ipcMain.handle('recording:get-state', () => stateStore.getState());
 
   ipcMain.handle('recording:request-start', (): RecordingRequestResult => {
-    return coordinator.start();
+    processing.pauseForRecording();
+    const result = coordinator.start();
+    if (!result.accepted) {
+      void processing.resumeAfterRecording(null);
+    }
+    return result;
   });
 
   ipcMain.handle('recording:request-stop', (): RecordingRequestResult => {
@@ -426,6 +503,93 @@ function registerIpc(
     return settings;
   });
 
+  ipcMain.handle('processing:get-state', () => processing.getState());
+
+  ipcMain.handle('processing:cancel', () => processing.cancel());
+
+  ipcMain.handle('llm:runtime', () => processing.runtimeConfig());
+
+  ipcMain.handle('llm:set-key', async (_event, apiKey: unknown) => {
+    if (typeof apiKey !== 'string') {
+      throw new Error('invalid API key');
+    }
+    const settings = settingsStore.get();
+    await apiKeyStore.setKey(settings.llmProvider, apiKey, settings.llmBaseUrl);
+    broadcast('llm:changed', await processing.runtimeConfig());
+    return processing.runtimeConfig();
+  });
+
+  ipcMain.handle('llm:clear-key', async () => {
+    const settings = settingsStore.get();
+    await apiKeyStore.clearKey(settings.llmProvider);
+    broadcast('llm:changed', await processing.runtimeConfig());
+    return processing.runtimeConfig();
+  });
+
+  ipcMain.handle('models:list', () => modelManager.list());
+
+  ipcMain.handle('models:download', async (_event, model: WhisperModel) => {
+    if (!['large-v3-turbo', 'medium', 'small'].includes(model)) {
+      throw new Error('invalid whisper model');
+    }
+    void modelManager
+      .download(model)
+      .catch((error: unknown) => {
+        console.error(
+          `model download failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        void broadcastModelList(modelManager);
+      });
+    return modelManager.list();
+  });
+
+  ipcMain.handle('models:cancel', async (_event, model: WhisperModel) => {
+    modelManager.cancel(model);
+    return modelManager.list();
+  });
+
+  ipcMain.handle('models:delete', async (_event, model: WhisperModel) => {
+    await modelManager.delete(model);
+    const list = await modelManager.list();
+    broadcast('models:changed', list);
+    return list;
+  });
+
+  ipcMain.handle('meetings:detail', (_event, meetingId: string) => {
+    return meetingStore.detail(meetingId);
+  });
+
+  ipcMain.handle('meetings:save-transcript', (_event, meetingId: string, markdown: string) => {
+    return processing.saveTranscript(meetingId, markdown);
+  });
+
+  ipcMain.handle('meetings:save-summary', (_event, meetingId: string, markdown: string) => {
+    return processing.saveSummary(meetingId, markdown);
+  });
+
+  ipcMain.handle('meetings:retry-transcription', (_event, meetingId: string) => {
+    void processing.requestTranscription(meetingId).catch((error: unknown) => {
+      console.error(
+        `failed to retry transcription: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    return processing.getState();
+  });
+
+  ipcMain.handle('summary:preview', (_event, meetingId: string) => {
+    return processing.createSummaryPreview(meetingId);
+  });
+
+  ipcMain.handle('summary:generate', (_event, meetingId: string, token: string) => {
+    return processing.generateSummary(meetingId, token);
+  });
+
+  ipcMain.handle('app:copy-text', (_event, text: string) => {
+    clipboard.writeText(String(text));
+  });
+
   ipcMain.handle('meetings:list', () => meetingStore.list());
 
   ipcMain.handle('meetings:waveform', (_event, meetingId: string) => {
@@ -445,6 +609,7 @@ function registerIpc(
     if (status !== 'starting' && status !== 'idle' && status !== 'encoding' && status !== 'error') {
       throw new Error('recording cannot be started');
     }
+    processing.pauseForRecording();
     try {
       const state = stateStore.getState();
       const created = await recordingManager.start({
@@ -456,6 +621,7 @@ function registerIpc(
       return created;
     } catch (error) {
       stateStore.markError(errorMessage(error));
+      void processing.resumeAfterRecording(null);
       throw error;
     }
   });
@@ -486,9 +652,17 @@ function registerIpc(
     try {
       const result = await recordingManager.stop(stats);
       stateStore.markStopped(result);
+      void processing
+        .resumeAfterRecording(result.meetingId)
+        .catch((error: unknown) => {
+          console.error(
+            `failed to start post-recording processing: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
       return result;
     } catch (error) {
       stateStore.markError(errorMessage(error));
+      void processing.resumeAfterRecording(null);
       throw error;
     }
   });
@@ -500,9 +674,17 @@ function registerIpc(
     try {
       const result = await recordingManager.recover(meetingId);
       stateStore.markRecovered(result);
+      void processing
+        .resumeAfterRecording(result.meetingId)
+        .catch((error: unknown) => {
+          console.error(
+            `failed to start post-recovery processing: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
       return result;
     } catch (error) {
       stateStore.markError(errorMessage(error));
+      void processing.resumeAfterRecording(null);
       throw error;
     }
   });
@@ -631,6 +813,7 @@ function registerIpc(
         payload.event,
       );
       stateStore.markStartupFailure(payload.event, failure.meetingDir);
+      void processing.resumeAfterRecording(null);
       return failure;
     },
   );
@@ -639,6 +822,7 @@ function registerIpc(
     const status = stateStore.getStatus();
     if (status === 'starting' || status === 'recording' || status === 'stopping') {
       stateStore.markError(message);
+      void processing.resumeAfterRecording(null);
     }
   });
 
@@ -685,7 +869,11 @@ if (!app.requestSingleInstanceLock()) {
     focusMainWindow();
   });
 
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (shutdownInProgress) {
+      return;
+    }
+    shutdownInProgress = true;
     isQuitting = true;
     if (stateTimer) {
       clearInterval(stateTimer);
@@ -693,6 +881,14 @@ if (!app.requestSingleInstanceLock()) {
     }
     trayController?.destroy();
     trayController = null;
+    const coordinator = processingCoordinator;
+    processingCoordinator = null;
+    if (coordinator) {
+      event.preventDefault();
+      void coordinator.shutdown().finally(() => {
+        app.quit();
+      });
+    }
   });
 
   app.on('web-contents-created', (_event, contents) => {
@@ -704,6 +900,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(async () => {
     configureSession();
     registerAppMenu();
+    applyDockIcon();
 
     const saveRoot = join(app.getPath('documents'), 'Kataribe');
     const meetingStore = new MeetingStore(saveRoot);
@@ -714,6 +911,59 @@ if (!app.requestSingleInstanceLock()) {
     stateStore.setInputSource(storedSettings.inputSource);
     stateStore.setClippingConfig(storedSettings.clippingConfig);
     stateStore.setSilenceConfig(storedSettings.silenceConfig);
+
+    const modelManager = new ModelManager({
+      modelsDir: join(app.getPath('userData'), 'models'),
+      fetch: electronFetch,
+      onProgress: (progress) => {
+        broadcast('models:progress', progress);
+      },
+    });
+    const secretCrypto: SecretCrypto = {
+      isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
+      encrypt: (plainText) => safeStorage.encryptStringAsync(plainText),
+      decrypt: async (encrypted) => {
+        const result = await safeStorage.decryptStringAsync(encrypted);
+        return {
+          result: result.result,
+          shouldReEncrypt: result.shouldReEncrypt,
+        };
+      },
+    };
+    const apiKeyStore = new ApiKeyStore({
+      filePath: join(app.getPath('userData'), 'config.json'),
+      crypto: secretCrypto,
+    });
+    await apiKeyStore.load();
+
+    const locator = new BinaryLocator({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+      platform: process.platform,
+      arch: process.arch,
+    });
+    const mediaEncoder = new MediaEncoder({ locator });
+    const transcriptionService = new TranscriptionService({ locator });
+    const llmClient = new LlmClient({ fetch: electronFetch });
+    const processing = new ProcessingCoordinator({
+      tempRoot: join(app.getPath('userData'), 'tmp'),
+      meetingStore,
+      modelManager,
+      apiKeyStore,
+      mediaEncoder,
+      transcriptionService,
+      llmClient,
+      settings: () => settingsStore.get(),
+      onStateChange: (state) => {
+        broadcast('processing:state', state);
+      },
+      onMeetingUpdated: (meetingId) => {
+        broadcast('meetings:updated', { meetingId });
+      },
+    });
+    processingCoordinator = processing;
+    await processing.markInterruptedMeetings();
 
     const recordingManager = new RecordingManager({
       saveRoot,
@@ -733,10 +983,18 @@ if (!app.requestSingleInstanceLock()) {
     });
     activeRecordingManager = recordingManager;
     registerAudioProtocol(meetingStore);
-    registerIpc(recordingManager, meetingStore, settingsStore);
+    registerIpc(
+      recordingManager,
+      meetingStore,
+      settingsStore,
+      processing,
+      modelManager,
+      apiKeyStore,
+    );
 
     let suspendedAt: number | null = null;
     powerMonitor.on('suspend', () => {
+      processingCoordinator?.pauseTranscription();
       const status = stateStore.getStatus();
       if (status !== 'recording' && status !== 'stopping') {
         return;
@@ -756,6 +1014,7 @@ if (!app.requestSingleInstanceLock()) {
     });
 
     powerMonitor.on('resume', () => {
+      processingCoordinator?.resumeTranscription();
       if (suspendedAt === null) {
         return;
       }
@@ -804,7 +1063,11 @@ if (!app.requestSingleInstanceLock()) {
       iconPath,
       handlers: {
         start: () => {
-          coordinator.start();
+          processingCoordinator?.pauseForRecording();
+          const result = coordinator.start();
+          if (!result.accepted) {
+            void processingCoordinator?.resumeAfterRecording(null);
+          }
         },
         stop: () => {
           coordinator.stop();
@@ -819,7 +1082,14 @@ if (!app.requestSingleInstanceLock()) {
         },
       },
       onToggle: () => {
-        coordinator.toggle();
+        const wasRecording = stateStore.canStop();
+        if (!wasRecording) {
+          processingCoordinator?.pauseForRecording();
+        }
+        const result = coordinator.toggle();
+        if (!result.accepted && !wasRecording) {
+          void processingCoordinator?.resumeAfterRecording(null);
+        }
       },
     });
     trayController.update(stateStore.getState());

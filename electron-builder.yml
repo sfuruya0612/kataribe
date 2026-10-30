@@ -12,6 +12,12 @@ extraResources:
     to: trayTemplate.png
   - from: build/trayTemplate@2x.png
     to: trayTemplate@2x.png
+  - from: build/icon.iconset/icon_512x512@2x.png
+    to: app-icon.png
+  - from: resources/bin
+    to: bin
+  - from: resources/licenses
+    to: licenses
 asar: true
 afterPack: scripts/after-pack.cjs
 mac:

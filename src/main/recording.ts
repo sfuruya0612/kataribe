@@ -24,62 +24,20 @@ import type {
   RecoverableRecording,
   StartRecordingOptions,
 } from '../shared/types';
-import type { ClippingConfig } from '../shared/clipping';
-import type { SilenceConfig } from '../shared/silence';
+import {
+  isValidMeetingId,
+  readMeetingMeta,
+  toMeetingMetaStats,
+  writeMeetingMeta,
+  type MeetingMeta,
+  type MeetingMetaChunk,
+} from './meeting-meta';
 import {
   createWavHeader,
   encodeWavMono16,
   WAV_CHANNELS,
   WAV_BITS_PER_SAMPLE,
 } from './wav';
-
-type MetaStatus = 'recording' | 'encoding' | 'error';
-
-type MetaChunk = {
-  sequence: number;
-  file: string;
-  frames: number;
-  expected_frames: number;
-};
-
-type MetaCaptureStats = {
-  frames: number;
-  expected_frames: number;
-  gaps: number;
-  max_gap_frames: number;
-  missed_frames: number;
-  sample_rate: number;
-  channels: number;
-  current_time: number;
-};
-
-type Meta = {
-  schema_version: 1;
-  id: string;
-  status: MetaStatus;
-  title: string;
-  started_at: string;
-  ended_at?: string;
-  duration: number;
-  source: {
-    input: InputSource;
-    microphone?: string;
-    system?: string;
-  };
-  sample_rate: number;
-  channels: number;
-  bits_per_sample: number;
-  chunks: MetaChunk[];
-  expected_samples: number;
-  actual_samples: number;
-  gap_samples?: number;
-  events?: RecordingEvent[];
-  clipping_config?: ClippingConfig;
-  silence_config?: SilenceConfig;
-  capture_stats?: MetaCaptureStats;
-  audio_path?: string;
-  app_version: string;
-};
 
 type SessionFile = {
   meeting_id: string;
@@ -94,7 +52,7 @@ type ActiveSession = {
   tempDir: string;
   chunksDir: string;
   metaPath: string;
-  meta: Meta;
+  meta: MeetingMeta;
   blockerId: number;
   failed: boolean;
 };
@@ -111,9 +69,6 @@ export type RecordingManagerOptions = {
   blocker: PowerSaveBlockerAdapter;
   now?: () => Date;
 };
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function pad(value: number): string {
   return String(value).padStart(2, '0');
@@ -156,39 +111,6 @@ async function writePrivateFile(path: string, data: string | Buffer): Promise<vo
 
 async function readJson<T>(path: string): Promise<T> {
   return JSON.parse(await readFile(path, 'utf8')) as T;
-}
-
-function validateMeta(meta: Meta): void {
-  if (meta.schema_version !== 1) {
-    throw new Error('unsupported meta schema version');
-  }
-  if (!UUID_PATTERN.test(meta.id)) {
-    throw new Error('invalid meeting id in meta');
-  }
-  if (!Number.isFinite(meta.sample_rate) || meta.sample_rate <= 0) {
-    throw new Error('invalid sample rate in meta');
-  }
-  if (meta.channels !== WAV_CHANNELS || meta.bits_per_sample !== WAV_BITS_PER_SAMPLE) {
-    throw new Error('unsupported audio format in meta');
-  }
-}
-
-async function writeMeta(metaPath: string, meta: Meta): Promise<void> {
-  validateMeta(meta);
-  await writePrivateFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
-}
-
-function toMetaStats(stats: RecordingCaptureStats): MetaCaptureStats {
-  return {
-    frames: stats.frames,
-    expected_frames: stats.expectedFrames,
-    gaps: stats.gaps,
-    max_gap_frames: stats.maxGapFrames,
-    missed_frames: stats.missedFrames,
-    sample_rate: stats.sampleRate,
-    channels: stats.channels,
-    current_time: stats.currentTime,
-  };
 }
 
 function isInside(root: string, target: string): boolean {
@@ -300,7 +222,7 @@ export class RecordingManager {
     const chunksDir = join(tempDir, 'chunks');
     const metaPath = join(meetingDir, 'meta.json');
 
-    const meta: Meta = {
+    const meta: MeetingMeta = {
       schema_version: 1,
       id: meetingId,
       status: 'recording',
@@ -329,7 +251,7 @@ export class RecordingManager {
     try {
       await ensurePrivateDirectory(tempDir);
       await ensurePrivateDirectory(chunksDir);
-      await writeMeta(metaPath, meta);
+      await writeMeetingMeta(metaPath, meta);
 
       const sessionFile: SessionFile = {
         meeting_id: meetingId,
@@ -419,7 +341,7 @@ export class RecordingManager {
         chunk.expectedFrames + (active.meta.gap_samples ?? 0),
       );
       active.meta.duration = active.meta.actual_samples / active.meta.sample_rate;
-      await writeMeta(active.metaPath, active.meta);
+      await writeMeetingMeta(active.metaPath, active.meta);
       return { file, frames: chunk.frames };
     } catch (error) {
       active.failed = true;
@@ -457,7 +379,7 @@ export class RecordingManager {
         expected_frames: active.meta.expected_samples,
       });
       active.meta.duration = active.meta.actual_samples / active.meta.sample_rate;
-      await writeMeta(active.metaPath, active.meta);
+      await writeMeetingMeta(active.metaPath, active.meta);
       return { file, frames };
     } catch (error) {
       active.failed = true;
@@ -484,7 +406,7 @@ export class RecordingManager {
     const endedAt = this.now();
     active.meta.ended_at = endedAt.toISOString();
     if (stats) {
-      active.meta.capture_stats = toMetaStats(stats);
+      active.meta.capture_stats = toMeetingMetaStats(stats);
       active.meta.expected_samples = Math.max(
         active.meta.expected_samples,
         stats.expectedFrames + (active.meta.gap_samples ?? 0),
@@ -494,7 +416,7 @@ export class RecordingManager {
 
     if (active.meta.chunks.length === 0) {
       active.meta.status = 'error';
-      await writeMeta(active.metaPath, active.meta).catch(() => undefined);
+      await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
       await rm(active.tempDir, { recursive: true, force: true }).catch(() => undefined);
       this.lastStatus = 'error';
       throw new Error('no audio chunks were recorded');
@@ -505,7 +427,7 @@ export class RecordingManager {
       await this.mergeChunks(active.meta, active.chunksDir, audioPath);
       active.meta.status = 'encoding';
       active.meta.audio_path = 'audio.wav';
-      await writeMeta(active.metaPath, active.meta);
+      await writeMeetingMeta(active.metaPath, active.meta);
       await rm(active.tempDir, { recursive: true, force: true });
       this.lastStatus = 'encoding';
       this.lastMeetingDir = active.meetingDir;
@@ -524,7 +446,7 @@ export class RecordingManager {
       };
     } catch (error) {
       active.meta.status = 'error';
-      await writeMeta(active.metaPath, active.meta).catch(() => undefined);
+      await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
       this.lastStatus = 'error';
       throw error;
     }
@@ -542,14 +464,13 @@ export class RecordingManager {
       try {
         const tempDir = join(this.tempRoot, entry.name);
         const session = await readJson<SessionFile>(join(tempDir, 'session.json'));
-        if (session.meeting_id !== entry.name || !UUID_PATTERN.test(session.meeting_id)) {
+        if (session.meeting_id !== entry.name || !isValidMeetingId(session.meeting_id)) {
           continue;
         }
         if (!isInside(this.saveRoot, session.meeting_dir)) {
           continue;
         }
-        const meta = await readJson<Meta>(session.meta_path);
-        validateMeta(meta);
+        const meta = await readMeetingMeta(session.meta_path);
         if (meta.id !== session.meeting_id) {
           continue;
         }
@@ -561,7 +482,7 @@ export class RecordingManager {
         }
         const chunksDir = join(tempDir, 'chunks');
         const complete = await Promise.all(
-          meta.chunks.map(async (chunk: MetaChunk) => {
+          meta.chunks.map(async (chunk: MeetingMetaChunk) => {
             try {
               const info = await stat(join(chunksDir, chunk.file));
               return info.size === 44 + chunk.frames * 2;
@@ -593,7 +514,7 @@ export class RecordingManager {
   }
 
   private async recoverInternal(meetingId: string): Promise<RecordingStopResult> {
-    if (!UUID_PATTERN.test(meetingId)) {
+    if (!isValidMeetingId(meetingId)) {
       throw new Error('invalid meeting id');
     }
     if (this.active) {
@@ -609,8 +530,7 @@ export class RecordingManager {
       throw new Error('session directory is outside the save root');
     }
 
-    const meta = await readJson<Meta>(session.meta_path);
-    validateMeta(meta);
+    const meta = await readMeetingMeta(session.meta_path);
     if (meta.id !== meetingId) {
       throw new Error('meta id does not match');
     }
@@ -630,7 +550,7 @@ export class RecordingManager {
     meta.ended_at = meta.ended_at ?? this.now().toISOString();
     meta.audio_path = 'audio.wav';
     meta.duration = meta.actual_samples / meta.sample_rate;
-    await writeMeta(session.meta_path, meta);
+    await writeMeetingMeta(session.meta_path, meta);
     await rm(tempDir, { recursive: true, force: true });
 
     this.lastStatus = 'encoding';
@@ -670,7 +590,7 @@ export class RecordingManager {
     active.meta.events = active.meta.events ?? [];
     active.meta.events.push(event);
     try {
-      await writeMeta(active.metaPath, active.meta);
+      await writeMeetingMeta(active.metaPath, active.meta);
       return true;
     } catch (error) {
       active.failed = true;
@@ -699,7 +619,7 @@ export class RecordingManager {
     const now = this.now();
     const meetingDir = await this.createMeetingDir(now);
     const metaPath = join(meetingDir, 'meta.json');
-    const meta: Meta = {
+    const meta: MeetingMeta = {
       schema_version: 1,
       id: randomUUID(),
       status: 'error',
@@ -726,7 +646,7 @@ export class RecordingManager {
     };
 
     try {
-      await writeMeta(metaPath, meta);
+      await writeMeetingMeta(metaPath, meta);
     } catch (error) {
       await rm(meetingDir, { recursive: true, force: true }).catch(() => undefined);
       throw error;
@@ -767,7 +687,7 @@ export class RecordingManager {
     }
   }
 
-  private async mergeChunks(meta: Meta, chunksDir: string, audioPath: string): Promise<void> {
+  private async mergeChunks(meta: MeetingMeta, chunksDir: string, audioPath: string): Promise<void> {
     const totalFrames = meta.chunks.reduce((sum, chunk) => sum + chunk.frames, 0);
     if (totalFrames <= 0) {
       throw new Error('no audio frames to merge');

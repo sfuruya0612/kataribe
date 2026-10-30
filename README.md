@@ -16,7 +16,7 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 アプリ基盤、録音中核、メニューバー、会議一覧、会議詳細、設定、デバイス消失と権限拒否の処理は実装済みです。
 M0 のシステム音声検証は完了しています。
 会議一覧、会議詳細の波形プレイヤー、設定画面のタブと設定値の保存は実装済みです。
-mp3 への変換、文字起こし、要約、whisper モデルのダウンロード、LLM API 連携はまだ実装されていません。
+録音停止後の mp3 変換、16 kHz WAV の生成、whisper.cpp による文字起こし、whisper モデルのダウンロード、API キーの Keychain 保存、LLM による要約を実装済みです。
 配布予定はなく、ローカルの開発ビルドのみを対象にしています。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
@@ -150,6 +150,7 @@ npm run dev
 ビルドと確認:
 
 ```sh
+npm run binaries
 npm run typecheck
 npm test
 npm run build
@@ -159,6 +160,8 @@ npm run package
 npm run verify:mac
 ```
 
+`npm run binaries` は、同梱する whisper-cli と ffmpeg を `resources/bin/<arch>/` にビルドする。
+リポジトリにビルド済みの arm64 バイナリがある場合、このコマンドは不要です。
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
 `npm run verify:mac` は、`Info.plist`、entitlement、同梱物、アプリサイズを検査する。
 `npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
@@ -176,17 +179,22 @@ npm run verify:mac
 1. 入力ソースにマイク、システム音声、両方のいずれかを選びます。
 2. マイクと BlackHole 2ch の入力デバイスを選びます。
 3. 録音を開始し、経過時間、ピーク、RMS、実フレーム数を確認します。
-4. 録音を停止すると、`~/Documents/Kataribe/YYYY/YYYY-MM-DD_HHMM_タイトル未入力/` に `audio.wav` と `meta.json` を保存します。
+4. 録音を停止すると、`~/Documents/Kataribe/YYYY/YYYY-MM-DD_HHMM_タイトル未入力/` に `audio.mp3`、`transcript.md`、`meta.json` を保存します。
 
 ![会議一覧](docs/images/meetings.jpg)
 
 ![会議詳細と波形プレイヤー](docs/images/meeting-detail.jpg)
 
 録音中の音声は 10 秒ごとに一時ディレクトリへ WAV チャンクとして書き出します。
-停止時にチャンクを `audio.wav` に結合し、一時ファイルを削除します。
-mp3 と 16 kHz wav の生成はまだ実装していません。
-録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
+停止時にチャンクを結合し、mp3（64 kbps・モノラル・44.1 kHz）と文字起こし用の 16 kHz WAV を生成します。
+mp3 と 16 kHz WAV の生成が成功したら、結合した中間 WAV を削除します。
 
+録音停止後、選択中の whisper.cpp モデルで文字起こしを自動的に開始します。
+文字起こしの進捗と予想残り時間は会議詳細に表示し、途中で中断できます。
+最後まで完了しなかった場合は、それまでの結果を部分的な `transcript.md` として保存します。
+進捗が止まった場合は同じモデルで 1 回だけ自動再開し、それでも完了しない場合はより小さいモデルでの再実行を案内します。
+
+録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
 録音中に BlackHole 2ch が消えた場合は、録音を停止してチャンクを保存します。
 録音中にマイクだけが消えた場合は、システム音声の録音を続け、警告を表示します。
 入力ソースは自動で切り替えません。
@@ -195,22 +203,25 @@ mp3 と 16 kHz wav の生成はまだ実装していません。
 会議一覧と会議詳細の波形プレイヤーは実装済みです。
 設定画面の入力ソースは、メニューバーと録音パネルに同期します。
 入力ソース、モデル、LLM プロバイダ、出力言語、クリッピング警告、無音検出の設定は `~/Library/Application Support/Kataribe/settings.json` に保存します。
-whisper モデルのダウンロードと LLM API 連携はまだ実装されていません。
+API キーは `~/Library/Application Support/Kataribe/config.json` に暗号化して保存します。
 BlackHole 2ch のセットアップ手順は、設定画面から README を開いて確認できます。
 
 ## 初回起動後の設定
 
 設定画面は「一般」「録音」「文字起こし」「要約」のタブで構成しています。
 モデル、LLM プロバイダ、出力言語、クリッピング警告、無音検出の設定を保存します。
-whisper モデルのダウンロードと LLM API への送信はまだ実装していません。
-現在の保存先は `~/Documents/Kataribe/` 固定です。
 
 ![設定画面](docs/images/settings.jpg)
 
 1. 保存先は現在 `~/Documents/Kataribe/` 固定です。変更は未実装です。
-2. whisper.cpp のモデルを選びます。選択値は保存しますが、モデルのダウンロードは未実装です。large-v3-turbo は約 1.6 GB です。
-3. LLM プロバイダとモデル名を選びます。選択値は保存しますが、API キーの保存と LLM への送信は未実装です。
-4. 必要なら要約の出力言語を変更します。既定は日本語です。
+2. 「文字起こし」タブで whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。
+3. 「要約」タブで LLM プロバイダを選び、エンドポイント URL、モデル名、API キーを設定します。プリセットは Claude、ChatGPT、Gemini、Ollama Cloud、Fireworks AI、カスタムです。
+4. API キーは macOS Keychain に保護された鍵で暗号化し、設定ファイルに平文を残しません。エンドポイントのホストを変更した場合は再入力が必要です。
+5. 必要なら要約の出力言語を変更します。既定は日本語です。
+
+要約は、会議詳細の「要約を生成」から実行します。
+送信前に、プロバイダ、モデル、エンドポイント、送る文字起こしの全文、文字数、概算トークン数、内容ハッシュを確認できます。
+音声ファイルは送信しません。
 
 ## 権限
 
@@ -287,7 +298,8 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 
 - BlackHole 2ch は GPLv3 のソフトウェアです。Kataribe は同梱せず、再配布しません。
 - BlackHole 2ch の公式配布元: <https://existential.audio/blackhole/>
-- ffmpeg と whisper.cpp のライセンスと著作権表示は、アプリの配布物に含めます（ADR-0014）。
+- 同梱する whisper.cpp、FFmpeg、LAME のライセンスと著作権表示を `resources/licenses/` に置き、アプリの配布物の `Contents/Resources/licenses/` に含めます。
+- ビルドに含める外部ライブラリのライセンスも確認します。
 
 ## 開発
 

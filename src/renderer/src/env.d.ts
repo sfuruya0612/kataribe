@@ -5,10 +5,15 @@ import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  GenerateSummaryResult,
   InputSource,
+  LlmRuntimeConfig,
+  MeetingDetail,
   MeetingSummary,
   MeetingWaveform,
   MicrophonePermissionStatus,
+  ModelDownloadProgress,
+  ProcessingState,
   RecordingAppState,
   RecordingCaptureStats,
   RecordingChunk,
@@ -26,6 +31,9 @@ import type {
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
+  SummaryPreview,
+  WhisperModel,
+  WhisperModelList,
 } from '../../shared/types';
 
 declare global {
@@ -78,8 +86,47 @@ declare global {
       recoverRecording: (meetingId: string) => Promise<RecordingStopResult>;
       openRecordingFolder: () => Promise<void>;
       listMeetings: () => Promise<MeetingSummary[]>;
+      getMeetingDetail: (meetingId: string) => Promise<MeetingDetail | null>;
+      saveTranscript: (
+        meetingId: string,
+        markdown: string,
+      ) => Promise<MeetingDetail>;
+      saveSummary: (meetingId: string, markdown: string) => Promise<MeetingDetail>;
+      retryTranscription: (meetingId: string) => Promise<ProcessingState>;
       getMeetingWaveform: (meetingId: string) => Promise<MeetingWaveform>;
       openMeetingFolder: (meetingId: string) => Promise<void>;
+      getProcessingState: () => Promise<ProcessingState>;
+      cancelProcessing: () => Promise<boolean>;
+      previewSummary: (meetingId: string) => Promise<SummaryPreview>;
+      generateSummary: (
+        meetingId: string,
+        token: string,
+      ) => Promise<GenerateSummaryResult>;
+      getLlmRuntime: () => Promise<LlmRuntimeConfig>;
+      setLlmApiKey: (apiKey: string) => Promise<LlmRuntimeConfig>;
+      clearLlmApiKey: () => Promise<void | LlmRuntimeConfig>;
+      listWhisperModels: () => Promise<WhisperModelList>;
+      downloadWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
+      cancelWhisperModelDownload: (
+        model: WhisperModel,
+      ) => Promise<WhisperModelList>;
+      deleteWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
+      copyText: (text: string) => Promise<void>;
+      onProcessingState: (
+        listener: (state: ProcessingState) => void,
+      ) => () => void;
+      onMeetingUpdated: (
+        listener: (payload: { meetingId: string }) => void,
+      ) => () => void;
+      onModelProgress: (
+        listener: (progress: ModelDownloadProgress) => void,
+      ) => () => void;
+      onModelsChanged: (
+        listener: (list: WhisperModelList) => void,
+      ) => () => void;
+      onLlmChanged: (
+        listener: (config: LlmRuntimeConfig) => void,
+      ) => () => void;
       getSettings: () => Promise<AppSettings>;
       updateSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
       showAbout: () => Promise<void>;
