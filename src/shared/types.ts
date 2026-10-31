@@ -70,8 +70,14 @@ export type TranscriptTranslation = {
   partial: boolean;
 };
 
+export type RecordingErrorInfo = {
+  message: string;
+  at: string;
+};
+
 export type MeetingDetail = {
   meeting: MeetingSummary;
+  recordingError: RecordingErrorInfo | null;
   transcript: TranscriptDocument | null;
   summary: SummaryDocument | null;
   translations: Partial<Record<SummaryLanguage, TranscriptTranslation>>;

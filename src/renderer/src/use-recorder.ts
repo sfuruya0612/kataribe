@@ -851,6 +851,11 @@ export function useRecorder(): RecorderController {
       } catch {
         setUiError(message);
       }
+      try {
+        await window.kataribe.stopRecording();
+      } catch {
+        // The main process keeps the recording error state.
+      }
       return;
     }
     graphRef.current = null;

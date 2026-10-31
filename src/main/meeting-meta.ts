@@ -6,12 +6,14 @@ import type {
   InputSource,
   MeetingStatus,
   RecordingCaptureStats,
+  RecordingErrorInfo,
   RecordingEvent,
   SummaryLanguage,
 } from '../shared/types';
 import { WAV_BITS_PER_SAMPLE, WAV_CHANNELS } from './wav';
 
 export const MEETING_META_SCHEMA_VERSION = 1;
+const MAX_RECORDING_ERROR_MESSAGE_LENGTH = 2000;
 
 export type MeetingMetaChunk = {
   sequence: number;
@@ -116,6 +118,7 @@ export type MeetingMeta = {
   pinned?: boolean;
   pinned_at?: string;
   error?: string;
+  recording_error?: RecordingErrorInfo;
 };
 
 const UUID_PATTERN =
@@ -154,6 +157,76 @@ export function validateMeetingMeta(meta: MeetingMeta): void {
   if (!Number.isFinite(meta.duration) || meta.duration < 0) {
     throw new Error('invalid duration in meta');
   }
+}
+
+export function createRecordingError(
+  message: string,
+  at: Date | string,
+): RecordingErrorInfo {
+  return {
+    message: message.trim().slice(0, MAX_RECORDING_ERROR_MESSAGE_LENGTH),
+    at: typeof at === 'string' ? at : at.toISOString(),
+  };
+}
+
+export function normalizeRecordingError(value: unknown): RecordingErrorInfo | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const candidate = value as { message?: unknown; at?: unknown };
+  if (typeof candidate.message !== 'string') {
+    return null;
+  }
+  const message = candidate.message.trim().slice(0, MAX_RECORDING_ERROR_MESSAGE_LENGTH);
+  if (message.length === 0) {
+    return null;
+  }
+  return {
+    message,
+    at: typeof candidate.at === 'string' ? candidate.at : '',
+  };
+}
+
+export function recordingErrorFromMeta(meta: MeetingMeta): RecordingErrorInfo | null {
+  const stored = normalizeRecordingError(meta.recording_error);
+  if (stored) {
+    return stored;
+  }
+
+  const events = Array.isArray(meta.events) ? meta.events : [];
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (typeof event !== 'object' || event === null) {
+      continue;
+    }
+    const candidate = event as { severity?: unknown; message?: unknown; at?: unknown };
+    if (candidate.severity !== 'error' || typeof candidate.message !== 'string') {
+      continue;
+    }
+    const message = candidate.message
+      .trim()
+      .slice(0, MAX_RECORDING_ERROR_MESSAGE_LENGTH);
+    if (message.length === 0) {
+      continue;
+    }
+    return {
+      message,
+      at:
+        typeof candidate.at === 'string' && candidate.at.length > 0
+          ? candidate.at
+          : meta.ended_at ?? meta.started_at,
+    };
+  }
+
+  if (meta.status === 'error' && typeof meta.audio_path !== 'string') {
+    return {
+      message:
+        '録音データが保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。',
+      at: meta.ended_at ?? meta.started_at,
+    };
+  }
+
+  return null;
 }
 
 export async function readMeetingMeta(path: string): Promise<MeetingMeta> {

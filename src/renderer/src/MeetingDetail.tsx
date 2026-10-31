@@ -184,6 +184,7 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
+  const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
   const translations = detail?.translations ?? {};
@@ -545,6 +546,17 @@ export function MeetingDetail({
           {current.inputSource ? inputSourceLabel(current.inputSource) : '入力不明'} ·{' '}
           {current.sampleRate.toLocaleString('ja-JP')} Hz
         </p>
+        {recordingError ? (
+          <div className="alert alert-error recording-error" role="alert">
+            <strong>録音エラー</strong>
+            <p>{recordingError.message}</p>
+            {recordingError.at ? (
+              <span className="recording-error-time">
+                {formatDateTime(recordingError.at)}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <div className="detail-player-row">
           <AudioPlayer
             src={current.audioUrl}

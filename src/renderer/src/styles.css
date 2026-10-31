@@ -725,6 +725,24 @@ ul {
   background: var(--warning-bg);
 }
 
+.recording-error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--danger-border-soft);
+}
+
+.recording-error p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.recording-error-time {
+  font-size: 10px;
+  opacity: 0.8;
+}
+
 .hint {
   margin: 8px 0 0;
   color: var(--muted);

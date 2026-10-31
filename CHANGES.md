@@ -78,6 +78,8 @@
   - @shoichi.furuya
 - [ADD] OS のダークモードに追従する配色と、システム / ライト / ダークを選べる外観設定を追加する
   - @shoichi.furuya
+- [ADD] 録音開始時と録音中のエラーを会議ごとに保存し、会議詳細に表示する
+  - @shoichi.furuya
 
 ### FIX
 
@@ -88,6 +90,8 @@
 
 ### misc
 
+- [ADD] リリースチェックリストと録音回帰テストに録音エラー表示の確認手順を追加する
+  - @shoichi.furuya
 - [ADD] README とリリースチェックリストに録音と画面の確認手順を追加する
   - @shoichi.furuya
 - [ADD] README に BlackHole 2ch のサポート情報と画面写真を追加する

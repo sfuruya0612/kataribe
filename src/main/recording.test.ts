@@ -350,6 +350,10 @@ describe('RecordingManager', () => {
 
     const meta = await readMeta(session.meetingDir);
     expect(meta.status).toBe('error');
+    expect(meta.recording_error).toMatchObject({
+      message: expect.stringContaining('録音データが 1 つも保存されなかった'),
+      at: new Date(2026, 9, 29, 14, 5, 30).toISOString(),
+    });
     expect(fixture.manager.getState().status).toBe('error');
     expect(await readdir(fixture.tempRoot)).toEqual([]);
     expect(fixture.blockerStops).toEqual([1]);
@@ -444,6 +448,88 @@ describe('RecordingManager', () => {
     expect(meta.events).toEqual([event]);
   });
 
+  it('records error severity events as the recording error', async () => {
+    const fixture = await createFixture();
+    const session = await fixture.manager.start({
+      inputSource: 'both',
+      sampleRate: 48000,
+    });
+    const warning: RecordingEvent = {
+      at: new Date(2026, 9, 29, 14, 5, 31).toISOString(),
+      kind: 'clipping',
+      device: 'microphone',
+      severity: 'warning',
+      message: 'マイク入力がクリップしています。',
+    };
+    const error: RecordingEvent = {
+      at: new Date(2026, 9, 29, 14, 5, 35).toISOString(),
+      kind: 'device-lost',
+      device: 'system',
+      severity: 'error',
+      message: 'BlackHole 2ch が切断されました。',
+    };
+
+    await fixture.manager.recordEvent(warning);
+    let meta = await readMeta(session.meetingDir);
+    expect(meta.recording_error).toBeUndefined();
+
+    await fixture.manager.recordEvent(error);
+    meta = await readMeta(session.meetingDir);
+    expect(meta.recording_error).toEqual({
+      message: error.message,
+      at: error.at,
+    });
+
+    await fixture.manager.recordEvent({
+      ...error,
+      at: new Date(2026, 9, 29, 14, 5, 40).toISOString(),
+      message: '別のエラーです。',
+    });
+    meta = await readMeta(session.meetingDir);
+    expect(meta.recording_error).toEqual({
+      message: error.message,
+      at: error.at,
+    });
+  });
+
+  it('records a capture error on the active session', async () => {
+    const fixture = await createFixture();
+    const session = await fixture.manager.start({
+      inputSource: 'microphone',
+      sampleRate: 48000,
+    });
+
+    await expect(
+      fixture.manager.recordCaptureError('録音処理が停止しました。'),
+    ).resolves.toBe(session.meetingId);
+    let meta = await readMeta(session.meetingDir);
+    expect(meta.status).toBe('error');
+    expect(meta.recording_error).toEqual({
+      message: '録音処理が停止しました。',
+      at: new Date(2026, 9, 29, 14, 5, 30).toISOString(),
+    });
+
+    await expect(
+      fixture.manager.recordCaptureError('後から届いたエラーです。'),
+    ).resolves.toBe(session.meetingId);
+    meta = await readMeta(session.meetingDir);
+    expect(meta.recording_error).toEqual({
+      message: '録音処理が停止しました。',
+      at: new Date(2026, 9, 29, 14, 5, 30).toISOString(),
+    });
+
+    await fixture.manager.appendChunk(createChunk(1, 100));
+    const result = await fixture.manager.stop();
+    expect(result.hadChunkFailure).toBe(false);
+
+    meta = await readMeta(session.meetingDir);
+    expect(meta.status).toBe('encoding');
+    expect(meta.recording_error).toEqual({
+      message: '録音処理が停止しました。',
+      at: new Date(2026, 9, 29, 14, 5, 30).toISOString(),
+    });
+  });
+
   it('creates an error meta for a failed start', async () => {
     const fixture = await createFixture();
     const event: RecordingEvent = {
@@ -469,6 +555,10 @@ describe('RecordingManager', () => {
     expect(meta.duration).toBe(0);
     expect(meta.chunks).toEqual([]);
     expect(meta.events).toEqual([event]);
+    expect(meta.recording_error).toEqual({
+      message: event.message,
+      at: event.at,
+    });
     expect(meta.source).toEqual({
       input: 'microphone',
       microphone: 'FIFINE K670',
@@ -489,6 +579,7 @@ describe('RecordingManager', () => {
         message: 'lost',
       }),
     ).toBe(false);
+    expect(await fixture.manager.recordCaptureError('lost')).toBeNull();
   });
 
   it('rejects a startup failure while recording', async () => {

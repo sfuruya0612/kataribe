@@ -16,6 +16,7 @@ import type {
   MeetingStatus,
   MeetingSummary,
   MeetingWaveform,
+  RecordingErrorInfo,
   SummaryDocument,
   SummaryLanguage,
   TranscriptDocument,
@@ -23,6 +24,7 @@ import type {
 } from '../shared/types';
 import {
   readMeetingMeta,
+  recordingErrorFromMeta,
   updateMeetingMeta,
   writeMeetingMeta,
   type MeetingMeta,
@@ -273,6 +275,14 @@ export class MeetingStore {
     if (!meeting) {
       return null;
     }
+    let recordingError: RecordingErrorInfo | null = null;
+    try {
+      recordingError = recordingErrorFromMeta(
+        await readMeetingMeta(join(meeting.meetingDir, 'meta.json')),
+      );
+    } catch {
+      // The meta file can disappear while the detail is being read.
+    }
     const translations: Partial<Record<SummaryLanguage, TranscriptTranslation>> = {};
     for (const entry of TRANSLATION_FILES) {
       const translation = await this.readTranslation(meeting, entry.language);
@@ -282,6 +292,7 @@ export class MeetingStore {
     }
     return {
       meeting,
+      recordingError,
       transcript: await this.readTranscript(meeting),
       summary: await this.readSummary(meeting),
       translations,

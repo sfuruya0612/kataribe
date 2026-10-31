@@ -124,6 +124,92 @@ describe('MeetingStore', () => {
     expect(await store.waveform('missing')).toEqual({ peaks: [], duration: 0 });
   });
 
+  it('returns the recording error stored in meta.json', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000030';
+    await createMeeting(root, id, {
+      recording_error: {
+        message: '録音データの保存に失敗しました。',
+        at: '2026-10-29T05:01:00.000Z',
+      },
+    });
+
+    const detail = await store.detail(id);
+    expect(detail?.recordingError).toEqual({
+      message: '録音データの保存に失敗しました。',
+      at: '2026-10-29T05:01:00.000Z',
+    });
+  });
+
+  it('falls back to the last error severity event for older recordings', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000031';
+    await createMeeting(root, id, {
+      status: 'error',
+      events: [
+        {
+          at: '2026-10-29T05:00:30.000Z',
+          kind: 'device-lost',
+          device: 'system',
+          severity: 'warning',
+          message: 'システム音声が途切れました。',
+        },
+        {
+          at: '2026-10-29T05:01:00.000Z',
+          kind: 'device-lost',
+          device: 'system',
+          severity: 'error',
+          message: 'BlackHole 2ch が切断されました。',
+        },
+      ],
+    });
+
+    const detail = await store.detail(id);
+    expect(detail?.recordingError).toEqual({
+      message: 'BlackHole 2ch が切断されました。',
+      at: '2026-10-29T05:01:00.000Z',
+    });
+  });
+
+  it('uses a generic message for an older recording without audio', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000033';
+    await createMeeting(root, id, {
+      status: 'error',
+      chunks: [],
+      actual_samples: 0,
+      expected_samples: 0,
+      audio_path: undefined,
+      ended_at: '2026-10-29T05:00:10.000Z',
+    });
+
+    const detail = await store.detail(id);
+    expect(detail?.recordingError).toMatchObject({
+      at: '2026-10-29T05:00:10.000Z',
+      message: expect.stringContaining('録音データが保存されなかった'),
+    });
+  });
+
+  it('returns null when the recording has no usable error', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000032';
+    await createMeeting(root, id, {
+      recording_error: { message: 42, at: null },
+      events: [
+        {
+          at: '2026-10-29T05:00:30.000Z',
+          kind: 'clipping',
+          device: 'microphone',
+          severity: 'warning',
+          message: 'マイク入力がクリップしています。',
+        },
+      ],
+    });
+
+    const detail = await store.detail(id);
+    expect(detail?.recordingError).toBeNull();
+  });
+
   it('renames the folder and updates front matter when the title changes', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000010';

@@ -25,6 +25,7 @@ import type {
   StartRecordingOptions,
 } from '../shared/types';
 import {
+  createRecordingError,
   isValidMeetingId,
   readMeetingMeta,
   toMeetingMetaStats,
@@ -145,6 +146,10 @@ export class RecordingManager {
     return this.lastMeetingDir;
   }
 
+  hasActiveSession(): boolean {
+    return this.active !== null;
+  }
+
   getSaveRoot(): string {
     return this.saveRoot;
   }
@@ -194,6 +199,10 @@ export class RecordingManager {
 
   recordEvent(event: RecordingEvent): Promise<boolean> {
     return this.enqueue(() => this.recordEventInternal(event));
+  }
+
+  recordCaptureError(message: string): Promise<string | null> {
+    return this.enqueue(() => this.recordCaptureErrorInternal(message));
   }
 
   recordStartupFailure(
@@ -357,6 +366,10 @@ export class RecordingManager {
     } catch (error) {
       active.failed = true;
       console.error(`failed to append chunk: ${errorMessage(error)}`);
+      await this.persistRecordingError(
+        active,
+        `録音データの保存に失敗しました。${errorMessage(error)}`,
+      );
       throw error;
     }
   }
@@ -395,6 +408,10 @@ export class RecordingManager {
     } catch (error) {
       active.failed = true;
       console.error(`failed to append silence gap: ${errorMessage(error)}`);
+      await this.persistRecordingError(
+        active,
+        `無音区間の保存に失敗しました。${errorMessage(error)}`,
+      );
       throw error;
     }
   }
@@ -427,6 +444,12 @@ export class RecordingManager {
 
     if (active.meta.chunks.length === 0) {
       active.meta.status = 'error';
+      active.meta.recording_error =
+        active.meta.recording_error ??
+        createRecordingError(
+          '録音データが 1 つも保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。',
+          endedAt,
+        );
       await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
       await rm(active.tempDir, { recursive: true, force: true }).catch(() => undefined);
       this.lastStatus = 'error';
@@ -457,6 +480,12 @@ export class RecordingManager {
       };
     } catch (error) {
       active.meta.status = 'error';
+      active.meta.recording_error =
+        active.meta.recording_error ??
+        createRecordingError(
+          `録音した音声の結合に失敗しました。${errorMessage(error)}`,
+          endedAt,
+        );
       await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
       this.lastStatus = 'error';
       throw error;
@@ -555,7 +584,18 @@ export class RecordingManager {
 
     const audioPath = join(session.meeting_dir, 'audio.wav');
     const chunksDir = join(tempDir, 'chunks');
-    await this.mergeChunks(meta, chunksDir, audioPath);
+    try {
+      await this.mergeChunks(meta, chunksDir, audioPath);
+    } catch (error) {
+      meta.recording_error =
+        meta.recording_error ??
+        createRecordingError(
+          `録音の復旧に失敗しました。${errorMessage(error)}`,
+          this.now(),
+        );
+      await writeMeetingMeta(session.meta_path, meta).catch(() => undefined);
+      throw error;
+    }
 
     meta.status = 'encoding';
     meta.ended_at = meta.ended_at ?? this.now().toISOString();
@@ -600,6 +640,9 @@ export class RecordingManager {
     }
     active.meta.events = active.meta.events ?? [];
     active.meta.events.push(event);
+    if (event.severity === 'error' && !active.meta.recording_error) {
+      active.meta.recording_error = createRecordingError(event.message, event.at);
+    }
     try {
       await writeMeetingMeta(active.metaPath, active.meta);
       return true;
@@ -607,6 +650,33 @@ export class RecordingManager {
       active.failed = true;
       console.error(`failed to record recording event: ${errorMessage(error)}`);
       throw error;
+    }
+  }
+
+  private async recordCaptureErrorInternal(message: string): Promise<string | null> {
+    const active = this.active;
+    if (!active) {
+      return null;
+    }
+    active.meta.status = 'error';
+    await this.persistRecordingError(active, message);
+    return active.meetingId;
+  }
+
+  private async persistRecordingError(
+    active: ActiveSession,
+    message: string,
+  ): Promise<void> {
+    if (!active.meta.recording_error) {
+      const trimmed = message.trim();
+      if (trimmed.length > 0) {
+        active.meta.recording_error = createRecordingError(trimmed, this.now());
+      }
+    }
+    try {
+      await writeMeetingMeta(active.metaPath, active.meta);
+    } catch (error) {
+      console.error(`failed to persist the recording error: ${errorMessage(error)}`);
     }
   }
 
@@ -652,6 +722,7 @@ export class RecordingManager {
       actual_samples: 0,
       gap_samples: 0,
       events: [event],
+      recording_error: createRecordingError(event.message, event.at),
       clipping_config: options.clippingConfig,
       silence_config: options.silenceConfig,
       app_version: this.appVersion,

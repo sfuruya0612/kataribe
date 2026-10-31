@@ -995,7 +995,11 @@ function registerIpc(
 
   ipcMain.handle('recording:stop', async (_event, stats?: RecordingCaptureStats) => {
     const status = stateStore.getStatus();
-    if (status !== 'recording' && status !== 'stopping') {
+    if (
+      status !== 'recording' &&
+      status !== 'stopping' &&
+      !(status === 'error' && recordingManager.hasActiveSession())
+    ) {
       throw new Error('recording is not active');
     }
     try {
@@ -1012,7 +1016,12 @@ function registerIpc(
         });
       return result;
     } catch (error) {
+      const meetingId = stateStore.getState().session?.meetingId ?? null;
       stateStore.markError(errorMessage(error));
+      if (meetingId) {
+        await refreshMeetingIndex(meetingStore, meetingId);
+        broadcast('meetings:updated', { meetingId });
+      }
       void processing.resumeAfterRecording(null);
       throw error;
     }
@@ -1037,6 +1046,8 @@ function registerIpc(
       return result;
     } catch (error) {
       stateStore.markError(errorMessage(error));
+      await refreshMeetingIndex(meetingStore, meetingId);
+      broadcast('meetings:updated', { meetingId });
       void processing.resumeAfterRecording(null);
       throw error;
     }
@@ -1173,12 +1184,23 @@ function registerIpc(
     },
   );
 
-  ipcMain.handle('recording:capture-error', (_event, message: string) => {
+  ipcMain.handle('recording:capture-error', async (_event, message: string) => {
     const status = stateStore.getStatus();
-    if (status === 'starting' || status === 'recording' || status === 'stopping') {
-      stateStore.markError(message);
-      void processing.resumeAfterRecording(null);
+    if (status !== 'starting' && status !== 'recording' && status !== 'stopping') {
+      return;
     }
+    let meetingId: string | null = null;
+    try {
+      meetingId = await recordingManager.recordCaptureError(message);
+    } catch (error) {
+      console.error(`failed to record the capture error: ${errorMessage(error)}`);
+    }
+    stateStore.markError(message);
+    if (meetingId) {
+      await refreshMeetingIndex(meetingStore, meetingId);
+      broadcast('meetings:updated', { meetingId });
+    }
+    void processing.resumeAfterRecording(null);
   });
 
   ipcMain.handle('recording:list-recoverable', () => {
