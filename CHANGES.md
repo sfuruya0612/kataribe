@@ -80,6 +80,10 @@
   - @shoichi.furuya
 - [ADD] 録音開始時と録音中のエラーを会議ごとに保存し、会議詳細に表示する
   - @shoichi.furuya
+- [ADD] GitHub Actions で Pull Request と main ブランチの型検査、テスト、ビルドを実行する
+  - @shoichi.furuya
+- [ADD] バージョンと一致するタグの push で、署名なしの DMG を添付した GitHub Release を自動作成する
+  - @shoichi.furuya
 
 ### FIX
 
@@ -90,6 +94,8 @@
 
 ### misc
 
+- [ADD] ADR-0019 を追加し、ADR-0017 の配布と DMG の決定を改訂する
+  - @shoichi.furuya
 - [ADD] リリースチェックリストと録音回帰テストに録音エラー表示の確認手順を追加する
   - @shoichi.furuya
 - [ADD] README とリリースチェックリストに録音と画面の確認手順を追加する

@@ -19,7 +19,7 @@ M0 のシステム音声検証は完了しています。
 録音停止後の mp3 変換、16 kHz WAV の生成、whisper.cpp による文字起こし、whisper モデルのダウンロード、API キーの Keychain 保存、LLM による要約を実装済みです。
 文字起こしの翻訳、簡易話者分離、全文検索、保存先の変更、会議タイトルの編集、Multi-Output Device の自動作成も実装済みです。
 mp3 のビットレート設定、会議ごとの要約言語、検索結果からの音声ジャンプ、処理速度の学習、グローバルショートカット、既存音声の取り込み、要約プロンプトの編集にも対応しています。
-配布予定はなく、ローカルの開発ビルドのみを対象にしています。
+GitHub Releases で署名なしの開発版 DMG（arm64）を配布しています。署名と公証は行いません。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
 ## ドキュメント
@@ -38,8 +38,9 @@ mp3 のビットレート設定、会議ごとの要約言語、検索結果か�
 - [ADR-0003: システム音声は BlackHole 経由](docs/adr/0003-system-audio-virtual-device.md)
 - [ADR-0012: メニューバーとメインウィンドウ](docs/adr/0012-menu-bar-and-main-window.md)
 - [ADR-0014: DMG 配布と署名、公証（ADR-0017 で置き換え）](docs/adr/0014-distribution-dmg-notarization.md)
-- [ADR-0017: 配布は行わず、ローカルビルドのみを使う](docs/adr/0017-local-build-only.md)
+- [ADR-0017: 配布は行わず、ローカルビルドのみを使う（ADR-0019 で改訂）](docs/adr/0017-local-build-only.md)
 - [ADR-0018: Multi-Output Device は利用者の明示操作で自動作成する](docs/adr/0018-multi-output-auto-creation.md)
+- [ADR-0019: タグ作成時に署名なしの開発版 DMG を GitHub Releases で配布する](docs/adr/0019-unsigned-dmg-releases.md)
 
 ## 動作環境
 
@@ -139,9 +140,12 @@ Bluetooth 出力には遅延があります。
 
 ### 配布版
 
-配布版はありません。
-現在は配布予定がないため、DMG の配布、署名、公証は行いません。
-ローカルの開発版を使います。
+[GitHub Releases](https://github.com/sfuruya0612/kataribe/releases) に署名なしの開発版 DMG（arm64）を置いています。
+DMG は `v<package.json のバージョン>` タグを push すると自動作成されます。
+署名と公証を行っていないため、macOS の Gatekeeper によって起動をブロックされる場合があります。
+その場合は Applications にコピーしたアプリを Finder で右クリックして「開く」を選ぶか、システム設定の「プライバシーとセキュリティ」から許可してください。
+動作環境は macOS 14.2 以降の Apple Silicon（arm64）です。
+DMG と一緒に添付している `.sha256` ファイルで、ダウンロードした DMG が正しく取得できたか確認できます。
 初回の録音時または入力デバイスの検出時に、マイク権限のダイアログが出ます。
 
 ### 開発版
@@ -199,7 +203,7 @@ npm run verify:mac
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
 `npm run verify:mac` は、`Info.plist`、entitlement、同梱物、アプリサイズを検査する。
 `npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
-署名と公証は行いません（[ADR-0017](docs/adr/0017-local-build-only.md)）。
+署名と公証は行いません（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。
 
 起動するとメニューバーにマイクのアイコンが表示されます。
 
@@ -373,5 +377,33 @@ LLM に送るのは文字起こしの本文だけで、利用者が要約また�
 
 Issue は番号の小さい順に進めます。
 アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、スリープ復帰の [issue 0003](docs/issues/closed/0003-feat-sleep-recovery.md)、回帰テストの [issue 0006](docs/issues/closed/0006-test-m0-regression-harness.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md)、Multi-Output Device の自動作成の [issue 0008](docs/issues/closed/0008-feat-multi-output-device-auto-creation.md) は実装済みです。
-配布予定がないため、[issue 0013](docs/issues/closed/0013-feat-release-checklist-and-entitlements.md) の署名、公証、Gatekeeper の検証は対象外にしました。
+署名と公証を行わないため、[issue 0013](docs/issues/closed/0013-feat-release-checklist-and-entitlements.md) の Developer ID による署名、公証、Gatekeeper の警告なしの起動確認は対象外にしました。
 保留中の issue はありません。
+
+### CI と GitHub Release
+
+GitHub Actions で型検査、テスト、ビルドを実行します。
+
+- Pull Request の作成と更新: `CI` ワークフローを実行
+- `main` へのマージ: 同じ `CI` ワークフローを実行
+- `v*` タグの push: `CI` が成功した後、macOS ランナーで DMG を作り、`Release` ワークフローが GitHub Release を作成
+
+PR のマージ前にテストを必須にするには、リポジトリの Settings > Branches で `main` の branch protection rule を作成し、`CI / Test` を required status check に設定します。
+
+リリースの手順:
+
+1. `package.json` と `package-lock.json` の `version` を更新する（`npm version <version> --no-git-tag-version` を使うと両方更新できます）
+2. `CHANGES.md` に変更点を追加する
+3. 変更を `main` にマージする
+4. `main` の先端に `v<version>` タグを付けて push する
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+タグを push すると、テスト、DMG の作成、GitHub Release の作成が順に実行されます。
+タグ名が `package.json` のバージョン（`v0.1.0`）と一致しない場合、`Release` ワークフローは GitHub Release を作成せずに失敗します。
+Release の本文は GitHub が前回のタグからのコミットと Pull Request から自動生成し、署名と公証を行っていない旨の注意を先頭に追加します。
+`Release` ワークフローは `Kataribe-<version>-arm64.dmg` と SHA-256 チェックサムを添付します。
+DMG は署名も公証も行わない開発版です（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。

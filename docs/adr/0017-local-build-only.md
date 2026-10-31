@@ -2,7 +2,10 @@
 
 Created: 2026-10-30
 Model: DeepSeek V4.1 Flash 1017
-Status: Accepted
+Status: Amended by [ADR-0019](0019-unsigned-dmg-releases.md)
+
+2026-10-31: タグ作成時に署名なしの開発版 DMG を GitHub Releases で配布するため、配布と DMG に関する決定を ADR-0019 で改訂した。
+ローカルの開発ビルドを署名なしで使う決定は残る。
 
 ## 背景
 

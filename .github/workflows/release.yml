@@ -1,0 +1,176 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Package DMG
+    needs: test
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: mise.toml
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Check the tag and the runner architecture
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          expected="v${version}"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::タグ $TAG が package.json のバージョン $expected と一致しません。"
+            exit 1
+          fi
+          lock_version="$(node -p "require('./package-lock.json').version")"
+          lock_root_version="$(node -p "require('./package-lock.json').packages[''].version")"
+          if [ "$lock_version" != "$version" ] || [ "$lock_root_version" != "$version" ]; then
+            echo "::error::package-lock.json のバージョンが package.json の $version と一致しません。"
+            exit 1
+          fi
+          arch="$(uname -m)"
+          if [ "$arch" != "arm64" ]; then
+            echo "::error::同梱バイナリは arm64 のみ対応です。このランナーは $arch です。"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist
+
+      - name: Verify the app bundle
+        run: npm run verify:mac
+
+      - name: Verify the DMG
+        run: |
+          set -euo pipefail
+          dmgs=(release/Kataribe-*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
+            echo "::error::DMG が 1 つだけ見つかるはずですが、見つかりません。"
+            exit 1
+          fi
+          hdiutil verify "${dmgs[0]}"
+
+      - name: Verify the app inside the DMG
+        run: |
+          set -euo pipefail
+          dmgs=(release/Kataribe-*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
+            echo "::error::DMG が 1 つだけ見つかるはずですが、見つかりません。"
+            exit 1
+          fi
+          mount_dir="$(mktemp -d "${RUNNER_TEMP}/kataribe-dmg.XXXXXX")"
+          hdiutil attach "${dmgs[0]}" -nobrowse -readonly -mountpoint "$mount_dir"
+          trap 'hdiutil detach "$mount_dir" -quiet || hdiutil detach "$mount_dir" -force -quiet || true' EXIT
+          npm run verify:mac -- "$mount_dir/Kataribe.app"
+
+      - name: Create the checksum
+        run: |
+          set -euo pipefail
+          dmgs=(release/Kataribe-*.dmg)
+          if [ "${#dmgs[@]}" -ne 1 ] || [ ! -f "${dmgs[0]}" ]; then
+            echo "::error::DMG が 1 つだけ見つかるはずですが、見つかりません。"
+            exit 1
+          fi
+          dmg="${dmgs[0]}"
+          base="$(basename "$dmg")"
+          (
+            cd release
+            shasum -a 256 "$base" > "$base.sha256"
+          )
+
+      - name: Upload the DMG
+        uses: actions/upload-artifact@v7
+        with:
+          name: dmg
+          path: |
+            release/*.dmg
+            release/*.dmg.sha256
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+
+  release:
+    name: Create GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download the DMG
+        uses: actions/download-artifact@v8
+        with:
+          name: dmg
+          path: release
+
+      - name: Verify the checksum
+        run: |
+          set -euo pipefail
+          cd release
+          sha256sum -c ./*.dmg.sha256
+
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          notes="$(printf '%s\n' \
+            '> [!WARNING]' \
+            '> この DMG は署名と公証を行っていない開発版です。macOS の Gatekeeper によって起動がブロックされる場合があります。' \
+            '> Applications にコピーしたアプリを Finder で右クリックして「開く」を選ぶか、システム設定の「プライバシーとセキュリティ」から許可してください。' \
+            '> 動作環境: macOS 14.2 以降、Apple Silicon（arm64）' \
+            '> 同じ Release に添付した SHA-256 ファイルで DMG を検証できます。')"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" release/*.dmg release/*.dmg.sha256 --clobber
+            if [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              gh release edit "$TAG" --draft=false
+            fi
+          else
+            create_release() {
+              gh release create "$TAG" release/*.dmg release/*.dmg.sha256 \
+                --verify-tag \
+                --title "$TAG" \
+                --generate-notes \
+                --notes "$notes" \
+                "$@"
+            }
+            case "$TAG" in
+              *-*) create_release --prerelease ;;
+              *) create_release ;;
+            esac
+          fi
