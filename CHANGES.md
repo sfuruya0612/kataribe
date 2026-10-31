@@ -102,3 +102,5 @@
   - @shoichi.furuya
 - [ADD] issue 0008 の解決方法を記録し、closed に移動する
   - @shoichi.furuya
+- [ADD] MIT ライセンスを追加する
+  - @sfuruya0612
