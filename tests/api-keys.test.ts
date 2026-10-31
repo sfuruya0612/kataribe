@@ -44,11 +44,16 @@ async function createStore(crypto = new FakeCrypto()) {
 }
 
 describe('ApiKeyStore', () => {
-  it('stores an encrypted key and reloads it', async () => {
+  it('stores an encrypted key per profile and reloads it', async () => {
     const { filePath, crypto, store } = await createStore();
-    const status = await store.setKey('claude', 'sk-ant-secret', 'https://api.anthropic.com/v1');
+    const status = await store.setKey(
+      'work-claude',
+      'claude',
+      'sk-ant-secret',
+      'https://api.anthropic.com/v1',
+    );
     expect(status).toMatchObject({
-      provider: 'claude',
+      profileId: 'work-claude',
       configured: true,
       host: 'api.anthropic.com',
       keychainAvailable: true,
@@ -56,31 +61,111 @@ describe('ApiKeyStore', () => {
     const config = await readFile(filePath, 'utf8');
     expect(config).not.toContain('sk-ant-secret');
     expect(config).toContain('api.anthropic.com');
+    expect(config).toContain('profile_id');
 
     const reloaded = new ApiKeyStore({ filePath, crypto });
     await reloaded.load();
-    expect(await reloaded.getKey('claude', 'https://api.anthropic.com/v1')).toBe(
-      'sk-ant-secret',
+    expect(
+      await reloaded.getKey('work-claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-ant-secret');
+  });
+
+  it('keeps different keys for profiles that use the same provider', async () => {
+    const { store } = await createStore();
+    await store.setKey(
+      'work-claude',
+      'claude',
+      'sk-work',
+      'https://api.anthropic.com/v1',
     );
+    await store.setKey(
+      'personal-claude',
+      'claude',
+      'sk-personal',
+      'https://api.anthropic.com/v1',
+    );
+    expect(
+      await store.getKey('work-claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-work');
+    expect(
+      await store.getKey('personal-claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-personal');
+  });
+
+  it('renames a key when the profile ID changes', async () => {
+    const { store } = await createStore();
+    await store.setKey(
+      'work-claude',
+      'claude',
+      'sk-ant-secret',
+      'https://api.anthropic.com/v1',
+    );
+    await store.renameKey('work-claude', 'team-claude');
+    expect(
+      await store.getKey('work-claude', 'https://api.anthropic.com/v1'),
+    ).toBeNull();
+    expect(
+      await store.getKey('team-claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-ant-secret');
+  });
+
+  it('rejects a key when the provider changes on the same host', async () => {
+    const { store } = await createStore();
+    await store.setKey(
+      'work-claude',
+      'claude',
+      'sk-ant-secret',
+      'https://proxy.example.com/v1',
+    );
+    expect(
+      store.hostMatches(
+        'work-claude',
+        'https://proxy.example.com/v1',
+        'chatgpt',
+      ),
+    ).toBe(false);
+    await expect(
+      store.getKey(
+        'work-claude',
+        'https://proxy.example.com/v1',
+        'chatgpt',
+      ),
+    ).rejects.toMatchObject({ code: 'host-mismatch' });
   });
 
   it('rejects a key when the endpoint host changes', async () => {
     const { store } = await createStore();
-    await store.setKey('claude', 'sk-ant-secret', 'https://api.anthropic.com/v1');
-    expect(store.hostMatches('claude', 'https://proxy.example.com/v1')).toBe(false);
+    await store.setKey(
+      'work-claude',
+      'claude',
+      'sk-ant-secret',
+      'https://api.anthropic.com/v1',
+    );
+    expect(
+      store.hostMatches('work-claude', 'https://proxy.example.com/v1'),
+    ).toBe(false);
     await expect(
-      store.getKey('claude', 'https://proxy.example.com/v1'),
+      store.getKey('work-claude', 'https://proxy.example.com/v1'),
     ).rejects.toMatchObject({ code: 'host-mismatch' });
   });
 
   it('clears a stored key', async () => {
     const { store } = await createStore();
-    await store.setKey('chatgpt', 'sk-openai-secret', 'https://api.openai.com/v1');
-    await store.clearKey('chatgpt');
-    expect(await store.status('chatgpt', 'https://api.openai.com/v1')).toMatchObject({
+    await store.setKey(
+      'work-chatgpt',
+      'chatgpt',
+      'sk-openai-secret',
+      'https://api.openai.com/v1',
+    );
+    await store.clearKey('work-chatgpt');
+    expect(
+      await store.status('work-chatgpt', 'https://api.openai.com/v1'),
+    ).toMatchObject({
       configured: false,
     });
-    expect(await store.getKey('chatgpt', 'https://api.openai.com/v1')).toBeNull();
+    expect(
+      await store.getKey('work-chatgpt', 'https://api.openai.com/v1'),
+    ).toBeNull();
   });
 
   it('does not save when Keychain is unavailable', async () => {
@@ -88,18 +173,30 @@ describe('ApiKeyStore', () => {
     crypto.available = false;
     const { store } = await createStore(crypto);
     await expect(
-      store.setKey('claude', 'sk-ant-secret', 'https://api.anthropic.com/v1'),
+      store.setKey(
+        'work-claude',
+        'claude',
+        'sk-ant-secret',
+        'https://api.anthropic.com/v1',
+      ),
     ).rejects.toBeInstanceOf(ApiKeyError);
-    expect(await store.getKey('claude', 'https://api.anthropic.com/v1')).toBeNull();
+    expect(
+      await store.getKey('work-claude', 'https://api.anthropic.com/v1'),
+    ).toBeNull();
   });
 
   it('re-encrypts a key when shouldReEncrypt is true', async () => {
     const { filePath, crypto, store } = await createStore();
-    await store.setKey('claude', 'sk-ant-secret', 'https://api.anthropic.com/v1');
-    crypto.reEncryptNext = true;
-    expect(await store.getKey('claude', 'https://api.anthropic.com/v1')).toBe(
+    await store.setKey(
+      'work-claude',
+      'claude',
       'sk-ant-secret',
+      'https://api.anthropic.com/v1',
     );
+    crypto.reEncryptNext = true;
+    expect(
+      await store.getKey('work-claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-ant-secret');
     const config = await readFile(filePath, 'utf8');
     expect(config).not.toContain('sk-ant-secret');
   });
@@ -109,9 +206,40 @@ describe('ApiKeyStore', () => {
     await writeFile(filePath, '{broken');
     const store = new ApiKeyStore({ filePath, crypto });
     await store.load();
-    expect(await store.status('claude', 'https://api.anthropic.com/v1')).toMatchObject({
+    expect(
+      await store.status('work-claude', 'https://api.anthropic.com/v1'),
+    ).toMatchObject({
       configured: false,
       keychainAvailable: true,
     });
+  });
+
+  it('loads a version 1 config keyed by provider name', async () => {
+    const crypto = new FakeCrypto();
+    const root = await mkdtemp(join(tmpdir(), 'kataribe-api-keys-'));
+    roots.push(root);
+    const filePath = join(root, 'config.json');
+    await writeFile(
+      filePath,
+      JSON.stringify({
+        schema_version: 1,
+        api_keys: {
+          claude: {
+            version: 1,
+            provider: 'claude',
+            host: 'api.anthropic.com',
+            encrypted: Buffer.from('encrypted:sk-legacy', 'utf8').toString(
+              'base64',
+            ),
+            created_at: '2026-10-31T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    const store = new ApiKeyStore({ filePath, crypto });
+    await store.load();
+    expect(
+      await store.getKey('claude', 'https://api.anthropic.com/v1'),
+    ).toBe('sk-legacy');
   });
 });

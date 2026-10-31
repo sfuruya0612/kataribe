@@ -48,20 +48,31 @@ describe('LLM provider configuration', () => {
 
   it('normalizes provider-specific defaults', () => {
     const gemini = normalizeAppSettings({
-      llmProvider: 'gemini',
-      llmModel: '',
-      llmBaseUrl: '',
+      llmProfiles: [
+        {
+          id: 'gemini',
+          provider: 'gemini',
+          baseUrl: '',
+          model: '',
+        },
+      ],
     });
-    expect(gemini.llmBaseUrl).toBe(
+    expect(gemini.llmProfiles[0]?.baseUrl).toBe(
       'https://generativelanguage.googleapis.com/v1beta/openai',
     );
-    expect(gemini.llmModel).toBe('gemini-3-pro');
+    expect(gemini.llmProfiles[0]?.model).toBe('gemini-3-pro');
 
     const custom = normalizeAppSettings({
-      llmProvider: 'custom',
-      llmBaseUrl: 'http://example.com/v1',
+      llmProfiles: [
+        {
+          id: 'custom',
+          provider: 'custom',
+          baseUrl: 'http://example.com/v1',
+          model: 'local-model',
+        },
+      ],
     });
-    expect(custom.llmBaseUrl).toBe('');
+    expect(custom.llmProfiles[0]?.baseUrl).toBe('');
   });
 
   it('keeps an explicit valid base URL', () => {

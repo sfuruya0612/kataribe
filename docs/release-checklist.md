@@ -124,7 +124,6 @@ Developer ID による署名、公証、Gatekeeper の警告なしの起動確�
 - [ ] アプリ終了時に子プロセスが残らない
 - [ ] Multi-Output helper の list が動作する
 - [ ] Multi-Output Device を自動作成して出力に設定できる
-- [ ] グローバルショートカットで録音を開始・停止できる
 - [ ] 既存の mp3 / wav を取り込んで文字起こしできる
 - [ ] アプリ終了後に ffmpeg と whisper-cli が残っていない
 - [ ] バックグラウンド通信の無効化をプロキシで確認した

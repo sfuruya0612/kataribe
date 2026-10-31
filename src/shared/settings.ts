@@ -6,6 +6,9 @@ import {
 import {
   getLlmProviderPreset,
   isLlmProvider,
+  normalizeLlmModel,
+  normalizeLlmProfile,
+  normalizeLlmProfileId,
   normalizeLlmBaseUrl,
 } from './llm';
 import {
@@ -16,6 +19,8 @@ import {
 import type {
   AppSettings,
   InputSource,
+  LlmProfile,
+  LlmProvider,
   SummaryLanguage,
   ThemeMode,
   WhisperModel,
@@ -26,8 +31,15 @@ const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark'];
 const WHISPER_MODELS: WhisperModel[] = ['large-v3-turbo', 'medium', 'small'];
 const SUMMARY_LANGUAGES: SummaryLanguage[] = ['ja', 'en'];
 
-const DEFAULT_LLM_PROVIDER = 'claude' as const;
+const DEFAULT_LLM_PROVIDER: LlmProvider = 'claude';
 const DEFAULT_LLM_PRESET = getLlmProviderPreset(DEFAULT_LLM_PROVIDER);
+
+export const DEFAULT_LLM_PROFILE: LlmProfile = {
+  id: DEFAULT_LLM_PROVIDER,
+  provider: DEFAULT_LLM_PROVIDER,
+  baseUrl: DEFAULT_LLM_PRESET.defaultBaseUrl,
+  model: DEFAULT_LLM_PRESET.defaultModel,
+};
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   inputSource: 'both',
@@ -35,20 +47,56 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'system',
   whisperModel: 'large-v3-turbo',
   speakerDiarization: true,
-  globalShortcutEnabled: true,
   whisperInitialPrompt: '',
   whisperSpeedRatios: {},
   mp3BitrateKbps: 64,
-  llmProvider: DEFAULT_LLM_PROVIDER,
-  llmModel: DEFAULT_LLM_PRESET.defaultModel,
-  llmBaseUrl: DEFAULT_LLM_PRESET.defaultBaseUrl,
+  llmProfiles: [{ ...DEFAULT_LLM_PROFILE }],
+  llmDefaultProfileId: DEFAULT_LLM_PROFILE.id,
   summaryLanguage: 'ja',
   summaryPromptTemplate: '',
   clippingConfig: { ...DEFAULT_CLIPPING_CONFIG },
   silenceConfig: { ...DEFAULT_SILENCE_CONFIG },
 };
 
-export function normalizeAppSettings(input: Partial<AppSettings> | null | undefined): AppSettings {
+export type LegacyAppSettingsInput = Partial<AppSettings> & {
+  llmProvider?: unknown;
+  llmModel?: unknown;
+  llmBaseUrl?: unknown;
+};
+
+function legacyLlmProfile(input: LegacyAppSettingsInput): LlmProfile {
+  const provider = isLlmProvider(input.llmProvider)
+    ? input.llmProvider
+    : DEFAULT_LLM_PROVIDER;
+  return {
+    id: provider,
+    provider,
+    baseUrl: normalizeLlmBaseUrl(provider, input.llmBaseUrl),
+    model: normalizeLlmModel(provider, input.llmModel),
+  };
+}
+
+function normalizeLlmProfiles(input: LegacyAppSettingsInput): LlmProfile[] {
+  // 旧設定の llmProvider / llmBaseUrl / llmModel は 1 つのプロファイルとして引き継ぐ。
+  if (Array.isArray(input.llmProfiles)) {
+    const profiles: LlmProfile[] = [];
+    const seen = new Set<string>();
+    for (const value of input.llmProfiles) {
+      const profile = normalizeLlmProfile(value);
+      if (!profile || seen.has(profile.id)) {
+        continue;
+      }
+      seen.add(profile.id);
+      profiles.push(profile);
+    }
+    return profiles;
+  }
+  return [legacyLlmProfile(input)];
+}
+
+export function normalizeAppSettings(
+  input: LegacyAppSettingsInput | null | undefined,
+): AppSettings {
   const inputSource = INPUT_SOURCES.includes(input?.inputSource as InputSource)
     ? (input?.inputSource as InputSource)
     : DEFAULT_APP_SETTINGS.inputSource;
@@ -58,19 +106,18 @@ export function normalizeAppSettings(input: Partial<AppSettings> | null | undefi
   const whisperModel = WHISPER_MODELS.includes(input?.whisperModel as WhisperModel)
     ? (input?.whisperModel as WhisperModel)
     : DEFAULT_APP_SETTINGS.whisperModel;
-  const llmProvider = isLlmProvider(input?.llmProvider)
-    ? input.llmProvider
-    : DEFAULT_APP_SETTINGS.llmProvider;
-  const preset = getLlmProviderPreset(llmProvider);
+  const llmProfiles = normalizeLlmProfiles(input ?? {});
+  const requestedDefaultId = normalizeLlmProfileId(input?.llmDefaultProfileId);
+  const llmDefaultProfileId = llmProfiles.some(
+    (profile) => profile.id === requestedDefaultId,
+  )
+    ? requestedDefaultId
+    : llmProfiles[0]?.id ?? '';
   const summaryLanguage = SUMMARY_LANGUAGES.includes(
     input?.summaryLanguage as SummaryLanguage,
   )
     ? (input?.summaryLanguage as SummaryLanguage)
     : DEFAULT_APP_SETTINGS.summaryLanguage;
-  const llmModel =
-    typeof input?.llmModel === 'string' && input.llmModel.trim().length > 0
-      ? input.llmModel.trim().slice(0, 120)
-      : preset.defaultModel || DEFAULT_APP_SETTINGS.llmModel;
   const saveRoot =
     typeof input?.saveRoot === 'string' &&
     input.saveRoot.startsWith('/') &&
@@ -81,10 +128,6 @@ export function normalizeAppSettings(input: Partial<AppSettings> | null | undefi
     typeof input?.speakerDiarization === 'boolean'
       ? input.speakerDiarization
       : DEFAULT_APP_SETTINGS.speakerDiarization;
-  const globalShortcutEnabled =
-    typeof input?.globalShortcutEnabled === 'boolean'
-      ? input.globalShortcutEnabled
-      : DEFAULT_APP_SETTINGS.globalShortcutEnabled;
   const whisperInitialPrompt =
     typeof input?.whisperInitialPrompt === 'string'
       ? input.whisperInitialPrompt.trim().slice(0, 1000)
@@ -111,13 +154,11 @@ export function normalizeAppSettings(input: Partial<AppSettings> | null | undefi
     theme,
     whisperModel,
     speakerDiarization,
-    globalShortcutEnabled,
     whisperInitialPrompt,
     whisperSpeedRatios,
     mp3BitrateKbps,
-    llmProvider,
-    llmModel,
-    llmBaseUrl: normalizeLlmBaseUrl(llmProvider, input?.llmBaseUrl),
+    llmProfiles,
+    llmDefaultProfileId,
     summaryLanguage,
     summaryPromptTemplate,
     clippingConfig: normalizeClippingConfig(

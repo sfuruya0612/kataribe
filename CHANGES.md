@@ -62,7 +62,7 @@
   - @shoichi.furuya
 - [ADD] SQLite と FTS5 による会議索引と全文検索を追加する
   - @shoichi.furuya
-- [ADD] グローバルショートカット、既存 mp3 / wav の取り込み、要約プロンプト編集を追加する
+- [ADD] 既存 mp3 / wav の取り込み、要約プロンプト編集を追加する
   - @shoichi.furuya
 - [ADD] バックグラウンド通信の無効化と、起動時の孤児子プロセス掃除を追加する
   - @shoichi.furuya
@@ -80,13 +80,22 @@
   - @shoichi.furuya
 - [ADD] 録音開始時と録音中のエラーを会議ごとに保存し、会議詳細に表示する
   - @shoichi.furuya
+- [ADD] LLM プロファイルを ID、Provider、エンドポイント URL、モデル、API キーの単位で保存し、既定と要約に使うプロファイルを選べるようにする
+  - @shoichi.furuya
 - [ADD] GitHub Actions で Pull Request と main ブランチの型検査、テスト、ビルドを実行する
   - @shoichi.furuya
 - [ADD] バージョンと一致するタグの push で、署名なしの DMG を添付した GitHub Release を自動作成する
   - @shoichi.furuya
 
+### CHANGE
+
+- [CHANGE] グローバルショートカット機能を削除する
+  - @shoichi.furuya
+
 ### FIX
 
+- [FIX] 設定画面を開き直したときに LLM の設定が既定に戻る問題を修正する
+  - @shoichi.furuya
 - [FIX] 録音停止時に最終チャンクと停止通知が重複する問題を修正する
   - @shoichi.furuya
 - [FIX] WAV の fmt / data チャンクを解析して、波形と長さを正しく取得する

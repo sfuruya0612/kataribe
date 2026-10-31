@@ -7,7 +7,6 @@ import {
   BrowserWindow,
   clipboard,
   dialog,
-  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -28,6 +27,7 @@ import type {
   AppInfo,
   AppSettings,
   InputSource,
+  LlmProfilesState,
   MicrophonePermissionStatus,
   RecordingCaptureStats,
   RecordingChunk,
@@ -41,6 +41,7 @@ import type {
   RecordingSilenceReport,
   RecordingStartupFailure,
   RecordingStartupFailureResult,
+  SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
   ThemeMode,
@@ -49,6 +50,7 @@ import type {
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
 import { ChildProcessRegistry } from './child-registry';
 import { LlmClient } from './llm';
+import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
 import { ModelManager } from './models';
@@ -82,7 +84,6 @@ let stateTimer: NodeJS.Timeout | null = null;
 let processingCoordinator: ProcessingCoordinator | null = null;
 let activeMeetingIndex: MeetingSearchIndex | null = null;
 let meetingIndexRoot = '';
-let applyGlobalShortcutSettings: (() => void) | null = null;
 
 const electronFetch: typeof fetch = (input, init) => {
   const value =
@@ -489,7 +490,7 @@ function registerIpc(
   settingsStore: SettingsStore,
   processing: ProcessingCoordinator,
   modelManager: ModelManager,
-  apiKeyStore: ApiKeyStore,
+  llmProfileManager: LlmProfileManager,
   multiOutput: MultiOutputController,
 ): void {
   ipcMain.handle('app:info', (): AppInfo => {
@@ -589,13 +590,20 @@ function registerIpc(
     if (typeof patch !== 'object' || patch === null) {
       throw new Error('invalid settings');
     }
-    const { saveRoot: _ignoredSaveRoot, ...safePatch } = patch as Partial<AppSettings>;
+    const {
+      saveRoot: _ignoredSaveRoot,
+      llmProfiles: _ignoredLlmProfiles,
+      llmDefaultProfileId: _ignoredLlmDefaultProfileId,
+      ...safePatch
+    } = patch as Partial<AppSettings>;
+    if (_ignoredLlmProfiles !== undefined || _ignoredLlmDefaultProfileId !== undefined) {
+      throw new Error('LLM profiles must be updated through the LLM profile API');
+    }
     const settings = await settingsStore.save(safePatch);
     stateStore.setInputSource(settings.inputSource);
     stateStore.setClippingConfig(settings.clippingConfig);
     stateStore.setSilenceConfig(settings.silenceConfig);
     applyThemeMode(settings.theme);
-    applyGlobalShortcutSettings?.();
     return settings;
   });
 
@@ -759,8 +767,17 @@ function registerIpc(
 
   ipcMain.handle(
     'translation:preview',
-    (_event, meetingId: string, targetLanguage: SummaryLanguage) => {
-      return processing.createTranslationPreview(meetingId, targetLanguage);
+    (
+      _event,
+      meetingId: string,
+      targetLanguage: SummaryLanguage,
+      profileId?: string,
+    ) => {
+      return processing.createTranslationPreview(
+        meetingId,
+        targetLanguage,
+        typeof profileId === 'string' && profileId ? profileId : undefined,
+      );
     },
   );
 
@@ -827,24 +844,63 @@ function registerIpc(
 
   ipcMain.handle('processing:cancel', () => processing.cancel());
 
-  ipcMain.handle('llm:runtime', () => processing.runtimeConfig());
-
-  ipcMain.handle('llm:set-key', async (_event, apiKey: unknown) => {
-    if (typeof apiKey !== 'string') {
-      throw new Error('invalid API key');
-    }
-    const settings = settingsStore.get();
-    await apiKeyStore.setKey(settings.llmProvider, apiKey, settings.llmBaseUrl);
-    broadcast('llm:changed', await processing.runtimeConfig());
-    return processing.runtimeConfig();
+  ipcMain.handle('llm:runtime', (_event, profileId?: string) => {
+    return processing.runtimeConfig(
+      typeof profileId === 'string' && profileId ? profileId : undefined,
+    );
   });
 
-  ipcMain.handle('llm:clear-key', async () => {
-    const settings = settingsStore.get();
-    await apiKeyStore.clearKey(settings.llmProvider);
-    broadcast('llm:changed', await processing.runtimeConfig());
-    return processing.runtimeConfig();
+  ipcMain.handle('llm:profiles', (): Promise<LlmProfilesState> => {
+    return llmProfileManager.state();
   });
+
+  ipcMain.handle(
+    'llm:save-profile',
+    async (_event, request: SaveLlmProfileRequest): Promise<LlmProfilesState> => {
+      const state = await llmProfileManager.saveProfile(request);
+      broadcast('llm:changed', state);
+      return state;
+    },
+  );
+
+  ipcMain.handle(
+    'llm:delete-profile',
+    async (_event, profileId: string): Promise<LlmProfilesState> => {
+      const state = await llmProfileManager.deleteProfile(String(profileId));
+      broadcast('llm:changed', state);
+      return state;
+    },
+  );
+
+  ipcMain.handle(
+    'llm:set-default-profile',
+    async (_event, profileId: string): Promise<LlmProfilesState> => {
+      const state = await llmProfileManager.setDefaultProfile(String(profileId));
+      broadcast('llm:changed', state);
+      return state;
+    },
+  );
+
+  ipcMain.handle(
+    'llm:set-key',
+    async (_event, profileId: string, apiKey: unknown): Promise<LlmProfilesState> => {
+      if (typeof apiKey !== 'string') {
+        throw new Error('invalid API key');
+      }
+      const state = await llmProfileManager.setApiKey(String(profileId), apiKey);
+      broadcast('llm:changed', state);
+      return state;
+    },
+  );
+
+  ipcMain.handle(
+    'llm:clear-key',
+    async (_event, profileId: string): Promise<LlmProfilesState> => {
+      const state = await llmProfileManager.clearApiKey(String(profileId));
+      broadcast('llm:changed', state);
+      return state;
+    },
+  );
 
   ipcMain.handle('models:list', () => modelManager.list());
 
@@ -898,8 +954,11 @@ function registerIpc(
     return processing.getState();
   });
 
-  ipcMain.handle('summary:preview', (_event, meetingId: string) => {
-    return processing.createSummaryPreview(meetingId);
+  ipcMain.handle('summary:preview', (_event, meetingId: string, profileId?: string) => {
+    return processing.createSummaryPreview(
+      meetingId,
+      typeof profileId === 'string' && profileId ? profileId : undefined,
+    );
   });
 
   ipcMain.handle('summary:generate', (_event, meetingId: string, token: string) => {
@@ -1258,7 +1317,6 @@ if (!app.requestSingleInstanceLock()) {
     }
     trayController?.destroy();
     trayController = null;
-    globalShortcut.unregisterAll();
     activeMeetingIndex?.close();
     activeMeetingIndex = null;
     const coordinator = processingCoordinator;
@@ -1325,6 +1383,10 @@ if (!app.requestSingleInstanceLock()) {
       crypto: secretCrypto,
     });
     await apiKeyStore.load();
+    const llmProfileManager = new LlmProfileManager({
+      settingsStore,
+      apiKeyStore,
+    });
 
     const locator = new BinaryLocator({
       isPackaged: app.isPackaged,
@@ -1390,28 +1452,6 @@ if (!app.requestSingleInstanceLock()) {
       );
     }
 
-    const accelerator = 'CommandOrControl+Shift+R';
-    applyGlobalShortcutSettings = () => {
-      globalShortcut.unregister(accelerator);
-      if (!settingsStore.get().globalShortcutEnabled) {
-        return;
-      }
-      const registered = globalShortcut.register(accelerator, () => {
-        const wasRecording = stateStore.canStop();
-        if (!wasRecording) {
-          processingCoordinator?.pauseForRecording();
-        }
-        const result = coordinator.toggle();
-        if (!result.accepted && !wasRecording) {
-          void processingCoordinator?.resumeAfterRecording(null);
-        }
-      });
-      if (!registered) {
-        console.warn(`global shortcut is already in use: ${accelerator}`);
-      }
-    };
-    applyGlobalShortcutSettings();
-
     const recordingManager = new RecordingManager({
       saveRoot,
       tempRoot: join(app.getPath('userData'), 'tmp'),
@@ -1436,7 +1476,7 @@ if (!app.requestSingleInstanceLock()) {
       settingsStore,
       processing,
       modelManager,
-      apiKeyStore,
+      llmProfileManager,
       multiOutput,
     );
 

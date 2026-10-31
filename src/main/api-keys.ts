@@ -27,7 +27,8 @@ export class ApiKeyError extends Error {
 
 type StoredKey = {
   version: 1;
-  provider: LlmProvider;
+  profile_id?: string;
+  provider?: LlmProvider;
   host: string;
   encrypted: string;
   created_at: string;
@@ -35,7 +36,7 @@ type StoredKey = {
 
 type ConfigFile = {
   schema_version: 1;
-  api_keys: Partial<Record<LlmProvider, StoredKey>>;
+  api_keys: Record<string, StoredKey>;
 };
 
 export type ApiKeyStoreOptions = {
@@ -96,14 +97,14 @@ export class ApiKeyStore {
     }
   }
 
-  async status(provider: LlmProvider, baseUrl: string): Promise<LlmKeyStatus> {
+  async status(profileId: string, baseUrl: string): Promise<LlmKeyStatus> {
     const available = await this.crypto.isAvailable().catch((error: unknown) => {
       this.loadError = error instanceof Error ? error.message : String(error);
       return false;
     });
-    const stored = this.config.api_keys[provider] ?? null;
+    const stored = this.config.api_keys[profileId] ?? null;
     return {
-      provider,
+      profileId,
       configured: stored !== null,
       host: stored?.host ?? null,
       keychainAvailable: available,
@@ -111,15 +112,23 @@ export class ApiKeyStore {
     };
   }
 
-  hostMatches(provider: LlmProvider, baseUrl: string): boolean {
-    const stored = this.config.api_keys[provider];
+  hostMatches(
+    profileId: string,
+    baseUrl: string,
+    provider?: LlmProvider,
+  ): boolean {
+    const stored = this.config.api_keys[profileId];
     if (!stored) {
+      return false;
+    }
+    if (provider && stored.provider && stored.provider !== provider) {
       return false;
     }
     return stored.host === hostForBaseUrl(baseUrl);
   }
 
   async setKey(
+    profileId: string,
     provider: LlmProvider,
     apiKey: string,
     baseUrl: string,
@@ -127,6 +136,9 @@ export class ApiKeyStore {
     const key = apiKey.trim();
     if (key.length === 0 || key.length > 10_000) {
       throw new ApiKeyError('invalid-key', 'API key is empty or too long');
+    }
+    if (!profileId) {
+      throw new ApiKeyError('invalid-config', 'profile ID is empty');
     }
     const host = hostForBaseUrl(baseUrl);
     if (!host) {
@@ -141,8 +153,9 @@ export class ApiKeyStore {
     }
     const encrypted = await this.crypto.encrypt(key);
     await this.enqueue(async () => {
-      this.config.api_keys[provider] = {
+      this.config.api_keys[profileId] = {
         version: 1,
+        profile_id: profileId,
         provider,
         host,
         encrypted: encrypted.toString('base64'),
@@ -151,27 +164,52 @@ export class ApiKeyStore {
       await this.write();
       this.loadError = null;
     });
-    return this.status(provider, baseUrl);
+    return this.status(profileId, baseUrl);
   }
 
-  async clearKey(provider: LlmProvider): Promise<void> {
+  async renameKey(fromProfileId: string, toProfileId: string): Promise<void> {
+    if (fromProfileId === toProfileId) {
+      return;
+    }
     await this.enqueue(async () => {
-      if (this.config.api_keys[provider]) {
-        delete this.config.api_keys[provider];
+      const stored = this.config.api_keys[fromProfileId];
+      if (!stored) {
+        return;
+      }
+      delete this.config.api_keys[fromProfileId];
+      this.config.api_keys[toProfileId] = {
+        ...stored,
+        profile_id: toProfileId,
+      };
+      await this.write();
+    });
+  }
+
+  async clearKey(profileId: string): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.config.api_keys[profileId]) {
+        delete this.config.api_keys[profileId];
         await this.write();
       }
     });
   }
 
-  async getKey(provider: LlmProvider, baseUrl: string): Promise<string | null> {
-    const stored = this.config.api_keys[provider];
+  async getKey(
+    profileId: string,
+    baseUrl: string,
+    provider?: LlmProvider,
+  ): Promise<string | null> {
+    const stored = this.config.api_keys[profileId];
     if (!stored) {
       return null;
     }
-    if (stored.host !== hostForBaseUrl(baseUrl)) {
+    if (
+      stored.host !== hostForBaseUrl(baseUrl) ||
+      (provider && stored.provider && stored.provider !== provider)
+    ) {
       throw new ApiKeyError(
         'host-mismatch',
-        'endpoint host changed; enter the API key again',
+        'endpoint host or provider changed; enter the API key again',
       );
     }
     const available = await this.crypto.isAvailable();
@@ -191,7 +229,7 @@ export class ApiKeyStore {
         decrypted = { result: second.result, shouldReEncrypt: false };
         const reEncrypted = await this.crypto.encrypt(second.result);
         await this.enqueue(async () => {
-          const current = this.config.api_keys[provider];
+          const current = this.config.api_keys[profileId];
           if (current) {
             current.encrypted = reEncrypted.toString('base64');
             await this.write();

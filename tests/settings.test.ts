@@ -30,8 +30,21 @@ describe('SettingsStore', () => {
 
     const updated = await store.save({
       whisperModel: 'medium',
-      llmProvider: 'ollama',
-      llmModel: 'qwen3',
+      llmProfiles: [
+        {
+          id: 'work',
+          provider: 'chatgpt',
+          baseUrl: 'https://proxy.example.com/v1',
+          model: 'gpt-5.5',
+        },
+        {
+          id: 'local',
+          provider: 'ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3',
+        },
+      ],
+      llmDefaultProfileId: 'local',
       summaryLanguage: 'en',
       clippingConfig: {
         peakThreshold: 0.9,
@@ -46,7 +59,11 @@ describe('SettingsStore', () => {
     });
 
     expect(updated.whisperModel).toBe('medium');
-    expect(updated.llmProvider).toBe('ollama');
+    expect(updated.llmProfiles.map((profile) => profile.id)).toEqual([
+      'work',
+      'local',
+    ]);
+    expect(updated.llmDefaultProfileId).toBe('local');
     expect(JSON.parse(await readFile(filePath, 'utf8'))).toEqual(updated);
 
     const reloaded = new SettingsStore(filePath);
@@ -58,14 +75,14 @@ describe('SettingsStore', () => {
     await store.load();
 
     await Promise.all([
-      store.save({ llmProvider: 'ollama' }),
-      store.save({ llmModel: 'qwen3' }),
+      store.save({ whisperModel: 'medium' }),
+      store.save({ theme: 'dark' }),
       store.save({ summaryLanguage: 'en' }),
     ]);
 
     expect(store.get()).toMatchObject({
-      llmProvider: 'ollama',
-      llmModel: 'qwen3',
+      whisperModel: 'medium',
+      theme: 'dark',
       summaryLanguage: 'en',
     });
   });
@@ -113,7 +130,6 @@ describe('SettingsStore', () => {
         saveRoot: '/Users/test/Kataribe',
         theme: 'dark',
         speakerDiarization: false,
-        globalShortcutEnabled: false,
         whisperInitialPrompt: '  Kataribe, BlackHole  ',
         whisperSpeedRatios: { small: 0.12, medium: 0.2, 'large-v3-turbo': 0.3 },
         mp3BitrateKbps: 128,
@@ -123,7 +139,6 @@ describe('SettingsStore', () => {
       saveRoot: '/Users/test/Kataribe',
       theme: 'dark',
       speakerDiarization: false,
-      globalShortcutEnabled: false,
       whisperInitialPrompt: 'Kataribe, BlackHole',
       whisperSpeedRatios: { small: 0.12, medium: 0.2, 'large-v3-turbo': 0.3 },
       mp3BitrateKbps: 128,
@@ -143,5 +158,93 @@ describe('SettingsStore', () => {
         whisperSpeedRatios: { small: 0, medium: 99 },
       }).whisperSpeedRatios,
     ).toEqual({});
+  });
+
+  it('migrates legacy LLM settings to a profile named after the provider', () => {
+    const settings = normalizeAppSettings({
+      llmProvider: 'gemini',
+      llmModel: '',
+      llmBaseUrl: '',
+    });
+    expect(settings.llmProfiles).toEqual([
+      {
+        id: 'gemini',
+        provider: 'gemini',
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        model: 'gemini-3-pro',
+      },
+    ]);
+    expect(settings.llmDefaultProfileId).toBe('gemini');
+  });
+
+  it('normalizes LLM profiles and keeps a valid default', () => {
+    const settings = normalizeAppSettings({
+      llmProfiles: [
+        {
+          id: ' work ',
+          provider: 'chatgpt',
+          baseUrl: 'https://proxy.example.com/v1/',
+          model: ' gpt-5.5 ',
+        },
+        {
+          id: 'work',
+          provider: 'claude',
+          baseUrl: 'https://api.anthropic.com/v1',
+          model: 'claude-sonnet-5-5',
+        },
+        {
+          id: '',
+          provider: 'ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3',
+        },
+        {
+          id: 'local',
+          provider: 'ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3',
+        },
+      ],
+      llmDefaultProfileId: 'local',
+    });
+    expect(settings.llmProfiles).toEqual([
+      {
+        id: 'work',
+        provider: 'chatgpt',
+        baseUrl: 'https://proxy.example.com/v1',
+        model: 'gpt-5.5',
+      },
+      {
+        id: 'local',
+        provider: 'ollama',
+        baseUrl: 'http://localhost:11434/v1',
+        model: 'qwen3',
+      },
+    ]);
+    expect(settings.llmDefaultProfileId).toBe('local');
+  });
+
+  it('uses the only profile as the default', () => {
+    const settings = normalizeAppSettings({
+      llmProfiles: [
+        {
+          id: 'only',
+          provider: 'ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3',
+        },
+      ],
+      llmDefaultProfileId: 'missing',
+    });
+    expect(settings.llmDefaultProfileId).toBe('only');
+  });
+
+  it('keeps an explicitly empty profile list', () => {
+    const settings = normalizeAppSettings({
+      llmProfiles: [],
+      llmDefaultProfileId: 'work',
+    });
+    expect(settings.llmProfiles).toEqual([]);
+    expect(settings.llmDefaultProfileId).toBe('');
   });
 });

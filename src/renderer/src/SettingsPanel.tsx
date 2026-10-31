@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getLlmProviderPreset,
   LLM_PROVIDER_PRESETS,
@@ -7,9 +7,11 @@ import {
 import type {
   AppSettings,
   InputSource,
+  LlmProfileStatus,
+  LlmProfilesState,
   LlmProvider,
-  LlmRuntimeConfig,
   MultiOutputStatus,
+  SaveLlmProfileRequest,
   SummaryLanguage,
   ThemeMode,
   WhisperModel,
@@ -94,18 +96,27 @@ export function SettingsPanel({
   const [tab, setTab] = useState<SettingsTab>('general');
   const [models, setModels] = useState<WhisperModelList | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
-  const [llm, setLlm] = useState<LlmRuntimeConfig | null>(null);
-  const [llmError, setLlmError] = useState<string | null>(null);
-  const [endpointDraft, setEndpointDraft] = useState(settings.llmBaseUrl);
-  const [modelDraft, setModelDraft] = useState(settings.llmModel);
-  const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [llmProfiles, setLlmProfiles] = useState<LlmProfilesState | null>(null);
+  const [llmProfilesError, setLlmProfilesError] = useState<string | null>(null);
+  const [profileFormOpen, setProfileFormOpen] = useState(false);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [profileIdDraft, setProfileIdDraft] = useState('');
+  const [profileProviderDraft, setProfileProviderDraft] =
+    useState<LlmProvider>('claude');
+  const [profileEndpointDraft, setProfileEndpointDraft] = useState('');
+  const [profileModelDraft, setProfileModelDraft] = useState('');
+  const [profileApiKeyDraft, setProfileApiKeyDraft] = useState('');
+  const [profileMakeDefault, setProfileMakeDefault] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
+  const profileFormRef = useRef<HTMLElement | null>(null);
   const [initialPromptDraft, setInitialPromptDraft] = useState(
     settings.whisperInitialPrompt,
   );
   const [summaryPromptDraft, setSummaryPromptDraft] = useState(
     settings.summaryPromptTemplate,
   );
-  const [keyBusy, setKeyBusy] = useState(false);
   const [modelBusy, setModelBusy] = useState<WhisperModel | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
   const [multiOutput, setMultiOutput] = useState<MultiOutputStatus | null>(null);
@@ -118,6 +129,10 @@ export function SettingsPanel({
   const permissionDenied = permission === 'denied' || permission === 'restricted';
   const microphoneAvailable = microphones.length > 0;
   const systemAvailable = systemDevices.length > 0;
+  const selectedProfile =
+    llmProfiles?.profiles.find((profile) => profile.id === editingProfileId) ??
+    null;
+  const profileKeychainAvailable = selectedProfile?.keychainAvailable ?? true;
 
   const refreshModels = useCallback(async () => {
     try {
@@ -128,12 +143,46 @@ export function SettingsPanel({
     }
   }, []);
 
-  const refreshLlm = useCallback(async () => {
+  const fillProfileForm = useCallback((profile: LlmProfileStatus | null) => {
+    if (profile) {
+      setProfileIdDraft(profile.id);
+      setProfileProviderDraft(profile.provider);
+      setProfileEndpointDraft(profile.baseUrl);
+      setProfileModelDraft(profile.model);
+      setProfileMakeDefault(profile.isDefault);
+    } else {
+      const preset = getLlmProviderPreset('claude');
+      setProfileIdDraft('');
+      setProfileProviderDraft('claude');
+      setProfileEndpointDraft(preset.defaultBaseUrl);
+      setProfileModelDraft(preset.defaultModel);
+      setProfileMakeDefault(false);
+    }
+    setProfileApiKeyDraft('');
+    setProfileError(null);
+  }, []);
+
+  const syncProfileForm = useCallback(
+    (state: LlmProfilesState, profileId: string | null) => {
+      const profile =
+        state.profiles.find((entry) => entry.id === profileId) ?? null;
+      setEditingProfileId(profile?.id ?? null);
+      fillProfileForm(profile);
+    },
+    [fillProfileForm],
+  );
+
+  const refreshLlmProfiles = useCallback(async () => {
     try {
-      setLlm(await window.kataribe.getLlmRuntime());
-      setLlmError(null);
+      const state = await window.kataribe.getLlmProfiles();
+      setLlmProfilesError(null);
+      setLlmProfiles(state);
+      return state;
     } catch (reason: unknown) {
-      setLlmError(`LLM の状態を取得できませんでした: ${errorText(reason)}`);
+      setLlmProfilesError(
+        `LLM プロファイルを読み込めませんでした: ${errorText(reason)}`,
+      );
+      return null;
     }
   }, []);
 
@@ -169,7 +218,7 @@ export function SettingsPanel({
 
   useEffect(() => {
     void refreshModels();
-    void refreshLlm();
+    void refreshLlmProfiles();
     void refreshMultiOutput();
     const unsubscribeModels = window.kataribe.onModelsChanged((list) => {
       setModels(list);
@@ -194,70 +243,186 @@ export function SettingsPanel({
           : current,
       );
     });
-    const unsubscribeLlm = window.kataribe.onLlmChanged((config) => {
-      setLlm(config);
-    });
     return () => {
       unsubscribeModels();
       unsubscribeProgress();
-      unsubscribeLlm();
     };
-  }, [refreshLlm, refreshModels, refreshMultiOutput]);
+  }, [refreshLlmProfiles, refreshModels, refreshMultiOutput]);
   useEffect(() => {
-    setEndpointDraft(settings.llmBaseUrl);
-    setModelDraft(settings.llmModel);
     setInitialPromptDraft(settings.whisperInitialPrompt);
     setSummaryPromptDraft(settings.summaryPromptTemplate);
-  }, [
-    settings.llmBaseUrl,
-    settings.llmModel,
-    settings.llmProvider,
-    settings.whisperInitialPrompt,
-    settings.summaryPromptTemplate,
-  ]);
+  }, [settings.whisperInitialPrompt, settings.summaryPromptTemplate]);
 
-  const chooseProvider = async (provider: LlmProvider) => {
-    const preset = getLlmProviderPreset(provider);
-    try {
-      await onUpdateSettings({
-        llmProvider: provider,
-        llmModel: preset.defaultModel || settings.llmModel,
-        llmBaseUrl: preset.defaultBaseUrl,
+  useEffect(() => {
+    if (profileFormOpen) {
+      profileFormRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
       });
-      await refreshLlm();
+    }
+  }, [profileFormOpen]);
+
+  const startCreateProfile = () => {
+    setProfileFormOpen(true);
+    setEditingProfileId(null);
+    fillProfileForm(null);
+    setProfileMakeDefault(
+      llmProfiles === null || llmProfiles.profiles.length === 0,
+    );
+    setProfileNotice(null);
+  };
+
+  const startEditProfile = (profile: LlmProfileStatus) => {
+    setProfileFormOpen(true);
+    setEditingProfileId(profile.id);
+    fillProfileForm(profile);
+    setProfileNotice(null);
+  };
+
+  const closeProfileForm = () => {
+    setProfileFormOpen(false);
+    setEditingProfileId(null);
+    setProfileApiKeyDraft('');
+    setProfileError(null);
+  };
+
+  const chooseProfileProvider = (provider: LlmProvider) => {
+    if (provider === profileProviderDraft) {
+      return;
+    }
+    const preset = getLlmProviderPreset(provider);
+    setProfileProviderDraft(provider);
+    setProfileEndpointDraft(preset.defaultBaseUrl);
+    setProfileModelDraft(preset.defaultModel);
+  };
+
+  const saveProfile = async () => {
+    const id = profileIdDraft.trim();
+    if (!id) {
+      setProfileError('ID を入力してください。');
+      return;
+    }
+    if (id.length > 64) {
+      setProfileError('ID は 64 文字以内で入力してください。');
+      return;
+    }
+    if (
+      llmProfiles?.profiles.some(
+        (profile) => profile.id === id && profile.id !== editingProfileId,
+      )
+    ) {
+      setProfileError('その ID は既に使われています。別の ID を入力してください。');
+      return;
+    }
+    const endpoint = validateEndpointUrl(profileEndpointDraft);
+    if (!endpoint.ok) {
+      setProfileError(endpoint.error);
+      return;
+    }
+    const model = profileModelDraft.trim();
+    if (!model) {
+      setProfileError('モデルを入力してください。');
+      return;
+    }
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileNotice(null);
+    try {
+      const request: SaveLlmProfileRequest = {
+        profile: {
+          id,
+          provider: profileProviderDraft,
+          baseUrl: endpoint.normalized,
+          model,
+        },
+        originalId: editingProfileId,
+        apiKey: profileApiKeyDraft.trim() || null,
+        makeDefault: profileMakeDefault,
+      };
+      const state = await window.kataribe.saveLlmProfile(request);
+      setLlmProfiles(state);
+      setProfileFormOpen(true);
+      syncProfileForm(state, id);
+      setProfileNotice(
+        editingProfileId
+          ? 'LLM プロファイルを更新しました。'
+          : 'LLM プロファイルを追加しました。',
+      );
     } catch (reason: unknown) {
-      setLlmError(`プロバイダを変更できませんでした: ${errorText(reason)}`);
+      setProfileError(
+        `LLM プロファイルを保存できませんでした: ${errorText(reason)}`,
+      );
+    } finally {
+      setProfileBusy(false);
     }
   };
 
-  const saveEndpoint = async () => {
-    if (endpointDraft === settings.llmBaseUrl) {
+  const removeProfile = async (profile: LlmProfileStatus) => {
+    if (
+      !window.confirm(
+        `LLM プロファイル「${profile.id}」を削除します。保存済みの API キーも削除されます。よろしいですか？`,
+      )
+    ) {
       return;
     }
-    if (endpointDraft.trim()) {
-      const validation = validateEndpointUrl(endpointDraft);
-      if (!validation.ok) {
-        setLlmError(validation.error);
-        return;
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileNotice(null);
+    try {
+      const state = await window.kataribe.deleteLlmProfile(profile.id);
+      setLlmProfiles(state);
+      if (profileFormOpen && editingProfileId === profile.id) {
+        closeProfileForm();
       }
-    }
-    try {
-      await onUpdateSettings({ llmBaseUrl: endpointDraft });
-      await refreshLlm();
+      setProfileNotice('LLM プロファイルを削除しました。');
     } catch (reason: unknown) {
-      setLlmError(`エンドポイントを保存できませんでした: ${errorText(reason)}`);
+      setProfileError(
+        `LLM プロファイルを削除できませんでした: ${errorText(reason)}`,
+      );
+    } finally {
+      setProfileBusy(false);
     }
   };
 
-  const saveModelName = async () => {
-    if (modelDraft === settings.llmModel) {
+  const setDefaultProfile = async (profile: LlmProfileStatus) => {
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileNotice(null);
+    try {
+      const state = await window.kataribe.setDefaultLlmProfile(profile.id);
+      setLlmProfiles(state);
+      setProfileMakeDefault(editingProfileId === profile.id);
+      setProfileNotice(`「${profile.id}」を既定の LLM プロファイルにしました。`);
+    } catch (reason: unknown) {
+      setProfileError(`既定の LLM プロファイルを変更できませんでした: ${errorText(reason)}`);
+    } finally {
+      setProfileBusy(false);
+    }
+  };
+
+  const clearProfileApiKey = async () => {
+    if (!editingProfileId) {
       return;
     }
+    if (
+      !window.confirm(
+        `「${editingProfileId}」の API キーを削除します。よろしいですか？`,
+      )
+    ) {
+      return;
+    }
+    setProfileBusy(true);
+    setProfileError(null);
+    setProfileNotice(null);
     try {
-      await onUpdateSettings({ llmModel: modelDraft });
-      await refreshLlm();
+      const state = await window.kataribe.clearLlmApiKey(editingProfileId);
+      setLlmProfiles(state);
+      syncProfileForm(state, editingProfileId);
+      setProfileNotice('API キーを削除しました。');
     } catch (reason: unknown) {
-      setLlmError(`モデル名を保存できませんでした: ${errorText(reason)}`);
+      setProfileError(`API キーを削除できませんでした: ${errorText(reason)}`);
+    } finally {
+      setProfileBusy(false);
     }
   };
 
@@ -273,44 +438,6 @@ export function SettingsPanel({
       return;
     }
     await onUpdateSettings({ summaryPromptTemplate: summaryPromptDraft });
-  };
-
-  const saveApiKey = async () => {
-    if (!apiKeyDraft.trim()) {
-      return;
-    }
-    setKeyBusy(true);
-    try {
-      if (endpointDraft !== settings.llmBaseUrl || modelDraft !== settings.llmModel) {
-        await onUpdateSettings({
-          llmBaseUrl: endpointDraft,
-          llmModel: modelDraft,
-        });
-      }
-      const config = await window.kataribe.setLlmApiKey(apiKeyDraft);
-      setLlm(config);
-      setApiKeyDraft('');
-      setLlmError(null);
-    } catch (reason: unknown) {
-      setLlmError(`API キーを保存できませんでした: ${errorText(reason)}`);
-    } finally {
-      setKeyBusy(false);
-    }
-  };
-
-  const clearApiKey = async () => {
-    if (!window.confirm('保存済みの API キーを削除します。よろしいですか？')) {
-      return;
-    }
-    setKeyBusy(true);
-    try {
-      await window.kataribe.clearLlmApiKey();
-      await refreshLlm();
-    } catch (reason: unknown) {
-      setLlmError(`API キーを削除できませんでした: ${errorText(reason)}`);
-    } finally {
-      setKeyBusy(false);
-    }
   };
 
   const downloadModel = async (model: WhisperModel) => {
@@ -631,29 +758,6 @@ export function SettingsPanel({
                   新しく録音する会議に適用します。64 kbps は 1 時間で約 29 MB、128 kbps は約 58 MB です。
                   既存の mp3 は変更しません。
                 </p>
-              </div>
-            </section>
-
-            <section className="settings-section">
-              <p className="settings-label">グローバルショートカット</p>
-              <div className="setting-card">
-                <label className="setting-row">
-                  <span>
-                    <strong>Command + Shift + R で録音を開始・停止</strong>
-                    <span className="muted">
-                      他のアプリが前面にあっても録音を切り替えます。他のアプリと同じショートカットを使っている場合は登録できません。
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.globalShortcutEnabled}
-                    onChange={(event) =>
-                      void onUpdateSettings({
-                        globalShortcutEnabled: event.target.checked,
-                      })
-                    }
-                  />
-                </label>
               </div>
             </section>
 
@@ -1033,114 +1137,287 @@ export function SettingsPanel({
         {tab === 'summary' ? (
           <>
             <section className="settings-section">
-              <p className="settings-label">要約 LLM</p>
+              <p className="settings-label">LLM プロファイル</p>
               <div className="setting-card">
-                <div className="provider-chips">
-                  {LLM_PROVIDER_PRESETS.map((provider) => (
-                    <button
-                      type="button"
-                      className={`provider-chip ${
-                        settings.llmProvider === provider.provider ? 'is-active' : ''
-                      }`}
-                      key={provider.provider}
-                      onClick={() => void chooseProvider(provider.provider)}
-                    >
-                      {provider.label}
-                    </button>
-                  ))}
-                </div>
-                <div className="settings-grid api-grid">
-                  <label className="field field-span-2">
-                    <span>エンドポイント URL</span>
-                    <input
-                      className="setting-input mono"
-                      value={endpointDraft}
-                      placeholder="https://api.example.com/v1"
-                      onChange={(event) => setEndpointDraft(event.target.value)}
-                      onBlur={() => void saveEndpoint()}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>モデル</span>
-                    <input
-                      className="setting-input mono"
-                      value={modelDraft}
-                      placeholder={getLlmProviderPreset(settings.llmProvider).defaultModel}
-                      onChange={(event) => setModelDraft(event.target.value)}
-                      onBlur={() => void saveModelName()}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>API キー</span>
-                    <input
-                      className="setting-input"
-                      type="password"
-                      value={apiKeyDraft}
-                      placeholder={
-                        llm?.apiKeyConfigured
-                          ? '設定済み（変更する場合だけ入力）'
-                          : 'API キーを入力'
-                      }
-                      disabled={llm?.keychainAvailable === false || keyBusy}
-                      onChange={(event) => setApiKeyDraft(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          void saveApiKey();
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
+                <p className="muted">
+                  ID ごとに Provider、エンドポイント URL、モデル、API キーを保存します。
+                  要約と翻訳では、既定のプロファイルまたは任意のプロファイルを選んで使用します。
+                </p>
+                {llmProfiles === null ? (
+                  <p className="muted">LLM プロファイルを読み込んでいます...</p>
+                ) : llmProfiles.profiles.length > 0 ? (
+                  <div className="llm-profile-list">
+                    {llmProfiles.profiles.map((profile) => (
+                      <div
+                        className={`llm-profile-row ${
+                          editingProfileId === profile.id ? 'is-active' : ''
+                        }`}
+                        key={profile.id}
+                      >
+                        <input
+                          type="radio"
+                          name="llm-default-profile"
+                          aria-label={`${profile.id} を既定にする`}
+                          checked={profile.isDefault}
+                          disabled={profileBusy || llmProfiles.profiles.length <= 1}
+                          onChange={() => void setDefaultProfile(profile)}
+                        />
+                        <div className="llm-profile-main">
+                          <div className="llm-profile-title">
+                            <strong className="mono">{profile.id}</strong>
+                            {profile.isDefault ? (
+                              <span className="status-chip status-summarized">既定</span>
+                            ) : null}
+                          </div>
+                          <span className="muted">
+                            {profile.providerLabel} · {profile.model}
+                          </span>
+                          <span className="muted mono llm-profile-endpoint">
+                            {profile.endpoint || 'エンドポイント未設定'}
+                          </span>
+                          <span
+                            className={
+                              profile.apiKeyConfigured ? 'ok-text' : 'error-text'
+                            }
+                          >
+                            {profile.apiKeyConfigured
+                              ? 'API キー設定済み'
+                              : profile.apiKeyStored
+                                ? '設定変更のため API キーの再入力が必要'
+                                : 'API キー未設定'}
+                          </span>
+                        </div>
+                        <div className="llm-profile-actions">
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={profileBusy}
+                            onClick={() => startEditProfile(profile)}
+                          >
+                            編集
+                          </button>
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={profileBusy}
+                            onClick={() => void removeProfile(profile)}
+                          >
+                            削除
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="alert alert-warning">
+                    LLM プロファイルがありません。下のフォームから追加してください。
+                  </p>
+                )}
+                {llmProfiles && llmProfiles.profiles.length === 1 ? (
+                  <p className="muted">
+                    プロファイルが 1 つだけのため、自動的に既定として使用します。
+                  </p>
+                ) : null}
                 <div className="setting-actions">
                   <button
                     type="button"
                     className="button button-secondary"
-                    disabled={!apiKeyDraft.trim() || keyBusy || llm?.keychainAvailable === false}
-                    onClick={() => void saveApiKey()}
+                    disabled={profileBusy}
+                    onClick={startCreateProfile}
                   >
-                    {keyBusy ? '保存中...' : 'API キーを保存'}
-                  </button>
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    disabled={!llm?.apiKeyStored || keyBusy}
-                    onClick={() => void clearApiKey()}
-                  >
-                    API キーを削除
+                    新規プロファイル
                   </button>
                 </div>
-                <div className="key-status">
-                  <span className={llm?.apiKeyConfigured ? 'ok-text' : 'error-text'}>
-                    {llm?.apiKeyConfigured
-                      ? 'API キー設定済み'
-                      : llm?.apiKeyStored
-                        ? 'エンドポイント変更のため API キーの再入力が必要'
-                        : 'API キー未設定'}
-                  </span>
-                  <span className={llm?.keychainAvailable ? 'ok-text' : 'error-text'}>
-                    {llm?.keychainAvailable
-                      ? 'macOS Keychain 利用可能'
-                      : 'macOS Keychain を利用できません'}
-                  </span>
-                </div>
-                {llm?.apiKeyStored && !llm.hostMatchesKey && llm.storedHost ? (
-                  <p className="alert alert-warning">
-                    保存済みの API キーは {llm.storedHost} 用です。現在のエンドポイントのホストで再入力してください。
-                  </p>
+                {llmProfilesError ? (
+                  <p className="alert alert-error">{llmProfilesError}</p>
                 ) : null}
-                {llm?.keychainError ? (
-                  <p className="alert alert-error">{llm.keychainError}</p>
+                {!profileFormOpen && profileError ? (
+                  <p className="alert alert-error">{profileError}</p>
                 ) : null}
-                {llmError ? <p className="alert alert-error">{llmError}</p> : null}
-                <p className="muted">
-                  API キーは Electron の safeStorage で暗号化し、macOS Keychain に保護された鍵で保存します。
-                  設定ファイルに平文は残しません。別の Mac にコピーした場合は再入力が必要です。
-                </p>
-                <p className="muted">
-                  音声ファイルは送信しません。送信するのは文字起こしの本文だけで、要約の生成を実行したときだけ送ります。
-                </p>
+                {!profileFormOpen && profileNotice ? (
+                  <p className="notice-text">{profileNotice}</p>
+                ) : null}
               </div>
             </section>
+
+            {profileFormOpen ? (
+              <section className="settings-section" ref={profileFormRef}>
+                <p className="settings-label">
+                  {editingProfileId
+                    ? `プロファイルを編集: ${editingProfileId}`
+                    : 'プロファイルを追加'}
+                </p>
+                <div className="setting-card">
+                  <div className="provider-chips">
+                    {LLM_PROVIDER_PRESETS.map((provider) => (
+                      <button
+                        type="button"
+                        className={`provider-chip ${
+                          profileProviderDraft === provider.provider ? 'is-active' : ''
+                        }`}
+                        key={provider.provider}
+                        onClick={() => chooseProfileProvider(provider.provider)}
+                      >
+                        {provider.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="settings-grid api-grid">
+                    <label className="field field-span-2">
+                      <span>ID（一意の名前）</span>
+                      <input
+                        className="setting-input mono"
+                        value={profileIdDraft}
+                        maxLength={64}
+                        placeholder="例: work-claude"
+                        onChange={(event) => setProfileIdDraft(event.target.value)}
+                      />
+                    </label>
+                    <label className="field field-span-2">
+                      <span>エンドポイント URL</span>
+                      <input
+                        className="setting-input mono"
+                        value={profileEndpointDraft}
+                        placeholder="https://api.example.com/v1"
+                        onChange={(event) => setProfileEndpointDraft(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>モデル</span>
+                      <input
+                        className="setting-input mono"
+                        value={profileModelDraft}
+                        placeholder={getLlmProviderPreset(profileProviderDraft).defaultModel}
+                        onChange={(event) => setProfileModelDraft(event.target.value)}
+                      />
+                    </label>
+                    <label className="field">
+                      <span>API キー</span>
+                      <input
+                        className="setting-input"
+                        type="password"
+                        value={profileApiKeyDraft}
+                        placeholder={
+                          selectedProfile?.apiKeyConfigured
+                            ? '設定済み（変更する場合だけ入力）'
+                            : 'API キーを入力'
+                        }
+                        disabled={!profileKeychainAvailable || profileBusy}
+                        onChange={(event) => setProfileApiKeyDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            void saveProfile();
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <label className="setting-row">
+                    <span>
+                      <strong>このプロファイルを既定にする</strong>
+                      <span className="muted">
+                        要約と翻訳で最初に選ばれるプロファイルです。プロファイルが 1
+                        つだけの場合は自動的に既定になります。
+                      </span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={
+                        llmProfiles !== null && llmProfiles.profiles.length === 1
+                          ? true
+                          : profileMakeDefault
+                      }
+                      disabled={
+                        profileBusy ||
+                        (llmProfiles !== null && llmProfiles.profiles.length <= 1)
+                      }
+                      onChange={(event) => setProfileMakeDefault(event.target.checked)}
+                    />
+                  </label>
+                  <div className="setting-actions">
+                    <button
+                      type="button"
+                      className="button button-primary"
+                      disabled={profileBusy}
+                      onClick={() => void saveProfile()}
+                    >
+                      {profileBusy
+                        ? '保存中...'
+                        : editingProfileId
+                          ? '変更を保存'
+                          : 'プロファイルを追加'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      disabled={profileBusy}
+                      onClick={closeProfileForm}
+                    >
+                      キャンセル
+                    </button>
+                    {editingProfileId && selectedProfile?.apiKeyStored ? (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={profileBusy}
+                        onClick={() => void clearProfileApiKey()}
+                      >
+                        API キーを削除
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="key-status">
+                    <span
+                      className={
+                        selectedProfile?.apiKeyConfigured ? 'ok-text' : 'error-text'
+                      }
+                    >
+                      {selectedProfile?.apiKeyConfigured
+                        ? 'API キー設定済み'
+                        : selectedProfile?.apiKeyStored
+                          ? '設定変更のため API キーの再入力が必要'
+                          : 'API キー未設定'}
+                    </span>
+                    <span
+                      className={
+                        profileKeychainAvailable ? 'ok-text' : 'error-text'
+                      }
+                    >
+                      {profileKeychainAvailable
+                        ? 'macOS Keychain 利用可能'
+                        : 'macOS Keychain を利用できません'}
+                    </span>
+                  </div>
+                  {selectedProfile?.apiKeyStored &&
+                  !selectedProfile.hostMatchesKey ? (
+                    <p className="alert alert-warning">
+                      保存済みの API キーは現在のプロファイル設定と一致しません。
+                      {selectedProfile.storedHost
+                        ? ` 保存時のホストは ${selectedProfile.storedHost} です。`
+                        : ''}
+                      API キーを再入力してください。
+                    </p>
+                  ) : null}
+                  {selectedProfile?.keychainError ? (
+                    <p className="alert alert-error">{selectedProfile.keychainError}</p>
+                  ) : null}
+                  {profileError ? (
+                    <p className="alert alert-error">{profileError}</p>
+                  ) : null}
+                  {profileNotice ? (
+                    <p className="notice-text">{profileNotice}</p>
+                  ) : null}
+                  <p className="muted">
+                    API キーは Electron の safeStorage で暗号化し、macOS Keychain
+                    に保護された鍵で保存します。設定ファイルに平文は残しません。
+                    別の Mac にコピーした場合は再入力が必要です。
+                  </p>
+                  <p className="muted">
+                    音声ファイルは送信しません。送信するのは文字起こしの本文だけで、要約の生成を実行したときだけ送ります。
+                  </p>
+                </div>
+              </section>
+            ) : null}
 
             <section className="settings-section">
               <p className="settings-label">要約の出力言語</p>

@@ -7,6 +7,7 @@ import type {
   AppSettings,
   GenerateSummaryResult,
   InputSource,
+  LlmProfilesState,
   LlmRuntimeConfig,
   MeetingDetail,
   MeetingSearchResult,
@@ -32,6 +33,7 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
   SummaryPreview,
@@ -117,7 +119,10 @@ declare global {
       openMeetingFolder: (meetingId: string) => Promise<void>;
       getProcessingState: () => Promise<ProcessingState>;
       cancelProcessing: () => Promise<boolean>;
-      previewSummary: (meetingId: string) => Promise<SummaryPreview>;
+      previewSummary: (
+        meetingId: string,
+        profileId?: string,
+      ) => Promise<SummaryPreview>;
       generateSummary: (
         meetingId: string,
         token: string,
@@ -125,6 +130,7 @@ declare global {
       previewTranslation: (
         meetingId: string,
         targetLanguage: SummaryLanguage,
+        profileId?: string,
       ) => Promise<TranslationPreview>;
       generateTranslation: (
         meetingId: string,
@@ -139,9 +145,20 @@ declare global {
         outputUid: string,
       ) => Promise<MultiOutputStatus | null>;
       removeMultiOutput: () => Promise<MultiOutputStatus | null>;
-      getLlmRuntime: () => Promise<LlmRuntimeConfig>;
-      setLlmApiKey: (apiKey: string) => Promise<LlmRuntimeConfig>;
-      clearLlmApiKey: () => Promise<void | LlmRuntimeConfig>;
+      getLlmRuntime: (
+        profileId?: string,
+      ) => Promise<LlmRuntimeConfig | null>;
+      getLlmProfiles: () => Promise<LlmProfilesState>;
+      saveLlmProfile: (
+        request: SaveLlmProfileRequest,
+      ) => Promise<LlmProfilesState>;
+      deleteLlmProfile: (profileId: string) => Promise<LlmProfilesState>;
+      setDefaultLlmProfile: (profileId: string) => Promise<LlmProfilesState>;
+      setLlmApiKey: (
+        profileId: string,
+        apiKey: string,
+      ) => Promise<LlmProfilesState>;
+      clearLlmApiKey: (profileId: string) => Promise<LlmProfilesState>;
       listWhisperModels: () => Promise<WhisperModelList>;
       downloadWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
       cancelWhisperModelDownload: (
@@ -164,7 +181,7 @@ declare global {
         listener: (list: WhisperModelList) => void,
       ) => () => void;
       onLlmChanged: (
-        listener: (config: LlmRuntimeConfig) => void,
+        listener: (state: LlmProfilesState) => void,
       ) => () => void;
       getSettings: () => Promise<AppSettings>;
       updateSettings: (patch: Partial<AppSettings>) => Promise<AppSettings>;
