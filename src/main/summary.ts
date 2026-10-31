@@ -128,6 +128,7 @@ export type SummaryGenerationOptions = {
   signal?: AbortSignal;
   onProgress?: (message: string, progress: number | null) => void;
   chunkChars?: number;
+  systemPromptOverride?: string;
 };
 
 export type SummaryGenerationResult = {
@@ -170,7 +171,9 @@ export async function generateSummary(
       endpoint: options.endpoint,
       apiKey: options.apiKey,
       model: options.model,
-      system: buildSummarySystemPrompt(options.language),
+      system:
+        options.systemPromptOverride?.trim() ||
+        buildSummarySystemPrompt(options.language),
       user: buildSummaryUserPrompt(chunks[index], options.language),
       signal: options.signal,
       timeoutMs: 120_000,
@@ -187,7 +190,9 @@ export async function generateSummary(
       endpoint: options.endpoint,
       apiKey: options.apiKey,
       model: options.model,
-      system: buildMergeSystemPrompt(options.language),
+      system: options.systemPromptOverride?.trim()
+        ? `${options.systemPromptOverride.trim()}\n\n複数の部分要約を統合し、4 つのセクションを持つ最終要約を作ってください。部分要約にない事実を追加しないでください。`
+        : buildMergeSystemPrompt(options.language),
       user: buildMergeUserPrompt(partials, options.language),
       signal: options.signal,
       timeoutMs: 120_000,
@@ -205,5 +210,60 @@ export async function generateSummary(
     },
     chunkCount: chunks.length,
     raw,
+  };
+}
+
+export type MeetingTitleGenerationOptions = {
+  client: LlmClient;
+  transcriptBody: string;
+  language: SummaryLanguage;
+  kind: 'openai' | 'anthropic';
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  signal?: AbortSignal;
+};
+
+export async function generateMeetingTitle(
+  options: MeetingTitleGenerationOptions,
+): Promise<{
+  title: string;
+  inputTokens: number | null;
+  outputTokens: number | null;
+}> {
+  const excerpt = options.transcriptBody.slice(0, 24_000);
+  const result = await options.client.complete({
+    kind: options.kind,
+    endpoint: options.endpoint,
+    apiKey: options.apiKey,
+    model: options.model,
+    system:
+      options.language === 'ja'
+        ? '会議の文字起こしから、会議の内容を表す短いタイトルを 1 つ作ってください。30 文字以内の日本語にし、引用符、句読点の飾り、説明、前置きは出力しないでください。'
+        : 'Create one short title (up to 60 characters) that describes the meeting from the transcript. Output only the title, without quotes, explanations, or punctuation decoration.',
+    user: [
+      '--- TRANSCRIPT START ---',
+      excerpt,
+      '--- TRANSCRIPT END ---',
+    ].join('\n'),
+    maxTokens: 80,
+    signal: options.signal,
+    timeoutMs: 60_000,
+  });
+  const title = result.text
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
+    ?.replace(/^#+\s*/u, '')
+    .replace(/^["'「『]+|["'」』]+$/gu, '')
+    .trim();
+  if (!title) {
+    throw new Error('meeting title is empty');
+  }
+  return {
+    title,
+    inputTokens: result.inputTokens,
+    outputTokens: result.outputTokens,
   };
 }

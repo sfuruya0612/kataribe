@@ -9,10 +9,12 @@ import type {
   InputSource,
   LlmRuntimeConfig,
   MeetingDetail,
+  MeetingSearchResult,
   MeetingSummary,
   MeetingWaveform,
   MicrophonePermissionStatus,
   ModelDownloadProgress,
+  MultiOutputStatus,
   ProcessingState,
   RecordingAppState,
   RecordingCaptureStats,
@@ -31,7 +33,10 @@ import type {
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
+  SummaryLanguage,
   SummaryPreview,
+  TranslationPreview,
+  TranslationResult,
   WhisperModel,
   WhisperModelList,
 } from '../shared/types';
@@ -108,6 +113,27 @@ const api = {
     ipcRenderer.invoke('meetings:list'),
   getMeetingDetail: (meetingId: string): Promise<MeetingDetail | null> =>
     ipcRenderer.invoke('meetings:detail', meetingId),
+  updateMeetingTitle: (
+    meetingId: string,
+    title: string,
+  ): Promise<MeetingSummary> =>
+    ipcRenderer.invoke('meetings:update-title', meetingId, title),
+  searchMeetings: (query: string): Promise<MeetingSearchResult> =>
+    ipcRenderer.invoke('meetings:search', query),
+  importAudio: (): Promise<MeetingSummary | null> =>
+    ipcRenderer.invoke('meetings:import-audio'),
+  setMeetingPinned: (
+    meetingId: string,
+    pinned: boolean,
+  ): Promise<MeetingSummary> =>
+    ipcRenderer.invoke('meetings:set-pinned', meetingId, pinned),
+  deleteMeeting: (meetingId: string): Promise<void> =>
+    ipcRenderer.invoke('meetings:delete', meetingId),
+  setMeetingSummaryLanguage: (
+    meetingId: string,
+    language: SummaryLanguage | null,
+  ): Promise<MeetingSummary> =>
+    ipcRenderer.invoke('meetings:set-summary-language', meetingId, language),
   saveTranscript: (meetingId: string, markdown: string): Promise<MeetingDetail> =>
     ipcRenderer.invoke('meetings:save-transcript', meetingId, markdown),
   saveSummary: (meetingId: string, markdown: string): Promise<MeetingDetail> =>
@@ -129,6 +155,26 @@ const api = {
     token: string,
   ): Promise<GenerateSummaryResult> =>
     ipcRenderer.invoke('summary:generate', meetingId, token),
+  previewTranslation: (
+    meetingId: string,
+    targetLanguage: SummaryLanguage,
+  ): Promise<TranslationPreview> =>
+    ipcRenderer.invoke('translation:preview', meetingId, targetLanguage),
+  generateTranslation: (
+    meetingId: string,
+    token: string,
+  ): Promise<TranslationResult> =>
+    ipcRenderer.invoke('translation:generate', meetingId, token),
+  chooseSaveRoot: (): Promise<{
+    settings: AppSettings;
+    info: AppInfo;
+  } | null> => ipcRenderer.invoke('save-root:choose'),
+  getMultiOutputStatus: (): Promise<MultiOutputStatus> =>
+    ipcRenderer.invoke('multi-output:status'),
+  createMultiOutput: (outputUid: string): Promise<MultiOutputStatus | null> =>
+    ipcRenderer.invoke('multi-output:create', outputUid),
+  removeMultiOutput: (): Promise<MultiOutputStatus | null> =>
+    ipcRenderer.invoke('multi-output:remove'),
   getLlmRuntime: (): Promise<LlmRuntimeConfig> =>
     ipcRenderer.invoke('llm:runtime'),
   setLlmApiKey: (apiKey: string): Promise<LlmRuntimeConfig> =>
@@ -150,6 +196,10 @@ const api = {
   onMeetingUpdated: (
     listener: (payload: { meetingId: string }) => void,
   ): (() => void) => subscribe('meetings:updated', listener),
+  onMeetingsChanged: (listener: (list: MeetingSummary[]) => void): (() => void) =>
+    subscribe('meetings:changed', listener),
+  rebuildMeetingIndex: (): Promise<MeetingSummary[]> =>
+    ipcRenderer.invoke('index:rebuild'),
   onModelProgress: (
     listener: (progress: ModelDownloadProgress) => void,
   ): (() => void) => subscribe('models:progress', listener),

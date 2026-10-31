@@ -9,10 +9,12 @@ import type {
   InputSource,
   LlmRuntimeConfig,
   MeetingDetail,
+  MeetingSearchResult,
   MeetingSummary,
   MeetingWaveform,
   MicrophonePermissionStatus,
   ModelDownloadProgress,
+  MultiOutputStatus,
   ProcessingState,
   RecordingAppState,
   RecordingCaptureStats,
@@ -31,7 +33,10 @@ import type {
   RecordingStopResult,
   RecoverableRecording,
   StartRecordingOptions,
+  SummaryLanguage,
   SummaryPreview,
+  TranslationPreview,
+  TranslationResult,
   WhisperModel,
   WhisperModelList,
 } from '../../shared/types';
@@ -87,6 +92,21 @@ declare global {
       openRecordingFolder: () => Promise<void>;
       listMeetings: () => Promise<MeetingSummary[]>;
       getMeetingDetail: (meetingId: string) => Promise<MeetingDetail | null>;
+      updateMeetingTitle: (
+        meetingId: string,
+        title: string,
+      ) => Promise<MeetingSummary>;
+      searchMeetings: (query: string) => Promise<MeetingSearchResult>;
+      importAudio: () => Promise<MeetingSummary | null>;
+      setMeetingPinned: (
+        meetingId: string,
+        pinned: boolean,
+      ) => Promise<MeetingSummary>;
+      deleteMeeting: (meetingId: string) => Promise<void>;
+      setMeetingSummaryLanguage: (
+        meetingId: string,
+        language: SummaryLanguage | null,
+      ) => Promise<MeetingSummary>;
       saveTranscript: (
         meetingId: string,
         markdown: string,
@@ -102,6 +122,23 @@ declare global {
         meetingId: string,
         token: string,
       ) => Promise<GenerateSummaryResult>;
+      previewTranslation: (
+        meetingId: string,
+        targetLanguage: SummaryLanguage,
+      ) => Promise<TranslationPreview>;
+      generateTranslation: (
+        meetingId: string,
+        token: string,
+      ) => Promise<TranslationResult>;
+      chooseSaveRoot: () => Promise<{
+        settings: AppSettings;
+        info: AppInfo;
+      } | null>;
+      getMultiOutputStatus: () => Promise<MultiOutputStatus>;
+      createMultiOutput: (
+        outputUid: string,
+      ) => Promise<MultiOutputStatus | null>;
+      removeMultiOutput: () => Promise<MultiOutputStatus | null>;
       getLlmRuntime: () => Promise<LlmRuntimeConfig>;
       setLlmApiKey: (apiKey: string) => Promise<LlmRuntimeConfig>;
       clearLlmApiKey: () => Promise<void | LlmRuntimeConfig>;
@@ -118,6 +155,8 @@ declare global {
       onMeetingUpdated: (
         listener: (payload: { meetingId: string }) => void,
       ) => () => void;
+      onMeetingsChanged: (listener: (list: MeetingSummary[]) => void) => () => void;
+      rebuildMeetingIndex: () => Promise<MeetingSummary[]>;
       onModelProgress: (
         listener: (progress: ModelDownloadProgress) => void,
       ) => () => void;

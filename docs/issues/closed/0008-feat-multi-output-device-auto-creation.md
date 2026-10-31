@@ -1,6 +1,7 @@
 # MVP 後に Multi-Output Device の自動作成を導入するか決める
 
 Created: 2026-10-29
+Completed: 2026-10-31
 Model: DeepSeek V4.1 Flash 1017
 優先度: P2
 対応 ADR: ADR-0003 (docs/adr/0003-system-audio-virtual-device.md)、ADR-0001 (docs/adr/0001-electron-typescript-react-vite.md)、ADR-0014 (docs/adr/0014-distribution-dmg-notarization.md)
@@ -99,3 +100,21 @@ issue 0001 の入力デバイス検出、issue 0007 の README、issue 0002 の�
 - `docs/m0/0003-system-audio/multi-output.swift`
 - `docs/m0/0003-system-audio/README.md`
 - `docs/prd/kataribe.md` の U2、R-2、非機能要件
+## 解決方法
+
+2026-10-31 に、設定画面から Multi-Output Device を自動作成する方針を採用した。
+決定は ADR-0018 に記録し、ADR-0001 と ADR-0003 を改訂した。
+
+- 設定画面の「録音」タブに、出力デバイスの選択、自動作成、削除の操作を追加した。
+- 作成前に、選択した出力デバイス、BlackHole 2ch、macOS の出力が変わることを確認ダイアログに表示する。
+- 作成する Aggregate Device の名前は `Kataribe Multi-Output` とし、既存の同名デバイスは削除して作り直す。
+- 作成後、macOS の既定出力とシステム出力を Kataribe Multi-Output に設定する。
+- 録音中または処理中は、作成と削除を実行しない。
+- CoreAudio を扱う Swift ヘルパー `kataribe-multi-output` を `resources/bin/arm64/` に同梱し、`npm run binaries` で再生成できるようにした。
+- ヘルパーの `list` と `remove` は macOS 26.7.1 の arm64 で確認した。
+  実際の `create` はシステムの音声出力を変更するため、自動テストでは実行していない。
+  アプリの確認ダイアログを経た操作でのみ実行する。
+- 検証は macOS 26.7.1 の arm64 に限る。
+  macOS 14.2 から 26.7.0 はベストエフォートとする。
+
+残る未決事項は ADR-0018 に記録した。

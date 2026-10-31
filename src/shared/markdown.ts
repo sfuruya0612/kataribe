@@ -11,6 +11,7 @@ export type ParsedMarkdown = {
 export type TranscriptSegment = {
   startSeconds: number;
   endSeconds?: number;
+  speaker?: string;
   text: string;
 };
 
@@ -164,11 +165,39 @@ export function sanitizeTranscriptText(text: string): string {
 export function formatTranscriptBody(segments: TranscriptSegment[]): string {
   return segments
     .filter((segment) => sanitizeTranscriptText(segment.text).length > 0)
-    .map(
-      (segment) =>
-        `[${formatTimestamp(segment.startSeconds)}] ${sanitizeTranscriptText(segment.text)}`,
-    )
+    .map((segment) => {
+      const speaker = segment.speaker?.trim();
+      const prefix = speaker ? `${speaker}: ` : '';
+      return `[${formatTimestamp(segment.startSeconds)}] ${prefix}${sanitizeTranscriptText(segment.text)}`;
+    })
     .join('\n');
+}
+
+const TRANSCRIPT_LINE_PATTERN = /^\[(\d{2}):(\d{2}):(\d{2})\]\s?(.*)$/u;
+
+export type ParsedTranscriptLine = {
+  lineNumber: number;
+  startSeconds: number | null;
+  text: string;
+};
+
+export function parseTranscriptBody(body: string): ParsedTranscriptLine[] {
+  return body.replaceAll('\r\n', '\n').split('\n').map((line, index) => {
+    const match = line.match(TRANSCRIPT_LINE_PATTERN);
+    if (!match) {
+      return {
+        lineNumber: index + 1,
+        startSeconds: null,
+        text: line,
+      };
+    }
+    return {
+      lineNumber: index + 1,
+      startSeconds:
+        Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]),
+      text: match[4],
+    };
+  });
 }
 
 export type TranscriptMarkdownInput = {
@@ -190,6 +219,40 @@ export function formatTranscriptMarkdown(input: TranscriptMarkdownInput): string
     source: input.source,
     model: input.model,
     language: input.language,
+  };
+  if (input.partial) {
+    fields.partial = true;
+  }
+  return stringifyFrontMatter(fields, formatTranscriptBody(input.segments));
+}
+
+export type TranslationMarkdownInput = {
+  title: string;
+  startedAt: string;
+  durationSeconds: number;
+  source: string;
+  model: string;
+  sourceLanguage: string;
+  targetLanguage: SummaryLanguage;
+  provider: string;
+  generatedAt: string;
+  segments: TranscriptSegment[];
+  partial?: boolean;
+};
+
+export function formatTranslationMarkdown(
+  input: TranslationMarkdownInput,
+): string {
+  const fields: Record<string, FrontMatterValue> = {
+    title: input.title,
+    date: input.startedAt,
+    duration: formatDurationHms(input.durationSeconds),
+    source: input.source,
+    model: input.model,
+    language: input.targetLanguage,
+    source_language: input.sourceLanguage,
+    provider: input.provider,
+    generated_at: input.generatedAt,
   };
   if (input.partial) {
     fields.partial = true;
@@ -310,10 +373,12 @@ export function formatSummaryMarkdown(input: {
   generatedAt: string;
   language: SummaryLanguage;
   body: string;
+  extraFields?: Record<string, FrontMatterValue>;
 }): string {
   const normalized = normalizeSummaryMarkdown(input.body, input.language);
   return stringifyFrontMatter(
     {
+      ...(input.extraFields ?? {}),
       title: input.title,
       date: input.date,
       provider: input.provider,

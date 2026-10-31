@@ -7,6 +7,7 @@ import type {
   MeetingStatus,
   RecordingCaptureStats,
   RecordingEvent,
+  SummaryLanguage,
 } from '../shared/types';
 import { WAV_BITS_PER_SAMPLE, WAV_CHANNELS } from './wav';
 
@@ -69,6 +70,17 @@ export type MeetingMetaSummary = {
   };
 };
 
+export type MeetingMetaTranslation = {
+  state: 'running' | 'completed' | 'failed';
+  provider?: string;
+  model?: string;
+  language?: SummaryLanguage;
+  source_language?: string;
+  generated_at?: string;
+  partial?: boolean;
+  error?: string;
+};
+
 export type MeetingMeta = {
   schema_version: typeof MEETING_META_SCHEMA_VERSION;
   id: string;
@@ -99,6 +111,10 @@ export type MeetingMeta = {
   encoding?: MeetingMetaEncoding;
   transcription?: MeetingMetaTranscription;
   summary?: MeetingMetaSummary;
+  translations?: Partial<Record<SummaryLanguage, MeetingMetaTranslation>>;
+  summary_language?: SummaryLanguage;
+  pinned?: boolean;
+  pinned_at?: string;
   error?: string;
 };
 

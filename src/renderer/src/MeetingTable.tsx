@@ -15,6 +15,9 @@ type MeetingTableProps = {
   onSelect: (meeting: MeetingSummary) => void;
   onRefresh: () => void;
   onToggleRecording: () => void;
+  onImportAudio: () => void;
+  onSetPinned: (meeting: MeetingSummary, pinned: boolean) => void;
+  onDeleteMeeting: (meeting: MeetingSummary) => void;
 };
 
 export function MeetingTable({
@@ -26,6 +29,9 @@ export function MeetingTable({
   onSelect,
   onRefresh,
   onToggleRecording,
+  onImportAudio,
+  onSetPinned,
+  onDeleteMeeting,
 }: MeetingTableProps) {
   return (
     <section className="meetings-panel" aria-labelledby="meetings-title">
@@ -37,6 +43,9 @@ export function MeetingTable({
           </h1>
         </div>
         <div className="table-actions">
+          <button type="button" className="button button-secondary" onClick={onImportAudio}>
+            音声を取り込む
+          </button>
           <button type="button" className="button button-secondary" onClick={onRefresh}>
             再読み込み
           </button>
@@ -57,6 +66,7 @@ export function MeetingTable({
           <span>タイトル</span>
           <span className="align-right">長さ</span>
           <span>状態</span>
+          <span className="align-right">操作</span>
         </div>
 
         {loading ? (
@@ -68,25 +78,52 @@ export function MeetingTable({
           </div>
         ) : (
           meetings.map((meeting) => (
-            <button
-              type="button"
+            <div
               role="row"
               className={`meeting-row ${selectedId === meeting.id ? 'is-selected' : ''}`}
               key={meeting.id}
-              onClick={() => onSelect(meeting)}
-              data-testid={`meeting-${meeting.id}`}
             >
-              <span className="meeting-date">
-                {formatMeetingDate(meeting.startedAt)}
+              <button
+                type="button"
+                className="meeting-row-main"
+                onClick={() => onSelect(meeting)}
+                data-testid={`meeting-${meeting.id}`}
+              >
+                <span className="meeting-date">
+                  {formatMeetingDate(meeting.startedAt)}
+                </span>
+                <span className="meeting-name">
+                  {meeting.pinned ? <span className="pin-mark">★</span> : null}
+                  {meeting.title}
+                </span>
+                <span className="meeting-duration">
+                  {formatDuration(meeting.duration)}
+                </span>
+                <span className={`status-chip ${meetingStatusClass(meeting.status)}`}>
+                  {meetingStatusLabel(meeting.status)}
+                </span>
+              </button>
+              <span className="meeting-row-actions">
+                <button
+                  type="button"
+                  className={`icon-button pin-button ${meeting.pinned ? 'is-pinned' : ''}`}
+                  aria-label={meeting.pinned ? 'Pin を解除' : 'Pin 止め'}
+                  title={meeting.pinned ? 'Pin を解除' : 'Pin 止め'}
+                  onClick={() => onSetPinned(meeting, !meeting.pinned)}
+                >
+                  {meeting.pinned ? '★' : '☆'}
+                </button>
+                <button
+                  type="button"
+                  className="icon-button delete-button"
+                  aria-label="会議を削除"
+                  title="会議を削除"
+                  onClick={() => onDeleteMeeting(meeting)}
+                >
+                  ×
+                </button>
               </span>
-              <span className="meeting-name">{meeting.title}</span>
-              <span className="meeting-duration">
-                {formatDuration(meeting.duration)}
-              </span>
-              <span className={`status-chip ${meetingStatusClass(meeting.status)}`}>
-                {meetingStatusLabel(meeting.status)}
-              </span>
-            </button>
+            </div>
           ))
         )}
       </div>

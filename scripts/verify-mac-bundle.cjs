@@ -111,6 +111,10 @@ if (existsSync(resources)) {
     'ffmpeg is bundled for arm64',
   );
   check(
+    existsSync(join(resources, 'bin', 'arm64', 'kataribe-multi-output')),
+    'Multi-Output helper is bundled for arm64',
+  );
+  check(
     existsSync(join(resources, 'licenses', 'whisper.cpp-LICENSE.txt')),
     'whisper.cpp license is bundled',
   );

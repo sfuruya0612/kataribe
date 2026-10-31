@@ -34,7 +34,8 @@ Electron はメインプロセスと Renderer の 2 層を持ち、Renderer か�
   Apple Silicon のみを対象とし、Intel Mac は動作保証外とする（PRD の「非機能要件」）。
 - メディア処理と文字起こしは Node.js のネイティブアドオンではなく、同梱バイナリの子プロセスで行う（ADR-0004）。
   アプリ独自のネイティブコードは持たないが、既製のネイティブモジュールと同梱バイナリは例外とする。
-  SQLite の `better-sqlite3` は例外的にネイティブモジュールを使う（ADR-0010）。
+  Multi-Output Device の作成だけは、CoreAudio を扱う最小の Swift ヘルパーを同梱バイナリとして起動する（ADR-0018）。
+  SQLite は Node.js の `node:sqlite` を使い、追加のネイティブモジュールを必要としない（ADR-0010）。
   Electron の版を上げるときは `better-sqlite3` の再ビルドが必要になる。
 
 ## 検討した選択肢

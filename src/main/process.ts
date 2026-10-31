@@ -29,6 +29,19 @@ export class ProcessStartError extends Error {
   }
 }
 
+export type ChildProcessRegistryLike = {
+  register: (pid: number, command: string) => void;
+  unregister: (pid: number) => void;
+};
+
+let childProcessRegistry: ChildProcessRegistryLike | null = null;
+
+export function configureChildProcessRegistry(
+  registry: ChildProcessRegistryLike | null,
+): void {
+  childProcessRegistry = registry;
+}
+
 const MAX_CAPTURE = 64 * 1024;
 
 function capture(current: string, text: string): string {
@@ -78,6 +91,10 @@ export async function runProcess(options: RunProcessOptions): Promise<RunProcess
     let aborted = false;
     let settled = false;
     let killTimer: NodeJS.Timeout | null = null;
+    const pid = child.pid;
+    if (pid) {
+      childProcessRegistry?.register(pid, options.command);
+    }
 
     const flushLines = (
       buffer: string,
@@ -156,6 +173,9 @@ export async function runProcess(options: RunProcessOptions): Promise<RunProcess
         clearTimeout(killTimer);
       }
       options.signal?.removeEventListener('abort', onAbort);
+      if (pid) {
+        childProcessRegistry?.unregister(pid);
+      }
       reject(new ProcessStartError(`process failed: ${error.message}`));
     });
 
@@ -176,6 +196,9 @@ export async function runProcess(options: RunProcessOptions): Promise<RunProcess
       }
       if (stderrBuffer.length > 0) {
         options.onStderrLine?.(stderrBuffer.replace(/\r$/u, ''));
+      }
+      if (pid) {
+        childProcessRegistry?.unregister(pid);
       }
       resolve({ code, signal, stdout, stderr, timedOut, aborted });
     });

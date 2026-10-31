@@ -182,6 +182,29 @@ describe('ProcessingCoordinator summary flow', () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
+  it('generates a meeting title when the title is still untitled', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.title = 'タイトル未入力';
+    await writeFile(metaPath, JSON.stringify(meta));
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(summaryResponse)
+      .mockResolvedValueOnce({
+        text: 'リリース計画の定例',
+        inputTokens: 5,
+        outputTokens: 3,
+        status: 200,
+      });
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    const result = await coordinator.generateSummary(meetingId, preview.token);
+    expect(result.meeting.title).toBe('リリース計画の定例');
+    expect(result.meeting.meetingDir).not.toBe(meetingDir);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+
   it('requires a transcript and an API key for the preview', async () => {
     const { root, saveRoot, meetingId } = await createMeeting();
     const complete = vi.fn();
@@ -193,8 +216,63 @@ describe('ProcessingCoordinator summary flow', () => {
   });
 });
 
-describe('ProcessingCoordinator interrupted recovery', () => {
-  it('marks unfinished transcription as interrupted', async () => {
+describe('ProcessingCoordinator translation flow', () => {
+  it('previews and writes transcript.en.md', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const complete = vi.fn(async () => ({
+      text: [
+        '[00:00:01] We will decide the release date.',
+        '[00:00:12] Tanaka is the owner.',
+      ].join('\n'),
+      inputTokens: 20,
+      outputTokens: 12,
+      status: 200,
+    }));
+    const { coordinator, meetingStore } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+    });
+    const preview = await coordinator.createTranslationPreview(meetingId, 'en');
+    expect(preview).toMatchObject({
+      targetLanguage: 'en',
+      sourceLanguage: 'ja',
+      provider: 'chatgpt',
+    });
+    expect(complete).not.toHaveBeenCalled();
+
+    const result = await coordinator.generateTranslation(
+      meetingId,
+      preview.token,
+    );
+    expect(result.translation.language).toBe('en');
+    expect(result.translation.body).toContain('We will decide');
+    const markdown = await readFile(
+      join(meetingDir, 'transcript.en.md'),
+      'utf8',
+    );
+    expect(markdown).toContain('language: en');
+    expect(markdown).toContain('source_language: ja');
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.translations.en.state).toBe('completed');
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.translations.en?.body).toContain('Tanaka is the owner');
+  });
+
+  it('rejects translation into the same language', async () => {
+    const { root, saveRoot, meetingId } = await createMeeting();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+    });
+    await expect(
+      coordinator.createTranslationPreview(meetingId, 'ja'),
+    ).rejects.toThrow('同じ言語');
+  });
+});
+
+describe('ProcessingCoordinator interrupted recovery', () => {  it('marks unfinished transcription as interrupted', async () => {
     const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
     const metaPath = join(meetingDir, 'meta.json');
     const meta = JSON.parse(await readFile(metaPath, 'utf8'));

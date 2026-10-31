@@ -27,6 +27,7 @@ BlackHole 2ch は、macOS に仮想オーディオデバイスを追加するオ
 - 利用者は BlackHole 2ch をインストールし、スピーカーまたはヘッドホンと BlackHole 2ch を含む Multi-Output Device を作成する。
   macOS の音声出力をその Multi-Output Device に設定する。
   Kataribe は macOS の音声出力を自動で変更しない。
+  ただし、利用者が設定画面で明示的に操作した場合に限り、Kataribe が Multi-Output Device を作成して出力を変更できる（ADR-0018）。
 - Kataribe は `enumerateDevices` で `BlackHole` を含む入力デバイスを探す。
   見つかった場合は、そのデバイスをシステム音声の入力として使う。
   見つからない場合は、システム音声と両方の選択肢を無効にし、README のセットアップ手順を案内する。

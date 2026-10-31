@@ -29,6 +29,9 @@ export type MeetingSummary = {
   hasTranscript: boolean;
   hasSummary: boolean;
   transcriptPartial: boolean;
+  translationLanguages: SummaryLanguage[];
+  summaryLanguage: SummaryLanguage | null;
+  pinned: boolean;
 };
 
 export type MeetingWaveform = {
@@ -55,13 +58,53 @@ export type SummaryDocument = {
   updatedAt: string | null;
 };
 
+export type TranscriptTranslation = {
+  language: SummaryLanguage;
+  sourceLanguage: string | null;
+  markdown: string;
+  body: string;
+  provider: string | null;
+  model: string | null;
+  generatedAt: string | null;
+  updatedAt: string | null;
+  partial: boolean;
+};
+
 export type MeetingDetail = {
   meeting: MeetingSummary;
   transcript: TranscriptDocument | null;
   summary: SummaryDocument | null;
+  translations: Partial<Record<SummaryLanguage, TranscriptTranslation>>;
+};
+export type MeetingSearchKind =
+  | 'title'
+  | 'transcript'
+  | 'translation-ja'
+  | 'translation-en'
+  | 'summary';
+
+export type MeetingSearchHit = {
+  meetingId: string;
+  title: string;
+  startedAt: string;
+  kind: MeetingSearchKind;
+  kindLabel: string;
+  lineNumber: number | null;
+  timestamp: string | null;
+  text: string;
 };
 
-export type ProcessingStage = 'encoding' | 'transcribing' | 'summarizing';
+export type MeetingSearchResult = {
+  query: string;
+  hits: MeetingSearchHit[];
+  truncated: boolean;
+};
+
+export type ProcessingStage =
+  | 'encoding'
+  | 'transcribing'
+  | 'translating'
+  | 'summarizing';
 
 export type ProcessingState = {
   stage: ProcessingStage | null;
@@ -87,11 +130,18 @@ export type SummaryLanguage = 'ja' | 'en';
 
 export type AppSettings = {
   inputSource: InputSource;
+  saveRoot: string;
   whisperModel: WhisperModel;
+  speakerDiarization: boolean;
+  globalShortcutEnabled: boolean;
+  whisperInitialPrompt: string;
+  whisperSpeedRatios: Partial<Record<WhisperModel, number>>;
+  mp3BitrateKbps: 64 | 128;
   llmProvider: LlmProvider;
   llmModel: string;
   llmBaseUrl: string;
   summaryLanguage: SummaryLanguage;
+  summaryPromptTemplate: string;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };
@@ -209,6 +259,7 @@ export type RecordingStartupFailure = {
 };
 
 export type RecordingStartupFailureResult = {
+  meetingId: string;
   meetingDir: string;
   metaPath: string;
 };
@@ -346,6 +397,46 @@ export type SummaryPreview = {
   text: string;
   partial: boolean;
   warning: string | null;
+};
+
+export type TranslationPreview = {
+  token: string;
+  meetingId: string;
+  targetLanguage: SummaryLanguage;
+  sourceLanguage: string | null;
+  provider: LlmProvider;
+  providerLabel: string;
+  model: string;
+  endpoint: string;
+  charCount: number;
+  estimatedTokens: number;
+  contentHash: string;
+  text: string;
+  partial: boolean;
+  warning: string | null;
+};
+
+export type TranslationResult = {
+  meeting: MeetingSummary;
+  translation: TranscriptTranslation;
+  usage: SummaryUsage | null;
+};
+
+export type AudioOutputDevice = {
+  id: number;
+  name: string;
+  uid: string;
+  channels: number;
+  isAggregate?: boolean;
+};
+
+export type MultiOutputStatus = {
+  supported: boolean;
+  helperAvailable: boolean;
+  currentOutput: AudioOutputDevice | null;
+  outputDevices: AudioOutputDevice[];
+  multiOutput: AudioOutputDevice | null;
+  error: string | null;
 };
 
 export type SummaryUsage = {

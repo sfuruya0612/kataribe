@@ -5,6 +5,7 @@ type AudioPlayerProps = {
   src: string | null;
   peaks: number[];
   duration: number;
+  initialTime?: number | null;
 };
 
 const FALLBACK_BARS = 72;
@@ -15,7 +16,7 @@ function fallbackPeaks(): number[] {
   });
 }
 
-export function AudioPlayer({ src, peaks, duration }: AudioPlayerProps) {
+export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -31,8 +32,20 @@ export function AudioPlayer({ src, peaks, duration }: AudioPlayerProps) {
     const audio = audioRef.current;
     if (audio && src) {
       audio.load();
+      if (initialTime !== null && initialTime !== undefined && initialTime > 0) {
+        const apply = () => {
+          const total = Number.isFinite(audio.duration) ? audio.duration : duration;
+          audio.currentTime = Math.max(0, Math.min(total, initialTime));
+          setCurrent(audio.currentTime);
+        };
+        if (audio.readyState >= 1) {
+          apply();
+        } else {
+          audio.addEventListener('loadedmetadata', apply, { once: true });
+        }
+      }
     }
-  }, [src, duration]);
+  }, [src, duration, initialTime]);
 
   const toggle = async () => {
     const audio = audioRef.current;

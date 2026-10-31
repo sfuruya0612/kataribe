@@ -106,4 +106,39 @@ describe('SettingsStore', () => {
       },
     });
   });
+
+  it('normalizes the save root and speaker diarization', () => {
+    expect(
+      normalizeAppSettings({
+        saveRoot: '/Users/test/Kataribe',
+        speakerDiarization: false,
+        globalShortcutEnabled: false,
+        whisperInitialPrompt: '  Kataribe, BlackHole  ',
+        whisperSpeedRatios: { small: 0.12, medium: 0.2, 'large-v3-turbo': 0.3 },
+        mp3BitrateKbps: 128,
+        summaryPromptTemplate: '  custom prompt  ',
+      }),
+    ).toMatchObject({
+      saveRoot: '/Users/test/Kataribe',
+      speakerDiarization: false,
+      globalShortcutEnabled: false,
+      whisperInitialPrompt: 'Kataribe, BlackHole',
+      whisperSpeedRatios: { small: 0.12, medium: 0.2, 'large-v3-turbo': 0.3 },
+      mp3BitrateKbps: 128,
+      summaryPromptTemplate: '  custom prompt  ',
+    });
+    expect(normalizeAppSettings({ saveRoot: 'relative/path' }).saveRoot).toBe('');
+    expect(
+      normalizeAppSettings({ speakerDiarization: 'yes' as never })
+        .speakerDiarization,
+    ).toBe(true);
+    expect(
+      normalizeAppSettings({ mp3BitrateKbps: 96 as never }).mp3BitrateKbps,
+    ).toBe(64);
+    expect(
+      normalizeAppSettings({
+        whisperSpeedRatios: { small: 0, medium: 99 },
+      }).whisperSpeedRatios,
+    ).toEqual({});
+  });
 });

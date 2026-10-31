@@ -1,9 +1,13 @@
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { access, mkdir, rm } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import {
   app,
   BrowserWindow,
   clipboard,
+  dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   nativeImage,
@@ -16,7 +20,7 @@ import {
   shell,
   systemPreferences,
 } from 'electron';
-import type { MenuItemConstructorOptions } from 'electron';
+import type { MenuItemConstructorOptions, MessageBoxOptions, OpenDialogOptions } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
@@ -37,17 +41,22 @@ import type {
   RecordingStartupFailure,
   RecordingStartupFailureResult,
   StartRecordingOptions,
+  SummaryLanguage,
   WhisperModel,
 } from '../shared/types';
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
+import { ChildProcessRegistry } from './child-registry';
 import { LlmClient } from './llm';
 import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
 import { ModelManager } from './models';
+import { MultiOutputController } from './multi-output';
 import { ProcessingCoordinator } from './processing';
+import { configureChildProcessRegistry } from './process';
 import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
+import { MeetingSearchIndex } from './search-index';
 import { SettingsStore } from './settings';
 import {
   isAllowedPermission,
@@ -69,6 +78,9 @@ let isQuitting = false;
 let shutdownInProgress = false;
 let stateTimer: NodeJS.Timeout | null = null;
 let processingCoordinator: ProcessingCoordinator | null = null;
+let activeMeetingIndex: MeetingSearchIndex | null = null;
+let meetingIndexRoot = '';
+let applyGlobalShortcutSettings: (() => void) | null = null;
 
 const electronFetch: typeof fetch = (input, init) => {
   const value =
@@ -83,6 +95,21 @@ const electronFetch: typeof fetch = (input, init) => {
 };
 
 app.setName('Kataribe');
+
+app.commandLine.appendSwitch('disable-background-networking');
+app.commandLine.appendSwitch('disable-component-update');
+app.commandLine.appendSwitch('disable-domain-reliability');
+app.commandLine.appendSwitch('disable-sync');
+app.commandLine.appendSwitch('disable-client-side-phishing-detection');
+app.commandLine.appendSwitch('disable-default-apps');
+app.commandLine.appendSwitch('metrics-recording-only');
+app.commandLine.appendSwitch('no-first-run');
+app.commandLine.appendSwitch('no-pings');
+app.commandLine.appendSwitch('disable-breakpad');
+app.commandLine.appendSwitch(
+  'disable-features',
+  'Spellcheck,SpellcheckService,OptimizationHints,MediaRouter,Translate',
+);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -141,6 +168,54 @@ async function broadcastModelList(modelManager: ModelManager): Promise<void> {
   }
 }
 
+async function refreshMeetingIndex(
+  meetingStore: MeetingStore,
+  meetingId: string,
+): Promise<void> {
+  if (!activeMeetingIndex) {
+    return;
+  }
+  try {
+    await activeMeetingIndex.refresh(meetingStore, meetingId);
+  } catch (error) {
+    console.error(
+      `failed to refresh the meeting index: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function showOpenDirectoryDialog(options: OpenDialogOptions) {
+  return mainWindow
+    ? dialog.showOpenDialog(mainWindow, options)
+    : dialog.showOpenDialog(options);
+}
+
+async function showMessageDialog(options: MessageBoxOptions) {
+  return mainWindow
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+}
+
+function cloudSyncService(path: string): string | null {
+  const value = path.toLowerCase();
+  if (value.includes('/library/mobile documents/')) {
+    return 'iCloud Drive';
+  }
+  if (value.includes('/dropbox/')) {
+    return 'Dropbox';
+  }
+  if (value.includes('/onedrive')) {
+    return 'OneDrive';
+  }
+  if (value.includes('/google drive') || value.includes('/googledrive')) {
+    return 'Google Drive';
+  }
+  if (value.includes('/obsidian')) {
+    return 'Obsidian の同期フォルダ';
+  }
+  return null;
+}
+
 const coordinator = new RecordingCoordinator(stateStore, sendRecordingCommand);
 
 function errorMessage(error: unknown): string {
@@ -149,6 +224,7 @@ function errorMessage(error: unknown): string {
 
 function configureSession(): void {
   const defaultSession = session.defaultSession;
+  defaultSession.setSpellCheckerEnabled(false);
 
   defaultSession.setPermissionCheckHandler((_webContents, permission, _origin, details) => {
     return isAllowedPermission(permission, details as unknown as PermissionDetails);
@@ -242,6 +318,7 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       backgroundThrottling: false,
+      spellcheck: false,
     },
   });
 
@@ -398,12 +475,13 @@ function registerIpc(
   processing: ProcessingCoordinator,
   modelManager: ModelManager,
   apiKeyStore: ApiKeyStore,
+  multiOutput: MultiOutputController,
 ): void {
   ipcMain.handle('app:info', (): AppInfo => {
     return {
       version: app.getVersion(),
       platform: process.platform,
-      saveRoot: join(app.getPath('documents'), 'Kataribe'),
+      saveRoot: settingsStore.get().saveRoot,
     };
   });
 
@@ -496,11 +574,237 @@ function registerIpc(
     if (typeof patch !== 'object' || patch === null) {
       throw new Error('invalid settings');
     }
-    const settings = await settingsStore.save(patch as Partial<AppSettings>);
+    const { saveRoot: _ignoredSaveRoot, ...safePatch } = patch as Partial<AppSettings>;
+    const settings = await settingsStore.save(safePatch);
     stateStore.setInputSource(settings.inputSource);
     stateStore.setClippingConfig(settings.clippingConfig);
     stateStore.setSilenceConfig(settings.silenceConfig);
+    applyGlobalShortcutSettings?.();
     return settings;
+  });
+
+  ipcMain.handle('save-root:choose', async () => {
+    const recordingStatus = stateStore.getStatus();
+    if (
+      recordingStatus === 'starting' ||
+      recordingStatus === 'recording' ||
+      recordingStatus === 'stopping' ||
+      processing.isBusy()
+    ) {
+      throw new Error('録音または処理中は保存先を変更できません。');
+    }
+    const settings = settingsStore.get();
+    const options: OpenDialogOptions = {
+      title: '保存先フォルダを選択',
+      defaultPath: settings.saveRoot,
+      properties: ['openDirectory', 'createDirectory'],
+    };
+    const result = await showOpenDirectoryDialog(options);
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    const selected = resolve(result.filePaths[0]);
+    await mkdir(selected, { recursive: true, mode: 0o700 });
+    await access(selected, fsConstants.W_OK);
+    const confirmation = await showMessageDialog({
+      type: 'warning',
+      title: '保存先を変更',
+      message: '既存の会議は新しい保存先の一覧に表示されません。',
+      detail: `${cloudSyncService(selected) ? `選択したフォルダは ${cloudSyncService(selected)} の同期対象です。音声と文字起こしが端末外に同期されます。\n\n` : ''}会議フォルダは移動しません。元のフォルダは Finder から引き続き参照できます。保存先を変更しますか？`,
+      buttons: ['変更', 'キャンセル'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (confirmation.response !== 0) {
+      return null;
+    }
+    const saved = await settingsStore.save({ saveRoot: selected });
+    meetingStore.setSaveRoot(selected);
+    recordingManager.setSaveRoot(selected);
+    if (activeMeetingIndex) {
+      activeMeetingIndex.close();
+      activeMeetingIndex = null;
+    }
+    try {
+      activeMeetingIndex = await MeetingSearchIndex.open(meetingIndexRoot, selected);
+      await activeMeetingIndex.rebuild(meetingStore);
+    } catch (error) {
+      activeMeetingIndex?.close();
+      activeMeetingIndex = null;
+      console.error(
+        `failed to build the meeting search index: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return {
+      settings: saved,
+      info: {
+        version: app.getVersion(),
+        platform: process.platform,
+        saveRoot: selected,
+      },
+    };
+  });
+
+  ipcMain.handle('meetings:update-title', async (_event, meetingId: string, title: string) => {
+    if (processing.isBusy()) {
+      throw new Error('処理中はタイトルを変更できません。');
+    }
+    const status = stateStore.getStatus();
+    if (status === 'starting' || status === 'recording' || status === 'stopping') {
+      throw new Error('録音中はタイトルを変更できません。');
+    }
+    const updated = await meetingStore.updateTitle(meetingId, String(title));
+    await refreshMeetingIndex(meetingStore, meetingId);
+    broadcast('meetings:updated', { meetingId });
+    return updated;
+  });
+
+  ipcMain.handle('meetings:search', (_event, query: string) => {
+    const index = activeMeetingIndex;
+    return index?.isReady() ? index.search(String(query)) : meetingStore.search(String(query));
+  });
+
+  ipcMain.handle(
+    'meetings:set-pinned',
+    async (_event, meetingId: string, pinned: boolean) => {
+      const updated = await meetingStore.setPinned(meetingId, pinned === true);
+      await refreshMeetingIndex(meetingStore, meetingId);
+      broadcast('meetings:updated', { meetingId });
+      return updated;
+    },
+  );
+
+  ipcMain.handle('meetings:delete', async (_event, meetingId: string) => {
+    const status = stateStore.getStatus();
+    if (
+      status === 'starting' ||
+      status === 'recording' ||
+      status === 'stopping' ||
+      processing.isBusy()
+    ) {
+      throw new Error('録音または処理中は会議を削除できません。');
+    }
+    await meetingStore.delete(meetingId);
+    await rm(join(app.getPath('userData'), 'tmp', meetingId), {
+      recursive: true,
+      force: true,
+    }).catch(() => undefined);
+    await refreshMeetingIndex(meetingStore, meetingId);
+    const list = activeMeetingIndex?.isReady()
+      ? activeMeetingIndex.list()
+      : await meetingStore.list();
+    broadcast('meetings:changed', list);
+  });
+
+  ipcMain.handle('meetings:import-audio', async () => {
+    const status = stateStore.getStatus();
+    if (
+      status === 'starting' ||
+      status === 'recording' ||
+      status === 'stopping' ||
+      processing.isBusy()
+    ) {
+      throw new Error('録音または処理中は音声を取り込めません。');
+    }
+    const options: OpenDialogOptions = {
+      title: '文字起こしする音声ファイルを選択',
+      properties: ['openFile'],
+      filters: [
+        { name: '音声ファイル', extensions: ['mp3', 'wav'] },
+      ],
+    };
+    const result = await showOpenDirectoryDialog(options);
+    if (result.canceled || result.filePaths.length === 0) {
+      return null;
+    }
+    const meeting = await meetingStore.importAudio(
+      result.filePaths[0],
+      app.getVersion(),
+    );
+    await refreshMeetingIndex(meetingStore, meeting.id);
+    broadcast('meetings:updated', { meetingId: meeting.id });
+    void processing.requestTranscription(meeting.id).catch((error: unknown) => {
+      console.error(
+        `failed to start imported audio transcription: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    return meeting;
+  });
+
+  ipcMain.handle(
+    'meetings:set-summary-language',
+    async (_event, meetingId: string, language: SummaryLanguage | null) => {
+      const updated = await meetingStore.setSummaryLanguage(meetingId, language);
+      await refreshMeetingIndex(meetingStore, meetingId);
+      broadcast('meetings:updated', { meetingId });
+      return updated;
+    },
+  );
+
+  ipcMain.handle(
+    'translation:preview',
+    (_event, meetingId: string, targetLanguage: SummaryLanguage) => {
+      return processing.createTranslationPreview(meetingId, targetLanguage);
+    },
+  );
+
+  ipcMain.handle('translation:generate', (_event, meetingId: string, token: string) => {
+    return processing.generateTranslation(meetingId, token);
+  });
+
+  ipcMain.handle('multi-output:status', () => multiOutput.status());
+
+  ipcMain.handle('multi-output:create', async (_event, outputUid: string) => {
+    const status = stateStore.getStatus();
+    if (
+      status === 'starting' ||
+      status === 'recording' ||
+      status === 'stopping' ||
+      processing.isBusy()
+    ) {
+      throw new Error('録音または処理中は Multi-Output Device を作成できません。');
+    }
+    const current = await multiOutput.status();
+    if (!current.helperAvailable) {
+      throw new Error(current.error ?? 'Multi-Output helper is not available');
+    }
+    const output = current.outputDevices.find((device) => device.uid === outputUid);
+    if (!output) {
+      throw new Error('出力デバイスが見つかりません。');
+    }
+    const blackHole = current.outputDevices.find((device) =>
+      device.name.toLowerCase().includes('blackhole'),
+    );
+    const confirmation = await showMessageDialog({
+      type: 'warning',
+      title: 'Multi-Output Device を自動作成',
+      message: 'macOS の音声出力を変更します。',
+      detail: `${output.name} と ${blackHole?.name ?? 'BlackHole 2ch'} を含む「Kataribe Multi-Output」を作成し、既定の出力に設定します。音量キーが効かなくなる場合があります。`,
+      buttons: ['作成', 'キャンセル'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (confirmation.response !== 0) {
+      return null;
+    }
+    return multiOutput.create(outputUid);
+  });
+
+  ipcMain.handle('multi-output:remove', async () => {
+    const confirmation = await showMessageDialog({
+      type: 'warning',
+      title: 'Multi-Output Device を削除',
+      message: 'Kataribe Multi-Output を削除しますか？',
+      detail:
+        'macOS の出力が Kataribe Multi-Output の場合は、削除後に別の出力デバイスを選び直してください。',
+      buttons: ['削除', 'キャンセル'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (confirmation.response !== 0) {
+      return null;
+    }
+    return multiOutput.remove();
   });
 
   ipcMain.handle('processing:get-state', () => processing.getState());
@@ -590,7 +894,34 @@ function registerIpc(
     clipboard.writeText(String(text));
   });
 
-  ipcMain.handle('meetings:list', () => meetingStore.list());
+  ipcMain.handle('meetings:list', () => {
+    const index = activeMeetingIndex;
+    return index?.isReady() ? index.list() : meetingStore.list();
+  });
+
+  ipcMain.handle('index:rebuild', async () => {
+    const status = stateStore.getStatus();
+    if (
+      status === 'starting' ||
+      status === 'recording' ||
+      status === 'stopping' ||
+      processing.isBusy()
+    ) {
+      throw new Error('録音または処理中は索引を再構築できません。');
+    }
+    if (activeMeetingIndex) {
+      activeMeetingIndex.close();
+      activeMeetingIndex = null;
+    }
+    activeMeetingIndex = await MeetingSearchIndex.open(
+      meetingIndexRoot,
+      meetingStore.getSaveRoot(),
+    );
+    await activeMeetingIndex.rebuild(meetingStore);
+    const list = activeMeetingIndex.list();
+    broadcast('meetings:changed', list);
+    return list;
+  });
 
   ipcMain.handle('meetings:waveform', (_event, meetingId: string) => {
     return meetingStore.waveform(meetingId);
@@ -618,6 +949,8 @@ function registerIpc(
         silenceConfig: state.silenceConfig,
       });
       stateStore.markRecording(created);
+      await refreshMeetingIndex(meetingStore, created.meetingId);
+      broadcast('meetings:updated', { meetingId: created.meetingId });
       return created;
     } catch (error) {
       stateStore.markError(errorMessage(error));
@@ -652,6 +985,8 @@ function registerIpc(
     try {
       const result = await recordingManager.stop(stats);
       stateStore.markStopped(result);
+      await refreshMeetingIndex(meetingStore, result.meetingId);
+      broadcast('meetings:updated', { meetingId: result.meetingId });
       void processing
         .resumeAfterRecording(result.meetingId)
         .catch((error: unknown) => {
@@ -674,6 +1009,8 @@ function registerIpc(
     try {
       const result = await recordingManager.recover(meetingId);
       stateStore.markRecovered(result);
+      await refreshMeetingIndex(meetingStore, result.meetingId);
+      broadcast('meetings:updated', { meetingId: result.meetingId });
       void processing
         .resumeAfterRecording(result.meetingId)
         .catch((error: unknown) => {
@@ -813,6 +1150,8 @@ function registerIpc(
         payload.event,
       );
       stateStore.markStartupFailure(payload.event, failure.meetingDir);
+      await refreshMeetingIndex(meetingStore, failure.meetingId);
+      broadcast('meetings:updated', { meetingId: failure.meetingId });
       void processing.resumeAfterRecording(null);
       return failure;
     },
@@ -881,6 +1220,9 @@ if (!app.requestSingleInstanceLock()) {
     }
     trayController?.destroy();
     trayController = null;
+    globalShortcut.unregisterAll();
+    activeMeetingIndex?.close();
+    activeMeetingIndex = null;
     const coordinator = processingCoordinator;
     processingCoordinator = null;
     if (coordinator) {
@@ -902,12 +1244,21 @@ if (!app.requestSingleInstanceLock()) {
     registerAppMenu();
     applyDockIcon();
 
-    const saveRoot = join(app.getPath('documents'), 'Kataribe');
-    const meetingStore = new MeetingStore(saveRoot);
+    const defaultSaveRoot = join(app.getPath('documents'), 'Kataribe');
     const settingsStore = new SettingsStore(
       join(app.getPath('userData'), 'settings.json'),
     );
-    const storedSettings = await settingsStore.load();
+    let storedSettings = await settingsStore.load();
+    if (!storedSettings.saveRoot) {
+      storedSettings = await settingsStore.save({ saveRoot: defaultSaveRoot });
+    }
+    const saveRoot = storedSettings.saveRoot;
+    const meetingStore = new MeetingStore(saveRoot);
+    const childRegistry = new ChildProcessRegistry(
+      join(app.getPath('userData'), 'tmp', 'children'),
+    );
+    await childRegistry.cleanupOrphaned();
+    configureChildProcessRegistry(childRegistry);
     stateStore.setInputSource(storedSettings.inputSource);
     stateStore.setClippingConfig(storedSettings.clippingConfig);
     stateStore.setSilenceConfig(storedSettings.silenceConfig);
@@ -946,6 +1297,7 @@ if (!app.requestSingleInstanceLock()) {
     const mediaEncoder = new MediaEncoder({ locator });
     const transcriptionService = new TranscriptionService({ locator });
     const llmClient = new LlmClient({ fetch: electronFetch });
+    const multiOutput = new MultiOutputController({ locator });
     const processing = new ProcessingCoordinator({
       tempRoot: join(app.getPath('userData'), 'tmp'),
       meetingStore,
@@ -959,11 +1311,67 @@ if (!app.requestSingleInstanceLock()) {
         broadcast('processing:state', state);
       },
       onMeetingUpdated: (meetingId) => {
-        broadcast('meetings:updated', { meetingId });
+        void refreshMeetingIndex(meetingStore, meetingId).finally(() => {
+          broadcast('meetings:updated', { meetingId });
+        });
+      },
+      onSpeedRatioMeasured: async (model, ratio) => {
+        const current = settingsStore.get();
+        await settingsStore.save({
+          whisperSpeedRatios: {
+            ...current.whisperSpeedRatios,
+            [model]: ratio,
+          },
+        });
+      },
+      confirmContinue: async (message, detail) => {
+        const result = await showMessageDialog({
+          type: 'question',
+          title: '文字起こしの継続確認',
+          message,
+          detail,
+          buttons: ['継続', '停止'],
+          defaultId: 0,
+          cancelId: 1,
+        });
+        return result.response === 0;
       },
     });
     processingCoordinator = processing;
     await processing.markInterruptedMeetings();
+    meetingIndexRoot = join(app.getPath('userData'), 'index');
+    try {
+      activeMeetingIndex = await MeetingSearchIndex.open(meetingIndexRoot, saveRoot);
+      await activeMeetingIndex.rebuild(meetingStore);
+    } catch (error) {
+      activeMeetingIndex?.close();
+      activeMeetingIndex = null;
+      console.error(
+        `failed to build the meeting search index: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    const accelerator = 'CommandOrControl+Shift+R';
+    applyGlobalShortcutSettings = () => {
+      globalShortcut.unregister(accelerator);
+      if (!settingsStore.get().globalShortcutEnabled) {
+        return;
+      }
+      const registered = globalShortcut.register(accelerator, () => {
+        const wasRecording = stateStore.canStop();
+        if (!wasRecording) {
+          processingCoordinator?.pauseForRecording();
+        }
+        const result = coordinator.toggle();
+        if (!result.accepted && !wasRecording) {
+          void processingCoordinator?.resumeAfterRecording(null);
+        }
+      });
+      if (!registered) {
+        console.warn(`global shortcut is already in use: ${accelerator}`);
+      }
+    };
+    applyGlobalShortcutSettings();
 
     const recordingManager = new RecordingManager({
       saveRoot,
@@ -990,6 +1398,7 @@ if (!app.requestSingleInstanceLock()) {
       processing,
       modelManager,
       apiKeyStore,
+      multiOutput,
     );
 
     let suspendedAt: number | null = null;

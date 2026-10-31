@@ -3,8 +3,9 @@ import type {
   MeetingDetail as MeetingDetailData,
   MeetingSummary,
   ProcessingState,
+  SummaryLanguage,
   SummaryPreview,
-  TranscriptDocument,
+  TranslationPreview,
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
 import {
@@ -21,6 +22,12 @@ type DetailTab = 'transcript' | 'summary';
 type MeetingDetailProps = {
   meeting: MeetingSummary | null;
   processing: ProcessingState;
+  defaultSummaryLanguage: SummaryLanguage;
+  whisperModel: 'large-v3-turbo' | 'medium' | 'small';
+  initialSeekSeconds: number | null;
+  onUpdateSettings: (patch: {
+    whisperModel?: 'large-v3-turbo' | 'medium' | 'small';
+  }) => Promise<void>;
   onBack: () => void;
   onOpenFolder: () => void;
   onOpenSettings: () => void;
@@ -34,6 +41,8 @@ function progressLabel(processing: ProcessingState): string {
       return '音声を変換しています';
     case 'transcribing':
       return '文字起こしをしています';
+    case 'translating':
+      return '翻訳しています';
     case 'summarizing':
       return '要約を生成しています';
     default:
@@ -44,6 +53,10 @@ function progressLabel(processing: ProcessingState): string {
 export function MeetingDetail({
   meeting,
   processing,
+  defaultSummaryLanguage,
+  whisperModel,
+  initialSeekSeconds,
+  onUpdateSettings,
   onBack,
   onOpenFolder,
   onOpenSettings,
@@ -64,9 +77,20 @@ export function MeetingDetail({
   const [preview, setPreview] = useState<SummaryPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
+  const [translationPreview, setTranslationPreview] =
+    useState<TranslationPreview | null>(null);
+  const [translationBusy, setTranslationBusy] = useState(false);
+  const [transcriptLanguage, setTranscriptLanguage] = useState<
+    'source' | SummaryLanguage
+  >('source');
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [titleSaving, setTitleSaving] = useState(false);
   const previewRef = useRef<SummaryPreview | null>(null);
+  const translationPreviewRef = useRef<TranslationPreview | null>(null);
 
   previewRef.current = preview;
+  translationPreviewRef.current = translationPreview;
 
   const meetingId = meeting?.id ?? null;
 
@@ -92,6 +116,9 @@ export function MeetingDetail({
     setEditing(false);
     setSummaryEditing(false);
     setPreview(null);
+    setTranslationPreview(null);
+    setTranscriptLanguage('source');
+    setTitleEditing(false);
     setError(null);
     setNotice(null);
     setPeaks([]);
@@ -159,15 +186,25 @@ export function MeetingDetail({
   const current = detail?.meeting ?? meeting;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
+  const translations = detail?.translations ?? {};
+  const displayedTranslation =
+    transcriptLanguage === 'source' ? null : translations[transcriptLanguage] ?? null;
   const activeHere = processing.meetingId === meeting.id && processing.stage !== null;
   const processingError =
     processing.meetingId === meeting.id ? processing.error : null;
   const progressPercent =
     processing.progress !== null ? Math.round(processing.progress * 100) : null;
+  const sourceLanguage = transcript?.language ?? 'auto';
+  const translationCandidates: SummaryLanguage[] = [
+    ...(sourceLanguage.startsWith('ja') ? [] : (['ja'] as SummaryLanguage[])),
+    ...(sourceLanguage.startsWith('en') ? [] : (['en'] as SummaryLanguage[])),
+  ];
 
   const copyCurrent = async () => {
     const text =
-      tab === 'transcript' ? transcript?.markdown ?? '' : summary?.markdown ?? '';
+      tab === 'transcript'
+        ? displayedTranslation?.markdown ?? transcript?.markdown ?? ''
+        : summary?.markdown ?? '';
     if (!text) {
       return;
     }
@@ -188,6 +225,63 @@ export function MeetingDetail({
       setNotice('要約をコピーしました。');
     } catch (reason: unknown) {
       setError(`コピーできませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const startTitleEditing = () => {
+    setTitleDraft(current.title);
+    setTitleEditing(true);
+  };
+
+  const saveTitle = async () => {
+    setTitleSaving(true);
+    try {
+      await window.kataribe.updateMeetingTitle(meeting.id, titleDraft);
+      setTitleEditing(false);
+      setNotice('タイトルを変更しました。');
+      await load();
+    } catch (reason: unknown) {
+      setError(`タイトルを変更できませんでした: ${errorText(reason)}`);
+    } finally {
+      setTitleSaving(false);
+    }
+  };
+
+  const smallerModel =
+    whisperModel === 'large-v3-turbo'
+      ? 'medium'
+      : whisperModel === 'medium'
+        ? 'small'
+        : null;
+
+  const retryWithSmallerModel = async () => {
+    if (!smallerModel) {
+      return;
+    }
+    try {
+      await onUpdateSettings({ whisperModel: smallerModel });
+      await window.kataribe.retryTranscription(meeting.id);
+      setNotice(`${smallerModel} で文字起こしを開始しました。`);
+      setError(null);
+      await load();
+    } catch (reason: unknown) {
+      setError(`文字起こしを開始できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const saveSummaryLanguage = async (value: string) => {
+    try {
+      const language =
+        value === 'ja' || value === 'en' ? value : null;
+      await window.kataribe.setMeetingSummaryLanguage(meeting.id, language);
+      setNotice(
+        language
+          ? `この会議の要約言語を${language === 'ja' ? '日本語' : 'English'}に変更しました。`
+          : '要約言語をアプリの既定に戻しました。',
+      );
+      await load();
+    } catch (reason: unknown) {
+      setError(`要約言語を変更できませんでした: ${errorText(reason)}`);
     }
   };
 
@@ -238,6 +332,48 @@ export function MeetingDetail({
       setError(`要約を保存できませんでした: ${errorText(reason)}`);
     } finally {
       setSummarySaving(false);
+    }
+  };
+
+  const openTranslationPreview = async (targetLanguage: SummaryLanguage) => {
+    if (!transcript || processing.stage !== null) {
+      return;
+    }
+    setTranslationBusy(true);
+    setError(null);
+    try {
+      const value = await window.kataribe.previewTranslation(
+        meeting.id,
+        targetLanguage,
+      );
+      setTranslationPreview(value);
+    } catch (reason: unknown) {
+      setError(errorText(reason));
+      } finally {
+      setTranslationBusy(false);
+    }
+  };
+
+  const generateTranslation = async () => {
+    const currentPreview = translationPreviewRef.current;
+    if (!currentPreview) {
+      return;
+    }
+    setTranslationBusy(true);
+    setError(null);
+    try {
+      await window.kataribe.generateTranslation(
+        meeting.id,
+        currentPreview.token,
+      );
+      setTranslationPreview(null);
+      setTranscriptLanguage(currentPreview.targetLanguage);
+      setNotice('翻訳を生成しました。');
+      await load();
+    } catch (reason: unknown) {
+      setError(errorText(reason));
+    } finally {
+      setTranslationBusy(false);
     }
   };
 
@@ -297,7 +433,7 @@ export function MeetingDetail({
     }
   };
 
-  const renderTranscript = (value: TranscriptDocument) => {
+  const renderTranscript = (value: { body: string }) => {
     const lines = value.body.trim().split('\n');
     if (lines.length === 0 || (lines.length === 1 && lines[0] === '')) {
       return <p className="muted">文字起こしの本文が空です。</p>;
@@ -353,7 +489,53 @@ export function MeetingDetail({
 
       <div className="detail-head">
         <div className="detail-title-row">
-          <h1 className="detail-title">{current.title}</h1>
+          {titleEditing ? (
+            <>
+              <input
+                className="setting-input detail-title-input"
+                value={titleDraft}
+                maxLength={120}
+                autoFocus
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    void saveTitle();
+                  }
+                  if (event.key === 'Escape') {
+                    setTitleEditing(false);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="link-button"
+                disabled={titleSaving}
+                onClick={() => void saveTitle()}
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                className="link-button"
+                disabled={titleSaving}
+                onClick={() => setTitleEditing(false)}
+              >
+                キャンセル
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="detail-title">{current.title}</h1>
+              <button
+                type="button"
+                className="link-button"
+                disabled={processing.stage !== null}
+                onClick={startTitleEditing}
+              >
+                タイトルを編集
+              </button>
+            </>
+          )}
           <span className={`status-chip ${meetingStatusClass(current.status)}`}>
             {meetingStatusLabel(current.status)}
           </span>
@@ -368,6 +550,7 @@ export function MeetingDetail({
             src={current.audioUrl}
             peaks={peaks}
             duration={current.duration}
+            initialTime={initialSeekSeconds}
           />
           <button type="button" className="button button-secondary" onClick={onOpenFolder}>
             Finder で開く
@@ -436,6 +619,40 @@ export function MeetingDetail({
               </button>
             </div>
             <span className="detail-toolbar-spacer" />
+            {tab === 'transcript' && Object.keys(translations).length > 0 ? (
+              <select
+                className="setting-input transcript-language-select"
+                value={transcriptLanguage}
+                onChange={(event) =>
+                  setTranscriptLanguage(
+                    event.target.value as 'source' | SummaryLanguage,
+                  )
+                }
+              >
+                <option value="source">原文</option>
+                {translations.ja ? <option value="ja">日本語訳</option> : null}
+                {translations.en ? <option value="en">English 訳</option> : null}
+              </select>
+            ) : null}
+            {tab === 'transcript' && transcript
+              ? translationCandidates.map((target) => (
+                  <button
+                    type="button"
+                    className="link-button"
+                    key={target}
+                    disabled={processing.stage !== null || translationBusy}
+                    onClick={() => void openTranslationPreview(target)}
+                  >
+                    {translations[target]
+                      ? target === 'ja'
+                        ? '日本語訳を再生成'
+                        : 'English 訳を再生成'
+                      : target === 'ja'
+                        ? '日本語訳'
+                        : 'English 訳'}
+                  </button>
+                ))
+              : null}
             {tab === 'transcript' ? (
               editing ? (
                 <>
@@ -460,7 +677,7 @@ export function MeetingDetail({
                 <button
                   type="button"
                   className="link-button"
-                  disabled={!transcript}
+                  disabled={!transcript || Boolean(displayedTranslation) || processing.stage !== null}
                   onClick={startEditing}
                 >
                   編集
@@ -489,7 +706,7 @@ export function MeetingDetail({
               <button
                 type="button"
                 className="link-button"
-                disabled={!summary}
+                disabled={!summary || processing.stage !== null}
                 onClick={startSummaryEditing}
               >
                 編集
@@ -511,12 +728,24 @@ export function MeetingDetail({
               />
             ) : transcript ? (
               <div className="transcript-scroll">
-                {transcript.partial ? (
+                {(displayedTranslation?.partial ?? transcript.partial) ? (
                   <p className="alert alert-warning">
-                    部分的な文字起こしです。完了していない可能性があります。
+                    {displayedTranslation
+                      ? '部分的な翻訳です。原文と対応していない行があります。'
+                      : '部分的な文字起こしです。完了していない可能性があります。'}
                   </p>
                 ) : null}
-                {renderTranscript(transcript)}
+                {displayedTranslation ? (
+                  <p className="transcript-translation-note">
+                    {displayedTranslation.language === 'ja'
+                      ? '日本語訳'
+                      : 'English translation'}
+                    {displayedTranslation.provider
+                      ? ` · ${displayedTranslation.provider}`
+                      : ''}
+                  </p>
+                ) : null}
+                {renderTranscript(displayedTranslation ?? transcript)}
               </div>
             ) : (
               <div className="transcript-empty">
@@ -526,13 +755,24 @@ export function MeetingDetail({
                   モデルが未取得の場合は、設定画面からダウンロードしてください。
                 </p>
                 {!activeHere ? (
-                  <button
-                    type="button"
-                    className="button button-secondary"
-                    onClick={() => void retryTranscription()}
-                  >
-                    文字起こしを開始
-                  </button>
+                  <div className="setting-actions">
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      onClick={() => void retryTranscription()}
+                    >
+                      文字起こしを開始
+                    </button>
+                    {smallerModel ? (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        onClick={() => void retryWithSmallerModel()}
+                      >
+                        {smallerModel} で再実行
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             )
@@ -562,6 +802,16 @@ export function MeetingDetail({
         <aside className="summary-pane" aria-labelledby="summary-title">
           <div className="summary-head">
             <h2 id="summary-title">要約</h2>
+            <select
+              className="setting-input summary-language-select"
+              aria-label="この会議の要約言語"
+              value={current.summaryLanguage ?? ''}
+              onChange={(event) => void saveSummaryLanguage(event.target.value)}
+            >
+              <option value="">既定（{defaultSummaryLanguage === 'ja' ? '日本語' : 'English'}）</option>
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
             <button
               type="button"
               className="link-button"
@@ -641,7 +891,7 @@ export function MeetingDetail({
             ) : null}
             <p className="muted">
               音声ファイルと会議のメタデータは送信しません。個人名や社名のマスクは行いません。
-              送信先でのデータの扱いはプロバイダの規約に従います。
+              概算料金はプロバイダの料金表を確認してください。送信先でのデータの扱いはプロバイダの規約に従います。
             </p>
             <pre className="confirm-content">{preview.text}</pre>
             <div className="confirm-actions">
@@ -660,6 +910,95 @@ export function MeetingDetail({
                 onClick={() => void generateSummary()}
               >
                 {summaryBusy ? '送信中...' : '送信して要約'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {translationPreview ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="translation-confirm-title"
+        >
+          <div className="confirm-dialog">
+            <div className="confirm-head">
+              <div>
+                <p className="section-label">Translate</p>
+                <h2 id="translation-confirm-title">翻訳の送信内容の確認</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="閉じる"
+                disabled={translationBusy}
+                onClick={() => setTranslationPreview(null)}
+              >
+                ×
+              </button>
+            </div>
+            <dl className="confirm-meta">
+              <div>
+                <dt>翻訳</dt>
+                <dd>
+                  {translationPreview.sourceLanguage} →{' '}
+                  {translationPreview.targetLanguage === 'ja'
+                    ? '日本語'
+                    : 'English'}
+                </dd>
+              </div>
+              <div>
+                <dt>送信先</dt>
+                <dd className="mono">
+                  {translationPreview.providerLabel} · {translationPreview.model}
+                </dd>
+              </div>
+              <div>
+                <dt>エンドポイント</dt>
+                <dd className="mono confirm-endpoint">
+                  {translationPreview.endpoint}
+                </dd>
+              </div>
+              <div>
+                <dt>文字数</dt>
+                <dd>
+                  {translationPreview.charCount.toLocaleString('ja-JP')} 文字
+                </dd>
+              </div>
+              <div>
+                <dt>概算トークン</dt>
+                <dd>
+                  約 {translationPreview.estimatedTokens.toLocaleString('ja-JP')}{' '}
+                  tokens
+                </dd>
+              </div>
+            </dl>
+            {translationPreview.warning ? (
+              <p className="alert alert-warning">{translationPreview.warning}</p>
+            ) : null}
+            <p className="muted">
+              音声ファイルと会議のメタデータは送信しません。原文のタイムスタンプを保って翻訳します。
+              翻訳の品質と料金はプロバイダとモデルに依存します。
+            </p>
+            <pre className="confirm-content">{translationPreview.text}</pre>
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={translationBusy}
+                onClick={() => setTranslationPreview(null)}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={translationBusy}
+                onClick={() => void generateTranslation()}
+              >
+                {translationBusy ? '送信中...' : '送信して翻訳'}
               </button>
             </div>
           </div>

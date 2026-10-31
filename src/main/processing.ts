@@ -18,6 +18,8 @@ import {
 import {
   formatSummaryMarkdown,
   formatTranscriptMarkdown,
+  formatTranslationMarkdown,
+  parseFrontMatter,
   type TranscriptSegment,
 } from '../shared/markdown';
 import type {
@@ -27,8 +29,13 @@ import type {
   MeetingDetail,
   ProcessingState,
   SummaryPreview,
+  SummaryLanguage,
+  TranslationPreview,
+  TranslationResult,
 } from '../shared/types';
+import { sanitizeMeetingTitle } from '../shared/title';
 import type { ApiKeyStore } from './api-keys';
+import { diarizeSegments } from './diarization';
 import type { LlmClient } from './llm';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
 import {
@@ -39,7 +46,9 @@ import {
 import type { MeetingStore } from './meetings';
 import type { ModelManager } from './models';
 import { generateSummary } from './summary';
+import { generateMeetingTitle } from './summary';
 import type { TranscriptionOutcome, TranscriptionService } from './transcription';
+import { translateTranscript } from './translation';
 import { readWavInfo } from './wav';
 
 export type ProcessingCoordinatorOptions = {
@@ -54,6 +63,11 @@ export type ProcessingCoordinatorOptions = {
   now?: () => Date;
   onStateChange: (state: ProcessingState) => void;
   onMeetingUpdated: (meetingId: string) => void;
+  onSpeedRatioMeasured?: (
+    model: AppSettings['whisperModel'],
+    ratio: number,
+  ) => Promise<void> | void;
+  confirmContinue?: (message: string, detail: string) => Promise<boolean>;
 };
 
 type PreviewToken = {
@@ -67,6 +81,19 @@ type PreviewToken = {
   model: string;
   kind: 'openai' | 'anthropic';
   language: AppSettings['summaryLanguage'];
+};
+
+type TranslationToken = {
+  meetingId: string;
+  targetLanguage: SummaryLanguage;
+  sourceLanguage: string;
+  contentHash: string;
+  expiresAt: number;
+  provider: AppSettings['llmProvider'];
+  baseUrl: string;
+  endpoint: string;
+  model: string;
+  kind: 'openai' | 'anthropic';
 };
 
 type ActiveTask = {
@@ -171,7 +198,16 @@ export class ProcessingCoordinator {
   private readonly now: () => Date;
   private readonly onStateChange: (state: ProcessingState) => void;
   private readonly onMeetingUpdated: (meetingId: string) => void;
+  private readonly onSpeedRatioMeasured?: (
+    model: AppSettings['whisperModel'],
+    ratio: number,
+  ) => Promise<void> | void;
+  private readonly confirmContinue?: (
+    message: string,
+    detail: string,
+  ) => Promise<boolean>;
   private readonly previewTokens = new Map<string, PreviewToken>();
+  private readonly translationTokens = new Map<string, TranslationToken>();
   private queue: Promise<void> = Promise.resolve();
   private active: ActiveTask | null = null;
   private queued = new Set<string>();
@@ -191,6 +227,8 @@ export class ProcessingCoordinator {
     this.now = options.now ?? (() => new Date());
     this.onStateChange = options.onStateChange;
     this.onMeetingUpdated = options.onMeetingUpdated;
+    this.onSpeedRatioMeasured = options.onSpeedRatioMeasured;
+    this.confirmContinue = options.confirmContinue;
   }
 
   getState(): ProcessingState {
@@ -349,7 +387,8 @@ export class ProcessingCoordinator {
     const hash = createHash('sha256').update(transcript, 'utf8').digest('hex');
     const token = randomUUID();
     const now = this.now().getTime();
-    const language = this.settings().summaryLanguage;
+    const language =
+      detail.meeting.summaryLanguage ?? this.settings().summaryLanguage;
     this.previewTokens.set(token, {
       meetingId,
       contentHash: hash,
@@ -462,6 +501,7 @@ export class ProcessingCoordinator {
         apiKey,
         model: config.model,
         signal: controller.signal,
+        systemPromptOverride: this.settings().summaryPromptTemplate,
         onProgress: (message, progress) => {
           this.setState({
             ...this.state,
@@ -472,6 +512,14 @@ export class ProcessingCoordinator {
         },
       });
 
+      const summaryPath = join(detail.meeting.meetingDir, 'summary.md');
+      let extraFields = {};
+      if (await exists(summaryPath)) {
+        const existing = parseFrontMatter(await readFile(summaryPath, 'utf8'));
+        extraFields = existing.frontMatter;
+        const previousPath = join(detail.meeting.meetingDir, 'summary.previous.md');
+        await writePrivateText(previousPath, await readFile(summaryPath, 'utf8'));
+      }
       const summaryMarkdown = formatSummaryMarkdown({
         title: detail.meeting.title,
         date: dateOnly(detail.meeting.startedAt),
@@ -480,12 +528,8 @@ export class ProcessingCoordinator {
         generatedAt: this.now().toISOString(),
         language: config.language,
         body: generated.body,
+        extraFields,
       });
-      const summaryPath = join(detail.meeting.meetingDir, 'summary.md');
-      if (await exists(summaryPath)) {
-        const previousPath = join(detail.meeting.meetingDir, 'summary.previous.md');
-        await writePrivateText(previousPath, await readFile(summaryPath, 'utf8'));
-      }
       await writePrivateText(summaryPath, summaryMarkdown);
       await updateMeetingMeta(metaPath, (meta) => {
         meta.status = 'summarized';
@@ -503,7 +547,35 @@ export class ProcessingCoordinator {
         };
       });
 
-      const meeting = (await this.meetingStore.find(meetingId)) ?? detail.meeting;
+      let meeting = (await this.meetingStore.find(meetingId)) ?? detail.meeting;
+      if (meeting.title === 'タイトル未入力') {
+        try {
+          const generatedTitle = await generateMeetingTitle({
+            client: this.llmClient,
+            transcriptBody: body,
+            language: config.language,
+            kind: config.kind,
+            endpoint: config.endpoint,
+            apiKey,
+            model: config.model,
+            signal: controller.signal,
+          });
+          generated.usage.inputTokens =
+            (generated.usage.inputTokens ?? 0) +
+            (generatedTitle.inputTokens ?? 0);
+          generated.usage.outputTokens =
+            (generated.usage.outputTokens ?? 0) +
+            (generatedTitle.outputTokens ?? 0);
+          const title = sanitizeMeetingTitle(generatedTitle.title);
+          if (title && title !== 'タイトル未入力') {
+            meeting = await this.meetingStore.updateTitle(meetingId, title);
+          }
+        } catch (error) {
+          console.error(
+            `failed to generate meeting title: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       const summary = await this.meetingStore.readSummary(meeting);
       if (!summary) {
         throw new Error('summary.md の読み込みに失敗しました。');
@@ -546,7 +618,246 @@ export class ProcessingCoordinator {
     }
   }
 
+  async createTranslationPreview(
+    meetingId: string,
+    targetLanguage: SummaryLanguage,
+  ): Promise<TranslationPreview> {
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail?.transcript?.body.trim()) {
+      throw new Error('文字起こしがありません。先に文字起こしを完了してください。');
+    }
+    if (targetLanguage !== 'ja' && targetLanguage !== 'en') {
+      throw new Error('translation target is invalid');
+    }
+    const sourceLanguage = detail.transcript.language ?? 'auto';
+    if (
+      (targetLanguage === 'ja' && sourceLanguage.startsWith('ja')) ||
+      (targetLanguage === 'en' && sourceLanguage.startsWith('en'))
+    ) {
+      throw new Error('原文と同じ言語には翻訳できません。');
+    }
+    const config = await this.runtimeConfig();
+    if (!config.endpoint) {
+      throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
+    }
+    if (!config.apiKeyConfigured) {
+      throw new Error('LLM の API キーが設定されていません。設定画面で保存してください。');
+    }
+    const transcript = detail.transcript.body.trim();
+    const hash = createHash('sha256').update(transcript, 'utf8').digest('hex');
+    const token = randomUUID();
+    const now = this.now().getTime();
+    this.translationTokens.set(token, {
+      meetingId,
+      targetLanguage,
+      sourceLanguage,
+      contentHash: hash,
+      expiresAt: now + 5 * 60_000,
+      provider: config.provider,
+      baseUrl: config.baseUrl,
+      endpoint: config.endpoint,
+      model: config.model,
+      kind: config.kind,
+    });
+    return {
+      token,
+      meetingId,
+      targetLanguage,
+      sourceLanguage,
+      provider: config.provider,
+      providerLabel: config.providerLabel,
+      model: config.model,
+      endpoint: config.endpoint,
+      charCount: transcript.length,
+      estimatedTokens: estimateTokens(transcript),
+      contentHash: hash,
+      text: transcript,
+      partial: detail.transcript.partial,
+      warning: detail.transcript.partial
+        ? '部分的な文字起こしを翻訳します。完了済みの文字起こしで再実行することを推奨します。'
+        : null,
+    };
+  }
+
+  async generateTranslation(
+    meetingId: string,
+    token: string,
+  ): Promise<TranslationResult> {
+    const preview = this.translationTokens.get(token);
+    if (!preview || preview.meetingId !== meetingId) {
+      throw new Error('翻訳の確認トークンが無効です。もう一度プレビューを開いてください。');
+    }
+    if (this.active || this.state.stage !== null) {
+      throw new Error('別の処理が実行中です。完了してから翻訳を実行してください。');
+    }
+    if (this.now().getTime() > preview.expiresAt) {
+      this.translationTokens.delete(token);
+      throw new Error('翻訳の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。');
+    }
+    const detail = await this.meetingStore.detail(meetingId);
+    if (!detail?.transcript?.body.trim()) {
+      throw new Error('文字起こしがありません。');
+    }
+    const body = detail.transcript.body.trim();
+    if (
+      createHash('sha256').update(body, 'utf8').digest('hex') !==
+      preview.contentHash
+    ) {
+      this.translationTokens.delete(token);
+      throw new Error('文字起こしが変更されました。もう一度プレビューを開いてください。');
+    }
+    this.translationTokens.delete(token);
+
+    let apiKey: string;
+    try {
+      apiKey =
+        (await this.apiKeyStore.getKey(preview.provider, preview.baseUrl)) ?? '';
+    } catch (error) {
+      throw new Error(
+        `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,
+      );
+    }
+    if (!apiKey) {
+      throw new Error('API キーが設定されていません。');
+    }
+
+    const controller = new AbortController();
+    this.active = { meetingId, controller };
+    this.setState({
+      stage: 'translating',
+      meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: '翻訳しています',
+      cancellable: true,
+      error: null,
+    });
+    const metaPath = join(detail.meeting.meetingDir, 'meta.json');
+    const translationPath = join(
+      detail.meeting.meetingDir,
+      `transcript.${preview.targetLanguage}.md`,
+    );
+    try {
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.translations = {
+          ...(meta.translations ?? {}),
+          [preview.targetLanguage]: {
+            state: 'running',
+            provider: preview.provider,
+            model: preview.model,
+            language: preview.targetLanguage,
+            source_language: preview.sourceLanguage,
+            generated_at: this.now().toISOString(),
+          },
+        };
+      });
+
+      const generated = await translateTranscript({
+        client: this.llmClient,
+        transcriptBody: body,
+        sourceLanguage: preview.sourceLanguage,
+        targetLanguage: preview.targetLanguage,
+        kind: preview.kind,
+        endpoint: preview.endpoint,
+        apiKey,
+        model: preview.model,
+        signal: controller.signal,
+        onProgress: (message, progress) => {
+          this.setState({
+            ...this.state,
+            progress,
+            message,
+            etaSeconds: null,
+          });
+        },
+      });
+
+      const currentMeta = await readMeetingMeta(metaPath);
+      const markdown = formatTranslationMarkdown({
+        title: detail.meeting.title,
+        startedAt: detail.meeting.startedAt,
+        durationSeconds: detail.meeting.duration,
+        source: sourceLabel(currentMeta),
+        model: detail.transcript.model ?? this.settings().whisperModel,
+        sourceLanguage: preview.sourceLanguage,
+        targetLanguage: preview.targetLanguage,
+        provider: preview.provider,
+        generatedAt: this.now().toISOString(),
+        segments: generated.segments,
+        partial: generated.partial,
+      });
+
+      if (await exists(translationPath)) {
+        await writePrivateText(
+          `${translationPath.replace(/\.md$/u, '.previous.md')}`,
+          await readFile(translationPath, 'utf8'),
+        );
+      }
+      await writePrivateText(translationPath, markdown);
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.translations = {
+          ...(meta.translations ?? {}),
+          [preview.targetLanguage]: {
+            state: 'completed',
+            provider: preview.provider,
+            model: preview.model,
+            language: preview.targetLanguage,
+            source_language: preview.sourceLanguage,
+            generated_at: this.now().toISOString(),
+            partial: generated.partial,
+          },
+        };
+      });
+
+      const meeting =
+        (await this.meetingStore.find(meetingId)) ?? detail.meeting;
+      const translation = await this.meetingStore.readTranslation(
+        meeting,
+        preview.targetLanguage,
+      );
+      if (!translation) {
+        throw new Error('翻訳ファイルの読み込みに失敗しました。');
+      }
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE });
+      return {
+        meeting,
+        translation,
+        usage: generated.usage,
+      };
+    } catch (error) {
+      const message =
+        controller.signal.aborted
+          ? '翻訳をキャンセルしました。'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.translations = {
+          ...(meta.translations ?? {}),
+          [preview.targetLanguage]: {
+            ...(meta.translations?.[preview.targetLanguage] ?? {}),
+            state: 'failed',
+            provider: preview.provider,
+            model: preview.model,
+            language: preview.targetLanguage,
+            source_language: preview.sourceLanguage,
+            error: message,
+          },
+        };
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      throw error;
+    } finally {
+      this.active = null;
+    }
+  }
+
   async saveTranscript(meetingId: string, markdown: string): Promise<MeetingDetail> {
+    if (this.active || this.state.stage !== null) {
+      throw new Error('処理中は文字起こしを編集できません。');
+    }
     if (markdown.length > 5 * 1024 * 1024) {
       throw new Error('文字起こしが大きすぎます。');
     }
@@ -564,6 +875,9 @@ export class ProcessingCoordinator {
   }
 
   async saveSummary(meetingId: string, markdown: string): Promise<MeetingDetail> {
+    if (this.active || this.state.stage !== null) {
+      throw new Error('処理中は要約を編集できません。');
+    }
     if (markdown.length > 5 * 1024 * 1024) {
       throw new Error('要約が大きすぎます。');
     }
@@ -660,7 +974,7 @@ export class ProcessingCoordinator {
         value.encoding = {
           state: 'running',
           started_at: startedAt,
-          mp3_bitrate_kbps: 64,
+          mp3_bitrate_kbps: this.settings().mp3BitrateKbps,
         };
         delete value.error;
       });
@@ -680,7 +994,7 @@ export class ProcessingCoordinator {
           inputPath: sourceWav,
           outputPath: mp3Path,
           durationSeconds: duration,
-          bitrateKbps: 64,
+          bitrateKbps: this.settings().mp3BitrateKbps,
           signal: controller.signal,
           onProgress: ({ ratio, etaSeconds }) => {
             this.setState({
@@ -704,7 +1018,7 @@ export class ProcessingCoordinator {
           inputPath: hasSourceWav ? sourceWav : mp3Path,
           outputPath: transcriptionWav,
           durationSeconds: duration,
-          bitrateKbps: 64,
+          bitrateKbps: this.settings().mp3BitrateKbps,
           signal: controller.signal,
           onProgress: ({ ratio, etaSeconds }) => {
             this.setState({
@@ -717,6 +1031,15 @@ export class ProcessingCoordinator {
       }
 
       let waveform: number[] | undefined;
+      if (!hasSourceWav || duration <= 0) {
+        try {
+          duration = (await readWavInfo(transcriptionWav)).duration;
+        } catch (error) {
+          console.error(
+            `failed to read transcription wav duration: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       if (hasSourceWav) {
         try {
           waveform = (await computeWavWaveform(sourceWav)).peaks;
@@ -734,7 +1057,7 @@ export class ProcessingCoordinator {
         value.encoding = {
           ...(value.encoding ?? {
             started_at: startedAt,
-            mp3_bitrate_kbps: 64,
+            mp3_bitrate_kbps: this.settings().mp3BitrateKbps,
           }),
           state: 'completed',
           finished_at: this.now().toISOString(),
@@ -899,7 +1222,18 @@ export class ProcessingCoordinator {
         model,
         modelPath,
         durationSeconds: meta.duration,
+        predictedSpeedRatio: this.settings().whisperSpeedRatios[model] ?? 0.2,
+        initialPrompt: this.settings().whisperInitialPrompt,
         signal: controller.signal,
+        onHardLimitExceeded: async (elapsedSeconds, predictedSeconds) => {
+          if (!this.confirmContinue) {
+            return true;
+          }
+          return this.confirmContinue(
+            '文字起こしに予想以上の時間がかかっています。',
+            `経過 ${Math.round(elapsedSeconds / 60)} 分、予想 ${Math.round(predictedSeconds / 60)} 分を超えました。処理を続けますか？`,
+          );
+        },
         onUpdate: (progress) => {
           lastLanguage = progress.language || lastLanguage;
           lastSegments = progress.segments;
@@ -939,6 +1273,31 @@ export class ProcessingCoordinator {
     const finishedAt = this.now().toISOString();
     if (outcome.state === 'completed') {
       await partialQueue;
+      if (outcome.durationSeconds > 0 && outcome.elapsedSeconds > 0) {
+        const ratio = outcome.elapsedSeconds / outcome.durationSeconds;
+        if (Number.isFinite(ratio) && ratio >= 0.01 && ratio <= 10) {
+          try {
+            await this.onSpeedRatioMeasured?.(model, Math.round(ratio * 1000) / 1000);
+          } catch (error) {
+            console.error(
+              `failed to save transcription speed ratio: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
+      }
+      let finalSegments = outcome.segments;
+      if (this.settings().speakerDiarization) {
+        try {
+          const diarized = await diarizeSegments(transcriptionWav, outcome.segments);
+          if (diarized) {
+            finalSegments = diarized;
+          }
+        } catch (error) {
+          console.error(
+            `speaker diarization failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       const markdown = formatTranscriptMarkdown({
         title: meeting.title,
         startedAt: meta.started_at,
@@ -946,7 +1305,7 @@ export class ProcessingCoordinator {
         source: sourceLabel(meta),
         model,
         language: outcome.language,
-        segments: outcome.segments,
+        segments: finalSegments,
       });
       await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
       await updateMeetingMeta(metaPath, (value) => {

@@ -1,20 +1,32 @@
-import { open, readFile, readdir, stat } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { chmod, copyFile, mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   detectSummaryLanguage,
   frontMatterString,
   parseFrontMatter,
+  stringifyFrontMatter,
   type FrontMatterValue,
 } from '../shared/markdown';
+import { sanitizeMeetingTitle } from '../shared/title';
 import type {
   MeetingDetail,
+  MeetingSearchHit,
+  MeetingSearchResult,
   MeetingStatus,
   MeetingSummary,
   MeetingWaveform,
   SummaryDocument,
+  SummaryLanguage,
   TranscriptDocument,
+  TranscriptTranslation,
 } from '../shared/types';
-import { readMeetingMeta, type MeetingMeta } from './meeting-meta';
+import {
+  readMeetingMeta,
+  updateMeetingMeta,
+  writeMeetingMeta,
+  type MeetingMeta,
+} from './meeting-meta';
 import { readWavInfo } from './wav';
 
 const MEETING_STATUSES: MeetingStatus[] = [
@@ -26,6 +38,10 @@ const MEETING_STATUSES: MeetingStatus[] = [
   'error',
 ];
 const INPUT_SOURCES = ['microphone', 'system', 'both'] as const;
+const TRANSLATION_FILES: Array<{ language: SummaryLanguage; file: string }> = [
+  { language: 'ja', file: 'transcript.ja.md' },
+  { language: 'en', file: 'transcript.en.md' },
+];
 
 function isInside(root: string, target: string): boolean {
   const rel = relative(resolve(root), resolve(target));
@@ -68,6 +84,66 @@ async function fileUpdatedAt(path: string): Promise<string | null> {
   }
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function writePrivateMarkdown(path: string, markdown: string): Promise<void> {
+  const tempPath = `${path}.tmp`;
+  const handle = await open(tempPath, 'w', 0o600);
+  try {
+    await handle.writeFile(markdown);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  await rename(tempPath, path);
+}
+
+async function replaceFrontMatterTitle(
+  path: string,
+  title: string,
+): Promise<void> {
+  let markdown: string;
+  try {
+    markdown = await readFile(path, 'utf8');
+  } catch {
+    return;
+  }
+  const parsed = parseFrontMatter(markdown);
+  if (!parsed.hasFrontMatter) {
+    return;
+  }
+  await writePrivateMarkdown(
+    path,
+    stringifyFrontMatter({ ...parsed.frontMatter, title }, parsed.body),
+  );
+}
+
+const SEARCH_FILES: Array<{
+  file: string;
+  kind: MeetingSearchHit['kind'];
+  kindLabel: string;
+}> = [
+  { file: 'transcript.md', kind: 'transcript', kindLabel: '文字起こし' },
+  {
+    file: 'transcript.ja.md',
+    kind: 'translation-ja',
+    kindLabel: '文字起こし（日本語訳）',
+  },
+  {
+    file: 'transcript.en.md',
+    kind: 'translation-en',
+    kindLabel: '文字起こし（English）',
+  },
+  { file: 'summary.md', kind: 'summary', kindLabel: '要約' },
+];
+
 function audioCandidate(meta: MeetingMeta, name: string): string | null {
   if (
     name === 'audio.mp3' ||
@@ -82,9 +158,17 @@ function audioCandidate(meta: MeetingMeta, name: string): string | null {
 }
 
 export class MeetingStore {
-  private readonly saveRoot: string;
+  private saveRoot: string;
 
   constructor(saveRoot: string) {
+    this.saveRoot = resolve(saveRoot);
+  }
+
+  getSaveRoot(): string {
+    return this.saveRoot;
+  }
+
+  setSaveRoot(saveRoot: string): void {
     this.saveRoot = resolve(saveRoot);
   }
 
@@ -130,6 +214,12 @@ export class MeetingStore {
           const summaryPath = join(meetingDir, 'summary.md');
           const hasTranscript = await fileExists(transcriptPath);
           const hasSummary = await fileExists(summaryPath);
+          const translationLanguages: SummaryLanguage[] = [];
+          for (const translation of TRANSLATION_FILES) {
+            if (await fileExists(join(meetingDir, translation.file))) {
+              translationLanguages.push(translation.language);
+            }
+          }
           meetings.push({
             id,
             title:
@@ -152,6 +242,12 @@ export class MeetingStore {
             hasSummary,
             transcriptPartial:
               meta.transcription?.partial === true || meta.transcription?.state === 'partial',
+            translationLanguages,
+            summaryLanguage:
+              meta.summary_language === 'ja' || meta.summary_language === 'en'
+                ? meta.summary_language
+                : null,
+            pinned: meta.pinned === true,
           });
         } catch {
           // Ignore folders without a readable meta.json.
@@ -159,7 +255,11 @@ export class MeetingStore {
       }
     }
 
-    meetings.sort((left, right) => right.startedAt.localeCompare(left.startedAt));
+    meetings.sort(
+      (left, right) =>
+        Number(right.pinned) - Number(left.pinned) ||
+        right.startedAt.localeCompare(left.startedAt),
+    );
     return meetings;
   }
 
@@ -173,10 +273,18 @@ export class MeetingStore {
     if (!meeting) {
       return null;
     }
+    const translations: Partial<Record<SummaryLanguage, TranscriptTranslation>> = {};
+    for (const entry of TRANSLATION_FILES) {
+      const translation = await this.readTranslation(meeting, entry.language);
+      if (translation) {
+        translations[entry.language] = translation;
+      }
+    }
     return {
       meeting,
       transcript: await this.readTranscript(meeting),
       summary: await this.readSummary(meeting),
+      translations,
     };
   }
 
@@ -220,6 +328,296 @@ export class MeetingStore {
       generatedAt: frontMatterString(parsed, 'generated_at'),
       updatedAt: await fileUpdatedAt(path),
     };
+  }
+
+  async readTranslation(
+    meeting: MeetingSummary,
+    language: SummaryLanguage,
+  ): Promise<TranscriptTranslation | null> {
+    const entry = TRANSLATION_FILES.find((item) => item.language === language);
+    if (!entry) {
+      return null;
+    }
+    const path = join(meeting.meetingDir, entry.file);
+    let markdown: string;
+    try {
+      markdown = await readFile(path, 'utf8');
+    } catch {
+      return null;
+    }
+    const parsed = parseFrontMatter(markdown);
+    return {
+      language,
+      sourceLanguage: frontMatterString(parsed, 'source_language'),
+      markdown,
+      body: parsed.body,
+      provider: frontMatterString(parsed, 'provider'),
+      model: asString(parsed.frontMatter.model),
+      generatedAt: frontMatterString(parsed, 'generated_at'),
+      updatedAt: await fileUpdatedAt(path),
+      partial: asBoolean(parsed.frontMatter.partial),
+    };
+  }
+
+  async search(query: string, limit = 100): Promise<MeetingSearchResult> {
+    const normalizedQuery = query
+      .normalize('NFKC')
+      .toLocaleLowerCase('ja-JP')
+      .trim();
+    if (normalizedQuery.length < 2) {
+      return { query, hits: [], truncated: false };
+    }
+    const meetings = await this.list();
+    const hits: MeetingSearchHit[] = [];
+    let truncated = false;
+
+    outer: for (const meeting of meetings) {
+      if (
+        meeting.title
+          .normalize('NFKC')
+          .toLocaleLowerCase('ja-JP')
+          .includes(normalizedQuery)
+      ) {
+        hits.push({
+          meetingId: meeting.id,
+          title: meeting.title,
+          startedAt: meeting.startedAt,
+          kind: 'title',
+          kindLabel: 'タイトル',
+          lineNumber: null,
+          timestamp: null,
+          text: meeting.title,
+        });
+        if (hits.length >= limit) {
+          truncated = true;
+          break;
+        }
+      }
+
+      for (const entry of SEARCH_FILES) {
+        if (!(await fileExists(join(meeting.meetingDir, entry.file)))) {
+          continue;
+        }
+        let markdown: string;
+        try {
+          markdown = await readFile(join(meeting.meetingDir, entry.file), 'utf8');
+        } catch {
+          continue;
+        }
+        const body = parseFrontMatter(markdown).body;
+        const lines = body.replaceAll('\r\n', '\n').split('\n');
+        for (let index = 0; index < lines.length; index += 1) {
+          const line = lines[index];
+          if (
+            !line
+              .normalize('NFKC')
+              .toLocaleLowerCase('ja-JP')
+              .includes(normalizedQuery)
+          ) {
+            continue;
+          }
+          const timestamp = line.match(/^\[(\d{2}:\d{2}:\d{2})\]/u)?.[1] ?? null;
+          hits.push({
+            meetingId: meeting.id,
+            title: meeting.title,
+            startedAt: meeting.startedAt,
+            kind: entry.kind,
+            kindLabel: entry.kindLabel,
+            lineNumber: index + 1,
+            timestamp,
+            text: line.trim().slice(0, 500),
+          });
+          if (hits.length >= limit) {
+            truncated = true;
+            break outer;
+          }
+        }
+      }
+    }
+
+    return { query, hits, truncated };
+  }
+
+  async importAudio(
+    sourcePath: string,
+    appVersion: string,
+  ): Promise<MeetingSummary> {
+    const extension = extname(sourcePath).toLowerCase();
+    if (extension !== '.mp3' && extension !== '.wav') {
+      throw new Error('mp3 または wav を選択してください。');
+    }
+    const info = await stat(sourcePath);
+    if (!info.isFile() || info.size <= 0) {
+      throw new Error('音声ファイルが空です。');
+    }
+    const title = sanitizeMeetingTitle(
+      basename(sourcePath, extension),
+      '取り込んだ音声',
+    );
+    const now = new Date();
+    const year = String(now.getFullYear());
+    const date = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const base = `${date}_${time}_${title}`;
+    const yearRoot = join(this.saveRoot, year);
+    await mkdir(yearRoot, { recursive: true, mode: 0o700 });
+    let meetingDir = join(yearRoot, base);
+    let index = 2;
+    while (await pathExists(meetingDir)) {
+      meetingDir = join(yearRoot, `${base}_${index}`);
+      index += 1;
+    }
+    await mkdir(meetingDir, { mode: 0o700 });
+    await chmod(meetingDir, 0o700);
+
+    const fileName = extension === '.mp3' ? 'audio.mp3' : 'audio.wav';
+    const meetingId = randomUUID();
+    const meta: MeetingMeta = {
+      schema_version: 1,
+      id: meetingId,
+      status: 'encoding',
+      title,
+      started_at: now.toISOString(),
+      duration: 0,
+      source: { input: 'both' },
+      sample_rate: 48000,
+      channels: 1,
+      bits_per_sample: 16,
+      chunks: [],
+      expected_samples: 0,
+      actual_samples: 0,
+      app_version: appVersion,
+      audio_path: fileName,
+    };
+    try {
+      const target = join(meetingDir, fileName);
+      await copyFile(sourcePath, target);
+      await chmod(target, 0o600);
+      await writeMeetingMeta(join(meetingDir, 'meta.json'), meta);
+    } catch (error) {
+      await rm(meetingDir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
+    const imported = await this.find(meetingId);
+    if (!imported) {
+      throw new Error('取り込んだ会議が見つかりません。');
+    }
+    return imported;
+  }
+
+  async setPinned(meetingId: string, pinned: boolean): Promise<MeetingSummary> {
+    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    await updateMeetingMeta(join(meeting.meetingDir, 'meta.json'), (meta) => {
+      if (pinned) {
+        meta.pinned = true;
+        meta.pinned_at = new Date().toISOString();
+      } else {
+        delete meta.pinned;
+        delete meta.pinned_at;
+      }
+    });
+    const updated = await this.find(meetingId);
+    if (!updated) {
+      throw new Error('会議の更新後に会議が見つかりません。');
+    }
+    return updated;
+  }
+
+  async delete(meetingId: string): Promise<void> {
+    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    if (!isInside(this.saveRoot, meeting.meetingDir)) {
+      throw new Error('会議フォルダが保存先の外にあります。');
+    }
+    await rm(meeting.meetingDir, { recursive: true, force: true });
+  }
+
+  async setSummaryLanguage(
+    meetingId: string,
+    language: SummaryLanguage | null,
+  ): Promise<MeetingSummary> {
+    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    if (language !== null && language !== 'ja' && language !== 'en') {
+      throw new Error('summary language is invalid');
+    }
+    await updateMeetingMeta(join(meeting.meetingDir, 'meta.json'), (meta) => {
+      if (language === null) {
+        delete meta.summary_language;
+      } else {
+        meta.summary_language = language;
+      }
+    });
+    const updated = await this.find(meetingId);
+    if (!updated) {
+      throw new Error('会議の更新後に会議が見つかりません。');
+    }
+    return updated;
+  }
+
+  async updateTitle(meetingId: string, rawTitle: string): Promise<MeetingSummary> {    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    const title = sanitizeMeetingTitle(rawTitle);
+    const parent = dirname(meeting.meetingDir);
+    const currentName = basename(meeting.meetingDir);
+    const prefixMatch = currentName.match(/^(\d{4}-\d{2}-\d{2}_\d{4})_/u);
+    const prefix = prefixMatch?.[1] ?? currentName.replace(/_.*$/u, '');
+    const baseName = `${prefix}_${title}`;
+
+    let targetDir = join(parent, baseName);
+    let index = 2;
+    while (targetDir !== meeting.meetingDir && (await pathExists(targetDir))) {
+      targetDir = join(parent, `${baseName}_${index}`);
+      index += 1;
+    }
+    if (!isInside(this.saveRoot, targetDir)) {
+      throw new Error('会議フォルダのパスが保存先の外になります。');
+    }
+
+    const renamed = targetDir !== meeting.meetingDir;
+    if (renamed) {
+      await rename(meeting.meetingDir, targetDir);
+    }
+
+    try {
+      const metaPath = join(targetDir, 'meta.json');
+      await updateMeetingMeta(metaPath, (meta) => {
+        meta.title = title;
+      });
+      for (const name of [
+        'transcript.md',
+        'transcript.ja.md',
+        'transcript.en.md',
+        'summary.md',
+        'summary.previous.md',
+      ]) {
+        await replaceFrontMatterTitle(join(targetDir, name), title);
+      }
+    } catch (error) {
+      if (renamed) {
+        await rename(targetDir, meeting.meetingDir).catch((rollbackError: unknown) => {
+          console.error(
+            `failed to roll back meeting folder rename: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+          );
+        });
+      }
+      throw error;
+    }
+
+    const updated = await this.find(meetingId);
+    if (!updated) {
+      throw new Error('会議の更新後に会議が見つかりません。');
+    }
+    return updated;
   }
 
   async audioPath(meetingId: string): Promise<string | null> {

@@ -1,10 +1,13 @@
 import type { RecordingAppState } from '../../shared/types';
+import appIcon from './assets/app-icon.png';
 import { formatDuration, inputSourceLabel } from './recording-utils';
 
 type TopBarProps = {
   appState: RecordingAppState;
   saveRoot: string;
   meetingCount: number;
+  searchQuery: string;
+  onSearchChange: (value: string) => void;
   onToggleRecording: () => void;
 };
 
@@ -38,6 +41,8 @@ export function TopBar({
   appState,
   saveRoot,
   meetingCount,
+  searchQuery,
+  onSearchChange,
   onToggleRecording,
 }: TopBarProps) {
   const isRecording = appState.status === 'recording';
@@ -46,11 +51,22 @@ export function TopBar({
   return (
     <header className="titlebar">
       <div className="titlebar-brand">
+        <img className="titlebar-icon" src={appIcon} alt="" aria-hidden="true" />
         <span className="titlebar-name">Kataribe</span>
         <span className="titlebar-path" title={saveRoot}>
           {compactPath(saveRoot)} · {meetingCount} 件
         </span>
       </div>
+      <label className="titlebar-search">
+        <span className="visually-hidden">会議を検索</span>
+        <input
+          type="search"
+          className="titlebar-search-input"
+          value={searchQuery}
+          placeholder="文字起こし・要約を検索"
+          onChange={(event) => onSearchChange(event.target.value)}
+        />
+      </label>
       <span className="titlebar-spacer" />
       <span className={`status-chip status-${appState.status}`}>
         {statusLabel(appState)}

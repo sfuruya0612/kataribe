@@ -3,6 +3,8 @@ import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
 import type {
   AppInfo,
   AppSettings,
+  MeetingSearchHit,
+  MeetingSearchResult,
   MeetingSummary,
   ProcessingState,
   RecordingStopResult,
@@ -10,13 +12,26 @@ import type {
 import { MeetingDetail } from './MeetingDetail';
 import { MeetingTable } from './MeetingTable';
 import { RecordingView } from './RecordingView';
+import { SearchResults } from './SearchResults';
 import { SettingsPanel } from './SettingsPanel';
 import { Sidebar, type MeetingFilter } from './Sidebar';
 import { TopBar } from './TopBar';
 import { errorText } from './recording-utils';
 import { useRecorder } from './use-recorder';
 
-type View = 'meetings' | 'detail' | 'recording' | 'settings';
+type View = 'meetings' | 'detail' | 'recording' | 'settings' | 'search';
+
+function cloudSyncService(path: string): string | null {
+  const value = path.toLowerCase();
+  if (value.includes('/library/mobile documents/')) return 'iCloud Drive';
+  if (value.includes('/dropbox/')) return 'Dropbox';
+  if (value.includes('/onedrive')) return 'OneDrive';
+  if (value.includes('/google drive') || value.includes('/googledrive')) {
+    return 'Google Drive';
+  }
+  if (value.includes('/obsidian')) return 'Obsidian の同期フォルダ';
+  return null;
+}
 
 export default function App() {
   const recorder = useRecorder();
@@ -27,7 +42,11 @@ export default function App() {
   const [view, setView] = useState<View>('meetings');
   const [filter, setFilter] = useState<MeetingFilter>('all');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+  const [detailSeekSeconds, setDetailSeekSeconds] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResult, setSearchResult] = useState<MeetingSearchResult | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [processing, setProcessing] = useState<ProcessingState>({
     stage: null,
     meetingId: null,
@@ -58,6 +77,12 @@ export default function App() {
       .then((value) => {
         if (!cancelled) {
           setInfo(value);
+          const service = cloudSyncService(value.saveRoot);
+          if (service) {
+            setToast(
+              `保存先が ${service} の同期対象です。音声と文字起こしが端末外に同期されます。`,
+            );
+          }
         }
       })
       .catch((reason: unknown) => {
@@ -89,6 +114,23 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     void window.kataribe
+      .listWhisperModels()
+      .then((list) => {
+        if (!cancelled && !list.models.some((model) => model.installed)) {
+          setToast(
+            'whisper モデルが未取得です。設定 > 文字起こし からダウンロードしてください。',
+          );
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.kataribe
       .getProcessingState()
       .then((state) => {
         if (!cancelled) {
@@ -111,12 +153,50 @@ export default function App() {
     const unsubscribeMeetings = window.kataribe.onMeetingUpdated(() => {
       void refreshMeetings();
     });
+    const unsubscribeChanged = window.kataribe.onMeetingsChanged((list) => {
+      setMeetings(list);
+    });
     return () => {
       cancelled = true;
       unsubscribeState();
       unsubscribeMeetings();
+      unsubscribeChanged();
     };
   }, [refreshMeetings]);
+
+  useEffect(() => {
+    const query = searchQuery.trim();
+    if (query.length < 2) {
+      setSearchLoading(false);
+      setSearchResult(null);
+      return;
+    }
+    let cancelled = false;
+    setSearchLoading(true);
+    const timer = window.setTimeout(() => {
+      void window.kataribe
+        .searchMeetings(query)
+        .then((result) => {
+          if (!cancelled) {
+            setSearchResult(result);
+          }
+        })
+        .catch((reason: unknown) => {
+          if (!cancelled) {
+            setToast(`検索できませんでした: ${errorText(reason)}`);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setSearchLoading(false);
+          }
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     if (recorder.appState.lastResult) {
@@ -155,6 +235,17 @@ export default function App() {
       case 'all':
         return meetings;
       default: {
+        if (filter.startsWith('month:')) {
+          const key = filter.slice('month:'.length);
+          return meetings.filter((meeting) => {
+            const date = new Date(meeting.startedAt);
+            if (!Number.isFinite(date.getTime())) {
+              return false;
+            }
+            const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            return month === key;
+          });
+        }
         const year = filter.slice('year:'.length);
         return meetings.filter(
           (meeting) =>
@@ -169,11 +260,13 @@ export default function App() {
 
   const openDetail = (meeting: MeetingSummary) => {
     setSelectedMeetingId(meeting.id);
+    setDetailSeekSeconds(null);
     setView('detail');
   };
 
   const openDetailFromResult = (result: RecordingStopResult) => {
     setSelectedMeetingId(result.meetingId);
+    setDetailSeekSeconds(null);
     setView('detail');
     void refreshMeetings();
   };
@@ -184,6 +277,46 @@ export default function App() {
     } catch (reason: unknown) {
       setToast(`操作に失敗しました: ${errorText(reason)}`);
     }
+  };
+
+  const changeSaveRoot = useCallback(async () => {
+    try {
+      const result = await window.kataribe.chooseSaveRoot();
+      if (!result) {
+        return;
+      }
+      setInfo(result.info);
+      setSettings(result.settings);
+      setFilter('all');
+      setSelectedMeetingId(null);
+      setView('meetings');
+      setSearchQuery('');
+      setSearchResult(null);
+      await refreshMeetings();
+      setToast('保存先を変更しました。');
+    } catch (reason: unknown) {
+      setToast(`保存先を変更できませんでした: ${errorText(reason)}`);
+    }
+  }, [refreshMeetings]);
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+    if (value.trim()) {
+      setView('search');
+    } else if (view === 'search') {
+      setView('meetings');
+    }
+  };
+
+  const openSearchHit = (hit: MeetingSearchHit) => {
+    setSelectedMeetingId(hit.meetingId);
+    if (hit.timestamp) {
+      const [hours, minutes, seconds] = hit.timestamp.split(':').map(Number);
+      setDetailSeekSeconds(hours * 3600 + minutes * 60 + seconds);
+    } else {
+      setDetailSeekSeconds(null);
+    }
+    setView('detail');
   };
 
   const toggleRecording = () => {
@@ -209,12 +342,71 @@ export default function App() {
     }
   };
 
+  const importAudio = async () => {
+    try {
+      const meeting = await window.kataribe.importAudio();
+      if (!meeting) {
+        return;
+      }
+      setSelectedMeetingId(meeting.id);
+      setDetailSeekSeconds(null);
+      setView('detail');
+      await refreshMeetings();
+    } catch (reason: unknown) {
+      setToast(`音声を取り込めませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const setMeetingPinned = async (
+    meeting: MeetingSummary,
+    pinned: boolean,
+  ) => {
+    try {
+      const updated = await window.kataribe.setMeetingPinned(meeting.id, pinned);
+      setMeetings((current) =>
+        current
+          .map((entry) => (entry.id === updated.id ? updated : entry))
+          .sort(
+            (left, right) =>
+              Number(right.pinned) - Number(left.pinned) ||
+              right.startedAt.localeCompare(left.startedAt),
+          ),
+      );
+    } catch (reason: unknown) {
+      setToast(`Pin を変更できませんでした: ${errorText(reason)}`);
+    }
+  };
+
+  const deleteMeeting = async (meeting: MeetingSummary) => {
+    if (
+      !window.confirm(
+        `「${meeting.title}」を削除します。音声、文字起こし、要約、メタデータがすべて削除され、元に戻せません。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await window.kataribe.deleteMeeting(meeting.id);
+      if (selectedMeetingId === meeting.id) {
+        setSelectedMeetingId(null);
+        setDetailSeekSeconds(null);
+        setView('meetings');
+      }
+      await refreshMeetings();
+      setToast('会議を削除しました。');
+    } catch (reason: unknown) {
+      setToast(`会議を削除できませんでした: ${errorText(reason)}`);
+    }
+  };
+
   return (
     <div className="app-shell">
       <TopBar
         appState={recorder.appState}
-        saveRoot={info?.saveRoot ?? '~/Documents/Kataribe'}
+        saveRoot={settings.saveRoot || info?.saveRoot || '~/Documents/Kataribe'}
         meetingCount={meetings.length}
+        searchQuery={searchQuery}
+        onSearchChange={handleSearchChange}
         onToggleRecording={toggleRecording}
       />
 
@@ -245,6 +437,18 @@ export default function App() {
               onSelect={openDetail}
               onRefresh={() => void refreshMeetings()}
               onToggleRecording={toggleRecording}
+              onImportAudio={() => void importAudio()}
+              onSetPinned={(meeting, pinned) => void setMeetingPinned(meeting, pinned)}
+              onDeleteMeeting={(meeting) => void deleteMeeting(meeting)}
+            />
+          ) : null}
+
+          {view === 'search' ? (
+            <SearchResults
+              query={searchQuery}
+              result={searchResult}
+              loading={searchLoading}
+              onSelect={openSearchHit}
             />
           ) : null}
 
@@ -252,6 +456,10 @@ export default function App() {
             <MeetingDetail
               meeting={selectedMeeting}
               processing={processing}
+              defaultSummaryLanguage={settings.summaryLanguage}
+              whisperModel={settings.whisperModel}
+              initialSeekSeconds={detailSeekSeconds}
+              onUpdateSettings={(patch) => updateSettings(patch)}
               onBack={() => setView('meetings')}
               onOpenFolder={openMeetingFolder}
               onOpenSettings={() => setView('settings')}
@@ -270,7 +478,7 @@ export default function App() {
 
           {view === 'settings' ? (
             <SettingsPanel
-              saveRoot={info?.saveRoot ?? '~/Documents/Kataribe'}
+              saveRoot={settings.saveRoot || info?.saveRoot || '~/Documents/Kataribe'}
               version={info?.version ?? '0.1.0'}
               settings={settings}
               inputSource={recorder.appState.inputSource}
@@ -278,6 +486,7 @@ export default function App() {
               microphones={recorder.microphones}
               systemDevices={recorder.systemDevices}
               onUpdateSettings={(patch) => updateSettings(patch)}
+              onChangeSaveRoot={() => void changeSaveRoot()}
               onSetInputSource={(source) => void recorder.setInputSource(source)}
               onRequestPermission={() => void recorder.requestPermission()}
               onOpenMicrophoneSettings={() => void recorder.openMicrophoneSettings()}

@@ -9,6 +9,7 @@ import type {
   InputSource,
   LlmProvider,
   LlmRuntimeConfig,
+  MultiOutputStatus,
   SummaryLanguage,
   WhisperModel,
   WhisperModelList,
@@ -27,6 +28,7 @@ type SettingsPanelProps = {
   microphones: InputDevice[];
   systemDevices: InputDevice[];
   onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
+  onChangeSaveRoot: () => void;
   onSetInputSource: (source: InputSource) => void;
   onRequestPermission: () => void;
   onOpenMicrophoneSettings: () => void;
@@ -74,6 +76,7 @@ export function SettingsPanel({
   microphones,
   systemDevices,
   onUpdateSettings,
+  onChangeSaveRoot,
   onSetInputSource,
   onRequestPermission,
   onOpenMicrophoneSettings,
@@ -89,9 +92,22 @@ export function SettingsPanel({
   const [endpointDraft, setEndpointDraft] = useState(settings.llmBaseUrl);
   const [modelDraft, setModelDraft] = useState(settings.llmModel);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
+  const [initialPromptDraft, setInitialPromptDraft] = useState(
+    settings.whisperInitialPrompt,
+  );
+  const [summaryPromptDraft, setSummaryPromptDraft] = useState(
+    settings.summaryPromptTemplate,
+  );
   const [keyBusy, setKeyBusy] = useState(false);
   const [modelBusy, setModelBusy] = useState<WhisperModel | null>(null);
   const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [multiOutput, setMultiOutput] = useState<MultiOutputStatus | null>(null);
+  const [outputUid, setOutputUid] = useState('');
+  const [multiOutputBusy, setMultiOutputBusy] = useState(false);
+  const [multiOutputError, setMultiOutputError] = useState<string | null>(null);
+  const [multiOutputNotice, setMultiOutputNotice] = useState<string | null>(null);
+  const [indexBusy, setIndexBusy] = useState(false);
+  const [indexNotice, setIndexNotice] = useState<string | null>(null);
   const permissionDenied = permission === 'denied' || permission === 'restricted';
   const microphoneAvailable = microphones.length > 0;
   const systemAvailable = systemDevices.length > 0;
@@ -114,9 +130,40 @@ export function SettingsPanel({
     }
   }, []);
 
+  const refreshMultiOutput = useCallback(async () => {
+    try {
+      const status = await window.kataribe.getMultiOutputStatus();
+      setMultiOutput(status);
+      setOutputUid((current) => {
+        if (current && status.outputDevices.some((device) => device.uid === current)) {
+          return current;
+        }
+        const preferred =
+          status.currentOutput &&
+          !status.currentOutput.name.toLowerCase().includes('blackhole') &&
+          !status.currentOutput.name.toLowerCase().includes('multi-output') &&
+          !status.currentOutput.isAggregate
+            ? status.currentOutput
+            : status.outputDevices.find(
+                (device) =>
+                  !device.name.toLowerCase().includes('blackhole') &&
+                  !device.name.toLowerCase().includes('multi-output') &&
+                  !device.isAggregate,
+              );
+        return preferred?.uid ?? '';
+      });
+      setMultiOutputError(null);
+    } catch (reason: unknown) {
+      setMultiOutputError(
+        `Multi-Output Device の状態を取得できませんでした: ${errorText(reason)}`,
+      );
+    }
+  }, []);
+
   useEffect(() => {
     void refreshModels();
     void refreshLlm();
+    void refreshMultiOutput();
     const unsubscribeModels = window.kataribe.onModelsChanged((list) => {
       setModels(list);
     });
@@ -148,12 +195,19 @@ export function SettingsPanel({
       unsubscribeProgress();
       unsubscribeLlm();
     };
-  }, [refreshLlm, refreshModels]);
-
+  }, [refreshLlm, refreshModels, refreshMultiOutput]);
   useEffect(() => {
     setEndpointDraft(settings.llmBaseUrl);
     setModelDraft(settings.llmModel);
-  }, [settings.llmBaseUrl, settings.llmModel, settings.llmProvider]);
+    setInitialPromptDraft(settings.whisperInitialPrompt);
+    setSummaryPromptDraft(settings.summaryPromptTemplate);
+  }, [
+    settings.llmBaseUrl,
+    settings.llmModel,
+    settings.llmProvider,
+    settings.whisperInitialPrompt,
+    settings.summaryPromptTemplate,
+  ]);
 
   const chooseProvider = async (provider: LlmProvider) => {
     const preset = getLlmProviderPreset(provider);
@@ -198,6 +252,20 @@ export function SettingsPanel({
     } catch (reason: unknown) {
       setLlmError(`モデル名を保存できませんでした: ${errorText(reason)}`);
     }
+  };
+
+  const saveInitialPrompt = async () => {
+    if (initialPromptDraft === settings.whisperInitialPrompt) {
+      return;
+    }
+    await onUpdateSettings({ whisperInitialPrompt: initialPromptDraft });
+  };
+
+  const saveSummaryPrompt = async () => {
+    if (summaryPromptDraft === settings.summaryPromptTemplate) {
+      return;
+    }
+    await onUpdateSettings({ summaryPromptTemplate: summaryPromptDraft });
   };
 
   const saveApiKey = async () => {
@@ -274,6 +342,63 @@ export function SettingsPanel({
     }
   };
 
+  const createMultiOutput = async () => {
+    if (!outputUid) {
+      setMultiOutputError('出力デバイスを選択してください。');
+      return;
+    }
+    setMultiOutputBusy(true);
+    setMultiOutputError(null);
+    setMultiOutputNotice(null);
+    try {
+      const status = await window.kataribe.createMultiOutput(outputUid);
+      if (status) {
+        setMultiOutput(status);
+        setMultiOutputNotice(
+          'Kataribe Multi-Output を作成し、macOS の出力に設定しました。システム音声の入力に BlackHole 2ch を選んでください。',
+        );
+      }
+    } catch (reason: unknown) {
+      setMultiOutputError(
+        `Multi-Output Device を作成できませんでした: ${errorText(reason)}`,
+      );
+    } finally {
+      setMultiOutputBusy(false);
+    }
+  };
+
+  const removeMultiOutput = async () => {
+    setMultiOutputBusy(true);
+    setMultiOutputError(null);
+    setMultiOutputNotice(null);
+    try {
+      const status = await window.kataribe.removeMultiOutput();
+      if (status) {
+        setMultiOutput(status);
+        setMultiOutputNotice('Kataribe Multi-Output を削除しました。');
+      }
+    } catch (reason: unknown) {
+      setMultiOutputError(
+        `Multi-Output Device を削除できませんでした: ${errorText(reason)}`,
+      );
+    } finally {
+      setMultiOutputBusy(false);
+    }
+  };
+
+  const rebuildIndex = async () => {
+    setIndexBusy(true);
+    setIndexNotice(null);
+    try {
+      const list = await window.kataribe.rebuildMeetingIndex();
+      setIndexNotice(`索引を再構築しました（${list.length} 件）。`);
+    } catch (reason: unknown) {
+      setIndexNotice(`索引を再構築できませんでした: ${errorText(reason)}`);
+    } finally {
+      setIndexBusy(false);
+    }
+  };
+
   return (
     <section className="settings-panel" aria-labelledby="settings-title">
       <div className="settings-tabs" role="tablist" aria-label="設定">
@@ -309,10 +434,17 @@ export function SettingsPanel({
               <p className="settings-label">保存先</p>
               <div className="setting-card setting-row">
                 <span className="mono setting-path">{saveRoot}</span>
-                <button type="button" className="button button-secondary" disabled>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  onClick={onChangeSaveRoot}
+                >
                   変更
                 </button>
               </div>
+              <p className="muted">
+                変更後、既存の会議は新しい保存先の一覧に表示されません。会議フォルダは移動しません。
+              </p>
             </section>
 
             <section className="settings-section">
@@ -325,6 +457,26 @@ export function SettingsPanel({
                 <button type="button" className="button button-secondary" onClick={onShowAbout}>
                   About を開く
                 </button>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">会議索引</p>
+              <div className="setting-card">
+                <p className="muted">
+                  会議一覧と全文検索の索引を、会議フォルダから作り直します。索引が壊れた場合や、外部で会議フォルダを編集した場合に使います。
+                </p>
+                <div className="setting-actions">
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={indexBusy}
+                    onClick={() => void rebuildIndex()}
+                  >
+                    {indexBusy ? '再構築中...' : '索引を再構築'}
+                  </button>
+                </div>
+                {indexNotice ? <p className="notice-text">{indexNotice}</p> : null}
               </div>
             </section>
 
@@ -427,6 +579,174 @@ export function SettingsPanel({
                     セットアップ手順
                   </button>
                 </div>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">mp3 のビットレート</p>
+              <div className="setting-card">
+                <div className="seg settings-source-seg">
+                  {([64, 128] as const).map((bitrate) => (
+                    <button
+                      type="button"
+                      key={bitrate}
+                      aria-pressed={settings.mp3BitrateKbps === bitrate}
+                      onClick={() =>
+                        void onUpdateSettings({ mp3BitrateKbps: bitrate })
+                      }
+                    >
+                      {bitrate} kbps
+                    </button>
+                  ))}
+                </div>
+                <p className="muted">
+                  新しく録音する会議に適用します。64 kbps は 1 時間で約 29 MB、128 kbps は約 58 MB です。
+                  既存の mp3 は変更しません。
+                </p>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">グローバルショートカット</p>
+              <div className="setting-card">
+                <label className="setting-row">
+                  <span>
+                    <strong>Command + Shift + R で録音を開始・停止</strong>
+                    <span className="muted">
+                      他のアプリが前面にあっても録音を切り替えます。他のアプリと同じショートカットを使っている場合は登録できません。
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.globalShortcutEnabled}
+                    onChange={(event) =>
+                      void onUpdateSettings({
+                        globalShortcutEnabled: event.target.checked,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">話者分離</p>
+              <div className="setting-card">
+                <label className="setting-row">
+                  <span>
+                    <strong>簡易話者分離を使う</strong>
+                    <span className="muted">
+                      音声のピッチと周波数特性から話者 A / B を推定し、文字起こしの行頭に付けます。
+                      話者名は推定であり、会議の内容によっては誤ることがあります。
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.speakerDiarization}
+                    onChange={(event) =>
+                      void onUpdateSettings({
+                        speakerDiarization: event.target.checked,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">Multi-Output Device</p>
+              <div className="setting-card">
+                <p className="muted">
+                  macOS の出力デバイスと BlackHole 2ch を含む「Kataribe Multi-Output」を自動作成し、
+                  システム出力に設定します。作成には BlackHole 2ch が必要です。
+                </p>
+                {multiOutput?.supported === false ? (
+                  <p className="alert alert-error">
+                    Multi-Output Device の自動作成は macOS でのみ利用できます。
+                  </p>
+                ) : (
+                  <>
+                    <div className="settings-grid">
+                      <label className="field">
+                        <span>出力デバイス</span>
+                        <select
+                          value={outputUid}
+                          disabled={multiOutputBusy || !multiOutput?.helperAvailable}
+                          onChange={(event) => setOutputUid(event.target.value)}
+                        >
+                          <option value="">選択してください</option>
+                          {(multiOutput?.outputDevices ?? [])
+                            .filter(
+                              (device) =>
+                                !device.name.toLowerCase().includes('blackhole') &&
+                                !device.name.toLowerCase().includes('multi-output') &&
+                                !device.isAggregate,
+                            )
+                            .map((device) => (
+                              <option value={device.uid} key={device.uid}>
+                                {device.name}（{device.channels} ch）
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <div className="field">
+                        <span>現在の出力</span>
+                        <p className="setting-input setting-readonly mono">
+                          {multiOutput?.currentOutput?.name ?? '取得できません'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="setting-actions">
+                      <button
+                        type="button"
+                        className="button button-primary"
+                        disabled={
+                          multiOutputBusy ||
+                          !outputUid ||
+                          multiOutput?.helperAvailable === false
+                        }
+                        onClick={() => void createMultiOutput()}
+                      >
+                        {multiOutputBusy ? '処理中...' : '自動作成して出力に設定'}
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={multiOutputBusy || !multiOutput?.multiOutput}
+                        onClick={() => void removeMultiOutput()}
+                      >
+                        Kataribe Multi-Output を削除
+                      </button>
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={multiOutputBusy}
+                        onClick={() => void refreshMultiOutput()}
+                      >
+                        再検出
+                      </button>
+                    </div>
+                    {multiOutput?.multiOutput ? (
+                      <p className="ok-text">
+                        作成済み: {multiOutput.multiOutput.name}（{multiOutput.multiOutput.channels} ch）
+                      </p>
+                    ) : null}
+                    {multiOutput?.helperAvailable === false ? (
+                      <p className="alert alert-error">
+                        Multi-Output ヘルパーが見つかりません。`npm run binaries` で再ビルドしてください。
+                      </p>
+                    ) : null}
+                    {multiOutput?.error ? (
+                      <p className="alert alert-error">{multiOutput.error}</p>
+                    ) : null}
+                    {multiOutputError ? (
+                      <p className="alert alert-error">{multiOutputError}</p>
+                    ) : null}
+                    {multiOutputNotice ? (
+                      <p className="notice-text">{multiOutputNotice}</p>
+                    ) : null}
+                  </>
+                )}
               </div>
             </section>
 
@@ -663,6 +983,22 @@ export function SettingsPanel({
             <p className="muted">
               文字起こしは端末内の whisper.cpp で行います。録音停止後、選択中のモデルで自動的に開始します。
             </p>
+            <div className="setting-card prompt-card">
+              <label className="field">
+                <span>用語集（initial prompt）</span>
+                <textarea
+                  className="setting-input prompt-textarea"
+                  value={initialPromptDraft}
+                  placeholder="例: Kataribe, BlackHole, リリース, スプリント"
+                  onChange={(event) => setInitialPromptDraft(event.target.value)}
+                  onBlur={() => void saveInitialPrompt()}
+                />
+              </label>
+              <p className="muted">
+                専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。
+                用語集が多いと関係のない単語を誘導することがあります。
+              </p>
+            </div>
           </section>
         ) : null}
 
@@ -794,6 +1130,26 @@ export function SettingsPanel({
                     {option.label}
                   </button>
                 ))}
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">要約プロンプト</p>
+              <div className="setting-card">
+                <label className="field">
+                  <span>システムプロンプト（空欄で既定）</span>
+                  <textarea
+                    className="setting-input prompt-textarea"
+                    value={summaryPromptDraft}
+                    placeholder="空欄の場合は、要約・決定事項・ToDo・未決事項の 4 セクションを指定する既定のプロンプトを使います。"
+                    onChange={(event) => setSummaryPromptDraft(event.target.value)}
+                    onBlur={() => void saveSummaryPrompt()}
+                  />
+                </label>
+                <p className="muted">
+                  4 セクションの見出しが欠けても、保存時に不足する見出しを補います。
+                  プロンプトを変更すると出力の品質や形式が変わる場合があります。
+                </p>
               </div>
             </section>
           </>

@@ -42,6 +42,38 @@
   - @shoichi.furuya
 - [ADD] 開発起動時とビルド済みアプリの Dock アイコンに L1 のアプリアイコンを反映する
   - @shoichi.furuya
+- [ADD] 文字起こしの日本語訳・英語訳を確認付きで生成し、transcript.ja.md / transcript.en.md に保存する
+  - @shoichi.furuya
+- [ADD] 保存先フォルダを設定画面から変更できるようにする
+  - @shoichi.furuya
+- [ADD] 会議タイトルの編集、フォルダ改名、front matter の更新を追加する
+  - @shoichi.furuya
+- [ADD] タイトル、文字起こし、翻訳、要約を横断する全文検索を追加する
+  - @shoichi.furuya
+- [ADD] 音声特徴量による簡易話者分離と話者ラベルの設定を追加する
+  - @shoichi.furuya
+- [ADD] Multi-Output Device をアプリから自動作成・削除するヘルパーと設定画面を追加する
+  - @shoichi.furuya
+- [ADD] mp3 の 64 / 128 kbps 設定、whisper の用語集、会議ごとの要約言語を追加する
+  - @shoichi.furuya
+- [ADD] 処理速度比の実測保存、ハードリミットの継続確認、小さいモデルでの再実行を追加する
+  - @shoichi.furuya
+- [ADD] 検索結果から音声の該当位置へジャンプできるようにする
+  - @shoichi.furuya
+- [ADD] SQLite と FTS5 による会議索引と全文検索を追加する
+  - @shoichi.furuya
+- [ADD] グローバルショートカット、既存 mp3 / wav の取り込み、要約プロンプト編集を追加する
+  - @shoichi.furuya
+- [ADD] バックグラウンド通信の無効化と、起動時の孤児子プロセス掃除を追加する
+  - @shoichi.furuya
+- [ADD] 会議一覧からの Pin 止めと会議の削除を追加する
+  - @shoichi.furuya
+- [ADD] サイドバーを年 -> 月の階層で絞り込めるようにする
+  - @shoichi.furuya
+- [ADD] タイトル未入力の会議に、要約生成時の LLM でタイトルを付ける
+  - @shoichi.furuya
+- [ADD] ヘッダーのアプリ名の左にアプリアイコンを表示する
+  - @shoichi.furuya
 
 ### FIX
 
@@ -61,4 +93,8 @@
 - [CHANGE] 配布予定がないため署名・公証の検証を対象外にする
   - @shoichi.furuya
 - [ADD] README に文字起こし、モデル取得、API キー、要約の利用手順を追加する
+  - @shoichi.furuya
+- [ADD] ADR-0018 を追加し、ADR-0001 と ADR-0003 を Multi-Output Device の自動作成に合わせて改訂する
+  - @shoichi.furuya
+- [ADD] issue 0008 の解決方法を記録し、closed に移動する
   - @shoichi.furuya

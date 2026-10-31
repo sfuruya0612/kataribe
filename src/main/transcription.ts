@@ -36,6 +36,7 @@ export type TranscriptionOutcome = {
   language: string;
   lastEndSeconds: number;
   durationSeconds: number;
+  elapsedSeconds: number;
   errorCode: TranscriptionErrorCode | null;
   error: string | null;
   resumed: boolean;
@@ -48,10 +49,15 @@ export type TranscribeOptions = {
   model: WhisperModel;
   modelPath: string;
   durationSeconds?: number;
+  predictedSpeedRatio?: number;
   initialPrompt?: string;
   signal?: AbortSignal;
   onUpdate?: (progress: TranscriptionProgress) => void;
   onPartial?: (outcome: TranscriptionOutcome) => void | Promise<void>;
+  onHardLimitExceeded?: (
+    elapsedSeconds: number,
+    predictedSeconds: number,
+  ) => Promise<boolean>;
 };
 
 export type TranscriptionServiceOptions = {
@@ -323,9 +329,11 @@ export class TranscriptionService {
   ): Promise<TranscriptionOutcome> {
     const durationSeconds =
       options.durationSeconds ?? (await readWavInfo(options.audioWavPath)).duration;
+    const runStartedAt = clock.now();
     let segments: TranscriptSegment[] = [];
     let language = 'auto';
     let resumed = false;
+    let hardLimitDecision: boolean | null = null;
     let lastErrorCode: TranscriptionErrorCode | null = null;
     let lastError: string | null = null;
 
@@ -350,7 +358,10 @@ export class TranscriptionService {
       let watchdogError: TranscriptionErrorCode | null = null;
       let hardLimitWarned = false;
       const startedAt = clock.now();
-      const predictedMs = Math.max(durationSeconds * 0.2 * 1000, 1);
+      const predictedMs = Math.max(
+        durationSeconds * (options.predictedSpeedRatio ?? 0.2) * 1000,
+        1,
+      );
       const hardLimitMs = Math.max(5 * 60_000, predictedMs * 3);
       const absoluteLimitMs = Math.max(6 * 60 * 60_000, durationSeconds * 6 * 1000);
       const stallLimitMs = options.model.startsWith('large') ? 5 * 60_000 : 3 * 60_000;
@@ -387,6 +398,7 @@ export class TranscriptionService {
           language,
           lastEndSeconds: 0,
           durationSeconds,
+          elapsedSeconds: Math.max(0, (clock.now() - runStartedAt) / 1000),
           errorCode: 'cancelled',
           error: 'transcription was cancelled',
           resumed,
@@ -407,7 +419,36 @@ export class TranscriptionService {
         const elapsed = current - startedAt;
         if (!hardLimitWarned && elapsed >= hardLimitMs) {
           hardLimitWarned = true;
-          emit('予想より時間がかかっています。処理は続行しています。');
+          if (hardLimitDecision === false) {
+            watchdogError = 'hard-limit';
+            internal.abort();
+            return;
+          }
+          if (hardLimitDecision === null && options.onHardLimitExceeded) {
+            void options
+              .onHardLimitExceeded(
+                elapsed / 1000,
+                Math.max(0, Math.round(predictedMs / 1000)),
+              )
+              .then((shouldContinue) => {
+                hardLimitDecision = shouldContinue;
+                if (!shouldContinue && !internal.signal.aborted) {
+                  watchdogError = 'hard-limit';
+                  internal.abort();
+                } else if (shouldContinue) {
+                  emit('ユーザーの確認により処理を継続しています。');
+                }
+              })
+              .catch(() => {
+                hardLimitDecision = false;
+                if (!internal.signal.aborted) {
+                  watchdogError = 'hard-limit';
+                  internal.abort();
+                }
+              });
+          } else {
+            emit('予想より時間がかかっています。処理は続行しています。');
+          }
         }
         if (elapsed >= absoluteLimitMs) {
           watchdogError = 'hard-limit';
@@ -554,6 +595,7 @@ export class TranscriptionService {
           language,
           lastEndSeconds,
           durationSeconds,
+          elapsedSeconds: Math.max(0, (clock.now() - runStartedAt) / 1000),
           errorCode: null,
           error: null,
           resumed,
@@ -583,6 +625,7 @@ export class TranscriptionService {
         language,
         lastEndSeconds,
         durationSeconds,
+        elapsedSeconds: Math.max(0, (clock.now() - runStartedAt) / 1000),
         errorCode: lastErrorCode,
         error: lastError,
         resumed,
@@ -611,6 +654,7 @@ export class TranscriptionService {
       language,
       lastEndSeconds,
       durationSeconds,
+      elapsedSeconds: Math.max(0, (clock.now() - runStartedAt) / 1000),
       errorCode: lastErrorCode,
       error: lastError,
       resumed,

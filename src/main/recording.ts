@@ -127,7 +127,7 @@ export class RecordingManager {
   private lastMeetingDir: string | null = null;
   private lastStatus: RecordingStatus = 'idle';
   private operationQueue: Promise<unknown> = Promise.resolve();
-  private readonly saveRoot: string;
+  private saveRoot: string;
   private readonly tempRoot: string;
   private readonly appVersion: string;
   private readonly blocker: PowerSaveBlockerAdapter;
@@ -143,6 +143,17 @@ export class RecordingManager {
 
   getLastMeetingDir(): string | null {
     return this.lastMeetingDir;
+  }
+
+  getSaveRoot(): string {
+    return this.saveRoot;
+  }
+
+  setSaveRoot(saveRoot: string): void {
+    if (this.active) {
+      throw new Error('cannot change the save root while recording');
+    }
+    this.saveRoot = resolve(saveRoot);
   }
 
   getState(): RecordingState {
@@ -618,10 +629,11 @@ export class RecordingManager {
 
     const now = this.now();
     const meetingDir = await this.createMeetingDir(now);
+    const meetingId = randomUUID();
     const metaPath = join(meetingDir, 'meta.json');
     const meta: MeetingMeta = {
       schema_version: 1,
-      id: randomUUID(),
+      id: meetingId,
       status: 'error',
       title: 'タイトル未入力',
       started_at: now.toISOString(),
@@ -654,7 +666,7 @@ export class RecordingManager {
 
     this.lastStatus = 'error';
     this.lastMeetingDir = meetingDir;
-    return { meetingDir, metaPath };
+    return { meetingId, meetingDir, metaPath };
   }
 
   private async createMeetingDir(now: Date): Promise<string> {

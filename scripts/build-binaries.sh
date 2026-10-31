@@ -75,7 +75,14 @@ fi
 cp "$WORK_ROOT/ffmpeg-$FFMPEG_VERSION/ffmpeg" "$OUT_DIR/ffmpeg"
 chmod +x "$OUT_DIR/ffmpeg"
 
+echo "== Multi-Output Device helper =="
+swiftc -O -parse-as-library -framework CoreAudio \
+  "$ROOT/resources/native/multi-output.swift" \
+  -o "$OUT_DIR/kataribe-multi-output"
+chmod +x "$OUT_DIR/kataribe-multi-output"
+
 echo "generated:"
-ls -lh "$OUT_DIR/whisper-cli" "$OUT_DIR/ffmpeg"
+ls -lh "$OUT_DIR/whisper-cli" "$OUT_DIR/ffmpeg" "$OUT_DIR/kataribe-multi-output"
 "$OUT_DIR/ffmpeg" -version | head -1
 "$OUT_DIR/whisper-cli" --help 2>&1 | head -1
+"$OUT_DIR/kataribe-multi-output" list >/dev/null

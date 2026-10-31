@@ -51,7 +51,7 @@ export class BinaryLocator {
   }
 
   async ffmpegPath(): Promise<string> {
-    return this.locate('ffmpeg', 'ffmpeg');
+    return this.locate('ffmpeg', 'KATARIBE_FFMPEG_PATH');
   }
 
   async whisperPath(): Promise<string> {
@@ -60,7 +60,7 @@ export class BinaryLocator {
       : ['whisper-cli', 'whisper'];
     for (const name of candidates) {
       try {
-        return await this.locate(name, name);
+        return await this.locate(name, 'KATARIBE_WHISPER_PATH');
       } catch {
         // Try the next name.
       }
@@ -68,9 +68,19 @@ export class BinaryLocator {
     throw this.missingError('whisper-cli', 'whisper.cpp');
   }
 
-  private async locate(envName: string, binaryName: string): Promise<string> {
+  async multiOutputPath(): Promise<string> {
+    if (this.options.platform !== 'darwin') {
+      throw new MediaError(
+        'binary-missing',
+        'Multi-Output Device creation is supported only on macOS',
+      );
+    }
+    return this.locate('kataribe-multi-output', 'KATARIBE_MULTI_OUTPUT_PATH');
+  }
+
+  private async locate(binaryName: string, envKey: string): Promise<string> {
     const env = this.options.env ?? process.env;
-    const override = env[envName === 'ffmpeg' ? 'KATARIBE_FFMPEG_PATH' : 'KATARIBE_WHISPER_PATH'];
+    const override = env[envKey];
     if (override && (await this.accessPath(resolve(override)))) {
       return resolve(override);
     }
@@ -105,7 +115,14 @@ export class BinaryLocator {
       }
     }
 
-    throw this.missingError(binaryName, binaryName === 'ffmpeg' ? 'ffmpeg' : 'whisper.cpp');
+    throw this.missingError(
+      binaryName,
+      binaryName === 'ffmpeg'
+        ? 'ffmpeg'
+        : binaryName.startsWith('whisper')
+          ? 'whisper.cpp'
+          : 'Multi-Output Device helper',
+    );
   }
 
   private missingError(binaryName: string, label: string): MediaError {
@@ -314,10 +331,9 @@ export class MediaEncoder {
     }
     if (result.code !== 0) {
       await rm(options.outputPath, { force: true }).catch(() => undefined);
-      const detail = result.stderr.trim().split('\n').slice(-3).join(' ');
       throw new MediaError(
         'process-failed',
-        `ffmpeg exited with code ${result.code}${detail ? `: ${detail}` : ''}`,
+        `ffmpeg exited with code ${result.code}`,
       );
     }
 

@@ -17,6 +17,8 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 M0 のシステム音声検証は完了しています。
 会議一覧、会議詳細の波形プレイヤー、設定画面のタブと設定値の保存は実装済みです。
 録音停止後の mp3 変換、16 kHz WAV の生成、whisper.cpp による文字起こし、whisper モデルのダウンロード、API キーの Keychain 保存、LLM による要約を実装済みです。
+文字起こしの翻訳、簡易話者分離、全文検索、保存先の変更、会議タイトルの編集、Multi-Output Device の自動作成も実装済みです。
+mp3 のビットレート設定、会議ごとの要約言語、検索結果からの音声ジャンプ、処理速度の学習、グローバルショートカット、既存音声の取り込み、要約プロンプトの編集にも対応しています。
 配布予定はなく、ローカルの開発ビルドのみを対象にしています。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
@@ -37,6 +39,7 @@ M0 のシステム音声検証は完了しています。
 - [ADR-0012: メニューバーとメインウィンドウ](docs/adr/0012-menu-bar-and-main-window.md)
 - [ADR-0014: DMG 配布と署名、公証（ADR-0017 で置き換え）](docs/adr/0014-distribution-dmg-notarization.md)
 - [ADR-0017: 配布は行わず、ローカルビルドのみを使う](docs/adr/0017-local-build-only.md)
+- [ADR-0018: Multi-Output Device は利用者の明示操作で自動作成する](docs/adr/0018-multi-output-auto-creation.md)
 
 ## 動作環境
 
@@ -65,6 +68,12 @@ BlackHole 2ch は GPLv3 のソフトウェアです。
 Kataribe は BlackHole 2ch を同梱せず、再配布しません。
 
 ### 2. Multi-Output Device を作る
+
+Kataribe の「設定 > 録音 > Multi-Output Device」から自動作成できます。
+出力デバイスを選び、「自動作成して出力に設定」を押してください。
+macOS の音声出力が「Kataribe Multi-Output」に切り替わります。
+
+手動で作る場合は次の手順です。
 
 1. `Audio MIDI Setup` を開きます。
 2. 左下の `+` から `Create Multi-Output Device` を選びます。
@@ -194,6 +203,14 @@ mp3 と 16 kHz WAV の生成が成功したら、結合した中間 WAV を削�
 最後まで完了しなかった場合は、それまでの結果を部分的な `transcript.md` として保存します。
 進捗が止まった場合は同じモデルで 1 回だけ自動再開し、それでも完了しない場合はより小さいモデルでの再実行を案内します。
 
+「設定 > 録音 > 話者分離」を有効にすると、音声のピッチと周波数特性から話者 A / B を推定し、文字起こしの行頭に付けます。
+話者ラベルは推定であり、会議の内容によっては誤ることがあります。文字起こしは会議詳細から編集できます。
+
+多言語が混在する音声では、whisper.cpp のファイル単位の言語判定を使うため、主言語に引っ張られる場合があります。
+文字起こしの翻訳は、会議詳細の「日本語訳」「English 訳」から実行します。
+送信前に内容と送信先を確認し、翻訳結果は `transcript.ja.md` または `transcript.en.md` に保存します。
+原文の `transcript.md` は変更しません。
+
 録音中にアプリが異常終了した場合は、次回起動時に録音パネルへ復旧できる録音が表示されます。
 録音中に BlackHole 2ch が消えた場合は、録音を停止してチャンクを保存します。
 録音中にマイクだけが消えた場合は、システム音声の録音を続け、警告を表示します。
@@ -201,8 +218,18 @@ mp3 と 16 kHz WAV の生成が成功したら、結合した中間 WAV を削�
 デバイスの消失と権限拒否の時刻と種類は `meta.json` に記録します。
 
 会議一覧と会議詳細の波形プレイヤーは実装済みです。
+会議一覧の「音声を取り込む」から既存の mp3 / wav を文字起こしできます。
+会議一覧の各行から Pin 止めと削除ができます。Pin 止めした会議は一覧の先頭に表示されます。削除は確認ダイアログを出し、音声、文字起こし、要約、メタデータをまとめて削除します。
+サイドバーは年 -> 月の階層で会議を絞り込めます。
+会議一覧上部の検索欄から、タイトル、文字起こし、翻訳、要約を横断検索できます。検索結果にタイムスタンプがある場合は、音声プレイヤーの該当位置から再生できます。
+会議詳細のタイトル横の「タイトルを編集」からタイトルを変更できます。タイトルを変更すると会議フォルダ名と Markdown の front matter も更新します。
+タイトルが未入力の会議は、要約生成時に LLM が内容からタイトルを付けます。
+会議詳細の要約ペインから、その会議だけの要約言語を日本語 / English に上書きできます。
 設定画面の入力ソースは、メニューバーと録音パネルに同期します。
-入力ソース、モデル、LLM プロバイダ、出力言語、クリッピング警告、無音検出の設定は `~/Library/Application Support/Kataribe/settings.json` に保存します。
+グローバルショートカット `Command + Shift + R` で、他のアプリが前面にあっても録音を開始・停止できます。設定画面で無効にできます。
+保存先は「設定 > 一般」から変更できます。既存の会議フォルダは移動しません。
+入力ソース、保存先、モデル、話者分離、LLM プロバイダ、出力言語、クリッピング警告、無音検出の設定は `~/Library/Application Support/Kataribe/settings.json` に保存します。
+会議一覧と全文検索の索引は `~/Library/Application Support/Kataribe/index/` の SQLite に保存し、会議フォルダから再構築できます。
 API キーは `~/Library/Application Support/Kataribe/config.json` に暗号化して保存します。
 BlackHole 2ch のセットアップ手順は、設定画面から README を開いて確認できます。
 
@@ -213,15 +240,17 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 
 ![設定画面](docs/images/settings.jpg)
 
-1. 保存先は現在 `~/Documents/Kataribe/` 固定です。変更は未実装です。
-2. 「文字起こし」タブで whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。
-3. 「要約」タブで LLM プロバイダを選び、エンドポイント URL、モデル名、API キーを設定します。プリセットは Claude、ChatGPT、Gemini、Ollama Cloud、Fireworks AI、カスタムです。
-4. API キーは macOS Keychain に保護された鍵で暗号化し、設定ファイルに平文を残しません。エンドポイントのホストを変更した場合は再入力が必要です。
-5. 必要なら要約の出力言語を変更します。既定は日本語です。
+1. 「一般」タブで保存先を変更できます。変更後、既存の会議は新しい一覧に表示されません。
+2. 「録音」タブで話者分離の有無、mp3 のビットレート（64 / 128 kbps）、グローバルショートカット、Multi-Output Device の自動作成を設定できます。
+3. 「文字起こし」タブで whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。用語集を initial prompt として指定できます。
+4. 「要約」タブで LLM プロバイダを選び、エンドポイント URL、モデル名、API キーを設定します。プリセットは Claude、ChatGPT、Gemini、Ollama Cloud、Fireworks AI、カスタムです。要約プロンプトを編集できます。
+5. API キーは macOS Keychain に保護された鍵で暗号化し、設定ファイルに平文を残しません。エンドポイントのホストを変更した場合は再入力が必要です。
+6. 必要なら要約の出力言語を変更します。既定は日本語です。
 
 要約は、会議詳細の「要約を生成」から実行します。
 送信前に、プロバイダ、モデル、エンドポイント、送る文字起こしの全文、文字数、概算トークン数、内容ハッシュを確認できます。
 音声ファイルは送信しません。
+概算料金はプロバイダの料金表を確認してください。
 
 ## 権限
 
@@ -233,8 +262,16 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 ## プライバシー
 
 音声と文字起こしは端末内に保存します。
-LLM に送るのは文字起こし結果の Markdown だけで、利用者が明示的に操作したときだけ送ります。
+LLM に送るのは文字起こしの本文だけで、利用者が要約または翻訳を明示的に操作したときだけ送ります。
 テレメトリは収集しません。
+
+## 既知の制約
+
+- 多言語が混在する会議では、whisper.cpp のファイル単位の言語判定を使うため、主言語に引っ張られる場合があります。区間ごとの言語判定は未実装です。
+- LLM の概算料金は自動計算しません。トークン数と内容を確認し、プロバイダの料金表で確認してください。
+- 簡易話者分離は音声特徴量による推定であり、話者が 3 人以上の場合や声質が近い場合は誤ることがあります。
+- Multi-Output Device の自動作成は macOS 26.7.1 の arm64 で確認しています。macOS 14.2 から 26.7.0 はベストエフォートです。
+- 文字起こし速度と要約の応答時間は、実際の会議とプロバイダのAPIで継続して確認します。
 
 ## トラブルシューティング
 
@@ -310,6 +347,6 @@ LLM に送るのは文字起こし結果の Markdown だけで、利用者が明
 - [M0 システム音声検証](docs/m0/0003-system-audio/README.md)
 
 Issue は番号の小さい順に進めます。
-アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、スリープ復帰の [issue 0003](docs/issues/closed/0003-feat-sleep-recovery.md)、回帰テストの [issue 0006](docs/issues/closed/0006-test-m0-regression-harness.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md) は実装済みです。
+アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、スリープ復帰の [issue 0003](docs/issues/closed/0003-feat-sleep-recovery.md)、回帰テストの [issue 0006](docs/issues/closed/0006-test-m0-regression-harness.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md)、Multi-Output Device の自動作成の [issue 0008](docs/issues/closed/0008-feat-multi-output-device-auto-creation.md) は実装済みです。
 配布予定がないため、[issue 0013](docs/issues/closed/0013-feat-release-checklist-and-entitlements.md) の署名、公証、Gatekeeper の検証は対象外にしました。
-保留中の issue は `docs/issues/pending/` にあります。
+保留中の issue はありません。

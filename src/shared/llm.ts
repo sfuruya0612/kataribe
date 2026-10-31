@@ -27,7 +27,7 @@ export const LLM_PROVIDER_PRESETS: LlmProviderPreset[] = [
     label: 'Ollama Cloud',
     kind: 'openai',
     defaultBaseUrl: 'https://ollama.com/v1',
-    defaultModel: 'qwen3.5:235b',
+    defaultModel: 'gpt-oss:120b',
   },
   {
     provider: 'fireworks',

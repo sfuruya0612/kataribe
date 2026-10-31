@@ -5,11 +5,12 @@ export type MeetingFilter =
   | 'processing'
   | 'error'
   | 'recording'
-  | `year:${string}`;
+  | `year:${string}`
+  | `month:${string}`;
 
 type SidebarProps = {
   meetings: MeetingSummary[];
-  view: 'meetings' | 'detail' | 'recording' | 'settings';
+  view: 'meetings' | 'detail' | 'recording' | 'settings' | 'search';
   filter: MeetingFilter;
   onFilter: (filter: MeetingFilter) => void;
   onOpenRecording: () => void;
@@ -29,11 +30,23 @@ export function Sidebar({
   ).length;
   const errors = meetings.filter((meeting) => meeting.status === 'error').length;
   const recording = meetings.filter((meeting) => meeting.status === 'recording').length;
-  const years = [...new Set(
-    meetings
-      .map((meeting) => new Date(meeting.startedAt).getFullYear())
-      .filter((year) => Number.isFinite(year)),
-  )].sort((left, right) => right - left);
+  const groups = new Map<
+    number,
+    { total: number; months: Map<number, number> }
+  >();
+  for (const meeting of meetings) {
+    const date = new Date(meeting.startedAt);
+    if (!Number.isFinite(date.getTime())) {
+      continue;
+    }
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const group = groups.get(year) ?? { total: 0, months: new Map<number, number>() };
+    group.total += 1;
+    group.months.set(month, (group.months.get(month) ?? 0) + 1);
+    groups.set(year, group);
+  }
+  const years = [...groups.keys()].sort((left, right) => right - left);
   const isMeetings = view === 'meetings';
 
   return (
@@ -75,25 +88,42 @@ export function Sidebar({
 
       {years.length > 0 ? (
         <>
-          <p className="side-label side-label-spaced">Year</p>
-          {years.map((year) => (
-            <button
-              type="button"
-              className={`side ${isMeetings && filter === `year:${year}` ? 'is-active' : ''}`}
-              key={year}
-              onClick={() => onFilter(`year:${year}`)}
-            >
-              {year}
-              <span className="side-count">
-                {
-                  meetings.filter(
-                    (meeting) =>
-                      new Date(meeting.startedAt).getFullYear() === year,
-                  ).length
-                }
-              </span>
-            </button>
-          ))}
+          <p className="side-label side-label-spaced">Year / Month</p>
+          {years.map((year) => {
+            const group = groups.get(year);
+            if (!group) {
+              return null;
+            }
+            const months = [...group.months.entries()].sort(
+              (left, right) => right[0] - left[0],
+            );
+            return (
+              <div className="side-date-group" key={year}>
+                <button
+                  type="button"
+                  className={`side side-year ${isMeetings && filter === `year:${year}` ? 'is-active' : ''}`}
+                  onClick={() => onFilter(`year:${year}`)}
+                >
+                  {year}
+                  <span className="side-count">{group.total}</span>
+                </button>
+                {months.map(([month, count]) => {
+                  const key = `${year}-${String(month).padStart(2, '0')}`;
+                  return (
+                    <button
+                      type="button"
+                      className={`side side-month ${isMeetings && filter === `month:${key}` ? 'is-active' : ''}`}
+                      key={key}
+                      onClick={() => onFilter(`month:${key}`)}
+                    >
+                      {month} 月
+                      <span className="side-count">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
         </>
       ) : null}
 
