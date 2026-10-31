@@ -17,8 +17,8 @@
     "test": "vitest run",
     "smoke": "npm run build && KATARIBE_SMOKE_TEST=1 electron .",
     "test:window": "npm run build && KATARIBE_WINDOW_TEST=1 electron .",
-    "package": "npm run build && electron-builder --mac dir",
-    "dist": "npm run build && electron-builder --mac dmg",
+    "package": "npm run build && electron-builder --mac dir --publish never",
+    "dist": "npm run build && electron-builder --mac dmg --publish never",
     "verify:mac": "node scripts/verify-mac-bundle.cjs",
     "verify:mac:release": "node scripts/verify-mac-bundle.cjs --strict-signing",
     "binaries": "bash scripts/build-binaries.sh"
