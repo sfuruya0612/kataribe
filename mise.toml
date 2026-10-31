@@ -1,0 +1,62 @@
+[tools]
+node = "24.22.2"
+
+[tasks.install]
+description = "依存関係をインストールする"
+run = "npm install"
+
+[tasks.dev]
+description = "Electron の開発サーバーを起動する"
+run = "npm run dev"
+
+[tasks.build]
+description = "メイン、preload、renderer をビルドする"
+run = "npm run build"
+
+[tasks.typecheck]
+description = "TypeScript の型検査を実行する"
+run = "npm run typecheck"
+
+[tasks.test]
+description = "Vitest のテストを実行する"
+run = "npm test"
+
+[tasks.check]
+description = "型検査とテストをまとめて実行する"
+depends = ["typecheck", "test"]
+
+[tasks.smoke]
+description = "ビルド済みアプリの起動確認を行う"
+run = "npm run smoke"
+
+[tasks.window-test]
+description = "ウィンドウを閉じたときの常駐動作を確認する"
+run = "npm run test:window"
+
+[tasks.package]
+description = "macOS の .app を生成する"
+run = "npm run package"
+
+[tasks.dist]
+description = "macOS の DMG を生成する"
+run = "npm run dist"
+
+[tasks.icons]
+description = "アイコン素材を生成する"
+run = "npm run icons"
+
+[tasks.binaries]
+description = "同梱する whisper-cli、ffmpeg、Multi-Output helper をビルドする"
+run = "npm run binaries"
+
+[tasks.verify]
+description = "ローカルビルドの .app を検証する"
+run = "npm run verify:mac"
+
+[tasks.verify-release]
+description = "署名と公証を含めて .app を検証する"
+run = "npm run verify:mac:release"
+
+[tasks.npm]
+description = "mise 管理の Node.js で任意の npm コマンドを実行する"
+run = "npm"

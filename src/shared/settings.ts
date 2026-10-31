@@ -17,10 +17,12 @@ import type {
   AppSettings,
   InputSource,
   SummaryLanguage,
+  ThemeMode,
   WhisperModel,
 } from './types';
 
 const INPUT_SOURCES: InputSource[] = ['microphone', 'system', 'both'];
+const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark'];
 const WHISPER_MODELS: WhisperModel[] = ['large-v3-turbo', 'medium', 'small'];
 const SUMMARY_LANGUAGES: SummaryLanguage[] = ['ja', 'en'];
 
@@ -30,6 +32,7 @@ const DEFAULT_LLM_PRESET = getLlmProviderPreset(DEFAULT_LLM_PROVIDER);
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   inputSource: 'both',
   saveRoot: '',
+  theme: 'system',
   whisperModel: 'large-v3-turbo',
   speakerDiarization: true,
   globalShortcutEnabled: true,
@@ -49,6 +52,9 @@ export function normalizeAppSettings(input: Partial<AppSettings> | null | undefi
   const inputSource = INPUT_SOURCES.includes(input?.inputSource as InputSource)
     ? (input?.inputSource as InputSource)
     : DEFAULT_APP_SETTINGS.inputSource;
+  const theme = THEME_MODES.includes(input?.theme as ThemeMode)
+    ? (input?.theme as ThemeMode)
+    : DEFAULT_APP_SETTINGS.theme;
   const whisperModel = WHISPER_MODELS.includes(input?.whisperModel as WhisperModel)
     ? (input?.whisperModel as WhisperModel)
     : DEFAULT_APP_SETTINGS.whisperModel;
@@ -102,6 +108,7 @@ export function normalizeAppSettings(input: Partial<AppSettings> | null | undefi
   return {
     inputSource,
     saveRoot,
+    theme,
     whisperModel,
     speakerDiarization,
     globalShortcutEnabled,

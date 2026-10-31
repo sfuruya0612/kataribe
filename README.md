@@ -150,6 +150,31 @@ Bluetooth 出力には遅延があります。
 
 - Node.js 24.21.0 以降
 - npm
+- mise（任意。Node.js の版を固定して npm を実行する場合）
+
+mise を使う場合は、リポジトリ直下で次を実行します。
+
+```sh
+mise install
+mise run install
+mise run dev
+```
+
+`mise run` から npm スクリプトを実行できます。
+
+```sh
+mise run build
+mise run typecheck
+mise run test
+mise run check
+mise run package
+mise run verify
+mise run npm -- run <script>
+```
+
+`mise run npm -- ...` は、mise が管理する Node.js の npm に引数をそのまま渡します。
+
+npm を直接使う場合:
 
 ```sh
 npm install
@@ -240,7 +265,7 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 
 ![設定画面](docs/images/settings.jpg)
 
-1. 「一般」タブで保存先を変更できます。変更後、既存の会議は新しい一覧に表示されません。
+1. 「一般」タブで保存先と外観（システム / ライト / ダーク）を変更できます。外観の既定はシステムで、macOS の設定に追従します。保存先の変更後、既存の会議は新しい一覧に表示されません。
 2. 「録音」タブで話者分離の有無、mp3 のビットレート（64 / 128 kbps）、グローバルショートカット、Multi-Output Device の自動作成を設定できます。
 3. 「文字起こし」タブで whisper.cpp のモデルを選び、ダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。用語集を initial prompt として指定できます。
 4. 「要約」タブで LLM プロバイダを選び、エンドポイント URL、モデル名、API キーを設定します。プリセットは Claude、ChatGPT、Gemini、Ollama Cloud、Fireworks AI、カスタムです。要約プロンプトを編集できます。

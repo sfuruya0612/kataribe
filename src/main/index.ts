@@ -11,6 +11,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  nativeTheme,
   net,
   powerMonitor,
   powerSaveBlocker,
@@ -42,6 +43,7 @@ import type {
   RecordingStartupFailureResult,
   StartRecordingOptions,
   SummaryLanguage,
+  ThemeMode,
   WhisperModel,
 } from '../shared/types';
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
@@ -309,7 +311,7 @@ function createWindow(): BrowserWindow {
     show: false,
     title: 'Kataribe',
     icon: appIconPath(),
-    backgroundColor: '#E9E9EE',
+    backgroundColor: windowBackgroundColor(),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     webPreferences: {
@@ -448,6 +450,19 @@ function appIconPath(): string {
     : join(app.getAppPath(), 'build', 'icon.iconset', 'icon_512x512@2x.png');
 }
 
+function windowBackgroundColor(): string {
+  return nativeTheme.shouldUseDarkColors ? '#1c1c1f' : '#e9e9ee';
+}
+
+function applyThemeMode(theme: ThemeMode): void {
+  nativeTheme.themeSource = theme;
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.setBackgroundColor(windowBackgroundColor());
+    }
+  }
+}
+
 function applyDockIcon(): void {
   if (process.platform !== 'darwin' || !app.dock) {
     return;
@@ -579,6 +594,7 @@ function registerIpc(
     stateStore.setInputSource(settings.inputSource);
     stateStore.setClippingConfig(settings.clippingConfig);
     stateStore.setSilenceConfig(settings.silenceConfig);
+    applyThemeMode(settings.theme);
     applyGlobalShortcutSettings?.();
     return settings;
   });
@@ -1252,6 +1268,7 @@ if (!app.requestSingleInstanceLock()) {
     if (!storedSettings.saveRoot) {
       storedSettings = await settingsStore.save({ saveRoot: defaultSaveRoot });
     }
+    applyThemeMode(storedSettings.theme);
     const saveRoot = storedSettings.saveRoot;
     const meetingStore = new MeetingStore(saveRoot);
     const childRegistry = new ChildProcessRegistry(
@@ -1505,6 +1522,14 @@ if (!app.requestSingleInstanceLock()) {
     console.log('tray created');
 
     stateTimer = setInterval(() => stateStore.tick(), 1000);
+
+    nativeTheme.on('updated', () => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.setBackgroundColor(windowBackgroundColor());
+        }
+      }
+    });
 
     mainWindow = createWindow();
 

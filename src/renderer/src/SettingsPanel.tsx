@@ -11,6 +11,7 @@ import type {
   LlmRuntimeConfig,
   MultiOutputStatus,
   SummaryLanguage,
+  ThemeMode,
   WhisperModel,
   WhisperModelList,
 } from '../../shared/types';
@@ -54,6 +55,12 @@ const whisperModels: Array<{ value: WhisperModel; label: string; size: string }>
   { value: 'large-v3-turbo', label: 'large-v3-turbo', size: '1.6 GB' },
   { value: 'medium', label: 'medium', size: '1.5 GB' },
   { value: 'small', label: 'small', size: '488 MB' },
+];
+
+const themeOptions: Array<{ value: ThemeMode; label: string }> = [
+  { value: 'system', label: 'システム' },
+  { value: 'light', label: 'ライト' },
+  { value: 'dark', label: 'ダーク' },
 ];
 
 function formatBytes(value: number | null): string {
@@ -445,6 +452,27 @@ export function SettingsPanel({
               <p className="muted">
                 変更後、既存の会議は新しい保存先の一覧に表示されません。会議フォルダは移動しません。
               </p>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">外観</p>
+              <div className="setting-card">
+                <div className="seg settings-source-seg">
+                  {themeOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      aria-pressed={settings.theme === option.value}
+                      onClick={() => void onUpdateSettings({ theme: option.value })}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted">
+                  システムを選ぶと macOS のライト / ダーク設定に追従します。既定はシステムです。
+                </p>
+              </div>
             </section>
 
             <section className="settings-section">

@@ -74,6 +74,10 @@
   - @shoichi.furuya
 - [ADD] ヘッダーのアプリ名の左にアプリアイコンを表示する
   - @shoichi.furuya
+- [ADD] mise のタスクから npm スクリプトを実行できるようにする
+  - @shoichi.furuya
+- [ADD] OS のダークモードに追従する配色と、システム / ライト / ダークを選べる外観設定を追加する
+  - @shoichi.furuya
 
 ### FIX
 

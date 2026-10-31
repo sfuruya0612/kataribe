@@ -111,6 +111,7 @@ describe('SettingsStore', () => {
     expect(
       normalizeAppSettings({
         saveRoot: '/Users/test/Kataribe',
+        theme: 'dark',
         speakerDiarization: false,
         globalShortcutEnabled: false,
         whisperInitialPrompt: '  Kataribe, BlackHole  ',
@@ -120,6 +121,7 @@ describe('SettingsStore', () => {
       }),
     ).toMatchObject({
       saveRoot: '/Users/test/Kataribe',
+      theme: 'dark',
       speakerDiarization: false,
       globalShortcutEnabled: false,
       whisperInitialPrompt: 'Kataribe, BlackHole',
@@ -128,6 +130,7 @@ describe('SettingsStore', () => {
       summaryPromptTemplate: '  custom prompt  ',
     });
     expect(normalizeAppSettings({ saveRoot: 'relative/path' }).saveRoot).toBe('');
+    expect(normalizeAppSettings({ theme: 'blue' as never }).theme).toBe('system');
     expect(
       normalizeAppSettings({ speakerDiarization: 'yes' as never })
         .speakerDiarization,

@@ -128,9 +128,12 @@ export type LlmProvider =
 
 export type SummaryLanguage = 'ja' | 'en';
 
+export type ThemeMode = 'system' | 'light' | 'dark';
+
 export type AppSettings = {
   inputSource: InputSource;
   saveRoot: string;
+  theme: ThemeMode;
   whisperModel: WhisperModel;
   speakerDiarization: boolean;
   globalShortcutEnabled: boolean;
