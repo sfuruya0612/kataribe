@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  LlmProfilesState,
   MeetingDetail as MeetingDetailData,
   MeetingSummary,
   ProcessingState,
@@ -34,6 +35,19 @@ type MeetingDetailProps = {
 };
 
 const TIMESTAMP_LINE = /^\[(\d{2}:\d{2}:\d{2})\]\s?(.*)$/u;
+
+function selectProfileId(
+  state: LlmProfilesState | null,
+  current: string,
+): string {
+  if (!state) {
+    return current;
+  }
+  if (current && state.profiles.some((profile) => profile.id === current)) {
+    return current;
+  }
+  return state.defaultProfileId || state.profiles[0]?.id || '';
+}
 
 function progressLabel(processing: ProcessingState): string {
   switch (processing.stage) {
@@ -77,6 +91,9 @@ export function MeetingDetail({
   const [preview, setPreview] = useState<SummaryPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [summaryBusy, setSummaryBusy] = useState(false);
+  const [llmProfiles, setLlmProfiles] = useState<LlmProfilesState | null>(null);
+  const [summaryProfileId, setSummaryProfileId] = useState('');
+  const [translationProfileId, setTranslationProfileId] = useState('');
   const [translationPreview, setTranslationPreview] =
     useState<TranslationPreview | null>(null);
   const [translationBusy, setTranslationBusy] = useState(false);
@@ -110,6 +127,23 @@ export function MeetingDetail({
       setLoading(false);
     }
   }, [meetingId]);
+
+  const refreshLlmProfiles = useCallback(async () => {
+    try {
+      const state = await window.kataribe.getLlmProfiles();
+      setLlmProfiles(state);
+      setSummaryProfileId((current) => selectProfileId(state, current));
+      setTranslationProfileId((current) => selectProfileId(state, current));
+      return state;
+    } catch (reason: unknown) {
+      setError(`LLM プロファイルを取得できませんでした: ${errorText(reason)}`);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshLlmProfiles();
+  }, [refreshLlmProfiles]);
 
   useEffect(() => {
     setTab('transcript');
@@ -343,14 +377,45 @@ export function MeetingDetail({
     setTranslationBusy(true);
     setError(null);
     try {
+      const state = await refreshLlmProfiles();
+      const profileId = selectProfileId(state, translationProfileId);
+      if (!profileId) {
+        throw new Error(
+          'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        );
+      }
+      setTranslationProfileId(profileId);
       const value = await window.kataribe.previewTranslation(
         meeting.id,
         targetLanguage,
+        profileId,
       );
       setTranslationPreview(value);
     } catch (reason: unknown) {
       setError(errorText(reason));
-      } finally {
+    } finally {
+      setTranslationBusy(false);
+    }
+  };
+
+  const changeTranslationProfile = async (profileId: string) => {
+    setTranslationProfileId(profileId);
+    const current = translationPreviewRef.current;
+    if (!current) {
+      return;
+    }
+    setTranslationBusy(true);
+    setError(null);
+    try {
+      const value = await window.kataribe.previewTranslation(
+        meeting.id,
+        current.targetLanguage,
+        profileId,
+      );
+      setTranslationPreview(value);
+    } catch (reason: unknown) {
+      setError(errorText(reason));
+    } finally {
       setTranslationBusy(false);
     }
   };
@@ -385,7 +450,33 @@ export function MeetingDetail({
     setPreviewBusy(true);
     setError(null);
     try {
-      const value = await window.kataribe.previewSummary(meeting.id);
+      const state = await refreshLlmProfiles();
+      const profileId = selectProfileId(state, summaryProfileId);
+      if (!profileId) {
+        throw new Error(
+          'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        );
+      }
+      setSummaryProfileId(profileId);
+      const value = await window.kataribe.previewSummary(meeting.id, profileId);
+      setPreview(value);
+    } catch (reason: unknown) {
+      setError(errorText(reason));
+    } finally {
+      setPreviewBusy(false);
+    }
+  };
+
+  const changeSummaryProfile = async (profileId: string) => {
+    setSummaryProfileId(profileId);
+    const current = previewRef.current;
+    if (!current) {
+      return;
+    }
+    setPreviewBusy(true);
+    setError(null);
+    try {
+      const value = await window.kataribe.previewSummary(meeting.id, profileId);
       setPreview(value);
     } catch (reason: unknown) {
       setError(errorText(reason));
@@ -815,6 +906,30 @@ export function MeetingDetail({
           <div className="summary-head">
             <h2 id="summary-title">要約</h2>
             <select
+              className="setting-input summary-profile-select"
+              aria-label="要約に使う LLM プロファイル"
+              value={summaryProfileId}
+              disabled={processing.stage !== null || summaryBusy}
+              onChange={(event) => {
+                if (previewRef.current) {
+                  void changeSummaryProfile(event.target.value);
+                } else {
+                  setSummaryProfileId(event.target.value);
+                }
+              }}
+            >
+              {llmProfiles?.profiles.length ? (
+                llmProfiles.profiles.map((profile) => (
+                  <option value={profile.id} key={profile.id}>
+                    {profile.id}
+                    {profile.isDefault ? '（既定）' : ''}
+                  </option>
+                ))
+              ) : (
+                <option value="">プロファイル未設定</option>
+              )}
+            </select>
+            <select
               className="setting-input summary-language-select"
               aria-label="この会議の要約言語"
               value={current.summaryLanguage ?? ''}
@@ -877,6 +992,30 @@ export function MeetingDetail({
               </button>
             </div>
             <dl className="confirm-meta">
+              <div>
+                <dt>プロファイル</dt>
+                <dd>
+                  <select
+                    className="setting-input"
+                    aria-label="要約に使う LLM プロファイル"
+                    value={preview.profileId}
+                    disabled={summaryBusy || previewBusy}
+                    onChange={(event) => void changeSummaryProfile(event.target.value)}
+                  >
+                    {llmProfiles?.profiles.some(
+                      (profile) => profile.id === preview.profileId,
+                    ) ? null : (
+                      <option value={preview.profileId}>{preview.profileId}</option>
+                    )}
+                    {llmProfiles?.profiles.map((profile) => (
+                      <option value={profile.id} key={profile.id}>
+                        {profile.id}
+                        {profile.isDefault ? '（既定）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
+              </div>
               <div>
                 <dt>送信先</dt>
                 <dd className="mono">{preview.providerLabel} · {preview.model}</dd>
@@ -952,6 +1091,34 @@ export function MeetingDetail({
               </button>
             </div>
             <dl className="confirm-meta">
+              <div>
+                <dt>プロファイル</dt>
+                <dd>
+                  <select
+                    className="setting-input"
+                    aria-label="翻訳に使う LLM プロファイル"
+                    value={translationPreview.profileId}
+                    disabled={translationBusy}
+                    onChange={(event) =>
+                      void changeTranslationProfile(event.target.value)
+                    }
+                  >
+                    {llmProfiles?.profiles.some(
+                      (profile) => profile.id === translationPreview.profileId,
+                    ) ? null : (
+                      <option value={translationPreview.profileId}>
+                        {translationPreview.profileId}
+                      </option>
+                    )}
+                    {llmProfiles?.profiles.map((profile) => (
+                      <option value={profile.id} key={profile.id}>
+                        {profile.id}
+                        {profile.isDefault ? '（既定）' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </dd>
+              </div>
               <div>
                 <dt>翻訳</dt>
                 <dd>

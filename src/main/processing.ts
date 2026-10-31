@@ -11,9 +11,8 @@ import {
 import { dirname, join } from 'node:path';
 import {
   estimateTokens,
-  buildChatEndpoint,
-  getLlmProviderPreset,
-  validateEndpointUrl,
+  defaultLlmProfile,
+  findLlmProfile,
 } from '../shared/llm';
 import {
   formatSummaryMarkdown,
@@ -37,6 +36,7 @@ import { sanitizeMeetingTitle } from '../shared/title';
 import type { ApiKeyStore } from './api-keys';
 import { diarizeSegments } from './diarization';
 import type { LlmClient } from './llm';
+import { buildLlmProfileStatus } from './llm-profiles';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
 import {
   readMeetingMeta,
@@ -75,7 +75,8 @@ type PreviewToken = {
   contentHash: string;
   createdAt: number;
   expiresAt: number;
-  provider: AppSettings['llmProvider'];
+  profileId: string;
+  provider: LlmRuntimeConfig['provider'];
   baseUrl: string;
   endpoint: string;
   model: string;
@@ -89,7 +90,8 @@ type TranslationToken = {
   sourceLanguage: string;
   contentHash: string;
   expiresAt: number;
-  provider: AppSettings['llmProvider'];
+  profileId: string;
+  provider: LlmRuntimeConfig['provider'];
   baseUrl: string;
   endpoint: string;
   model: string;
@@ -342,41 +344,35 @@ export class ProcessingCoordinator {
     }
   }
 
-  async runtimeConfig(): Promise<LlmRuntimeConfig> {
+  async runtimeConfig(profileId?: string): Promise<LlmRuntimeConfig | null> {
     const settings = this.settings();
-    const preset = getLlmProviderPreset(settings.llmProvider);
-    const baseUrl = settings.llmBaseUrl;
-    const validation = validateEndpointUrl(baseUrl);
-    const endpoint = validation.ok
-      ? buildChatEndpoint(validation.normalized, preset.kind)
-      : '';
-    const status = await this.apiKeyStore.status(settings.llmProvider, baseUrl);
-    return {
-      provider: settings.llmProvider,
-      providerLabel: preset.label,
-      kind: preset.kind,
-      baseUrl,
-      endpoint,
-      model: settings.llmModel,
-      apiKeyConfigured:
-        status.configured && this.apiKeyStore.hostMatches(settings.llmProvider, baseUrl),
-      apiKeyStored: status.configured,
-      storedHost: status.host,
-      keychainAvailable: status.keychainAvailable,
-      keychainError: status.keychainError,
-      host: validation.ok ? validation.url.host : '',
-      hostMatchesKey:
-        status.configured &&
-        this.apiKeyStore.hostMatches(settings.llmProvider, baseUrl),
-    };
+    const profile = profileId
+      ? findLlmProfile(settings, profileId)
+      : defaultLlmProfile(settings);
+    if (!profile) {
+      return null;
+    }
+    return buildLlmProfileStatus(
+      profile,
+      profile.id === settings.llmDefaultProfileId,
+      this.apiKeyStore,
+    );
   }
 
-  async createSummaryPreview(meetingId: string): Promise<SummaryPreview> {
+  async createSummaryPreview(
+    meetingId: string,
+    profileId?: string,
+  ): Promise<SummaryPreview> {
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
       throw new Error('文字起こしがありません。先に文字起こしを完了してください。');
     }
-    const config = await this.runtimeConfig();
+    const config = await this.runtimeConfig(profileId);
+    if (!config) {
+      throw new Error(
+        'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+      );
+    }
     if (!config.endpoint) {
       throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
     }
@@ -394,6 +390,7 @@ export class ProcessingCoordinator {
       contentHash: hash,
       createdAt: now,
       expiresAt: now + 5 * 60_000,
+      profileId: config.id,
       provider: config.provider,
       baseUrl: config.baseUrl,
       endpoint: config.endpoint,
@@ -404,6 +401,7 @@ export class ProcessingCoordinator {
     return {
       token,
       meetingId,
+      profileId: config.id,
       provider: config.provider,
       providerLabel: config.providerLabel,
       model: config.model,
@@ -443,6 +441,7 @@ export class ProcessingCoordinator {
     }
 
     const config = {
+      profileId: preview.profileId,
       provider: preview.provider,
       baseUrl: preview.baseUrl,
       endpoint: preview.endpoint,
@@ -452,7 +451,12 @@ export class ProcessingCoordinator {
     };
     let apiKey: string;
     try {
-      apiKey = (await this.apiKeyStore.getKey(config.provider, config.baseUrl)) ?? '';
+      apiKey =
+        (await this.apiKeyStore.getKey(
+          config.profileId,
+          config.baseUrl,
+          config.provider,
+        )) ?? '';
     } catch (error) {
       throw new Error(
         `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,
@@ -621,6 +625,7 @@ export class ProcessingCoordinator {
   async createTranslationPreview(
     meetingId: string,
     targetLanguage: SummaryLanguage,
+    profileId?: string,
   ): Promise<TranslationPreview> {
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
@@ -636,7 +641,12 @@ export class ProcessingCoordinator {
     ) {
       throw new Error('原文と同じ言語には翻訳できません。');
     }
-    const config = await this.runtimeConfig();
+    const config = await this.runtimeConfig(profileId);
+    if (!config) {
+      throw new Error(
+        'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+      );
+    }
     if (!config.endpoint) {
       throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
     }
@@ -649,6 +659,7 @@ export class ProcessingCoordinator {
     const now = this.now().getTime();
     this.translationTokens.set(token, {
       meetingId,
+      profileId: config.id,
       targetLanguage,
       sourceLanguage,
       contentHash: hash,
@@ -662,6 +673,7 @@ export class ProcessingCoordinator {
     return {
       token,
       meetingId,
+      profileId: config.id,
       targetLanguage,
       sourceLanguage,
       provider: config.provider,
@@ -711,7 +723,11 @@ export class ProcessingCoordinator {
     let apiKey: string;
     try {
       apiKey =
-        (await this.apiKeyStore.getKey(preview.provider, preview.baseUrl)) ?? '';
+        (await this.apiKeyStore.getKey(
+          preview.profileId,
+          preview.baseUrl,
+          preview.provider,
+        )) ?? '';
     } catch (error) {
       throw new Error(
         `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,

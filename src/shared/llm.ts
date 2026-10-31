@@ -1,4 +1,9 @@
-import type { LlmProvider, LlmProviderPreset } from './types';
+import type {
+  AppSettings,
+  LlmProfile,
+  LlmProvider,
+  LlmProviderPreset,
+} from './types';
 
 export const LLM_PROVIDER_PRESETS: LlmProviderPreset[] = [
   {
@@ -126,6 +131,69 @@ export function normalizeLlmBaseUrl(
     return preset.defaultBaseUrl;
   }
   return validation.normalized;
+}
+
+const PROFILE_ID_MAX_LENGTH = 64;
+
+export function normalizeLlmProfileId(value: unknown): string {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim().replace(/\s+/gu, ' ');
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > PROFILE_ID_MAX_LENGTH ||
+    /[\u0000-\u001f\u007f]/u.test(trimmed)
+  ) {
+    return '';
+  }
+  return trimmed;
+}
+
+export function normalizeLlmModel(provider: LlmProvider, value: unknown): string {
+  const preset = getLlmProviderPreset(provider);
+  const raw = typeof value === 'string' ? value.trim() : '';
+  return raw ? raw.slice(0, 120) : preset.defaultModel;
+}
+
+export function normalizeLlmProfile(value: unknown): LlmProfile | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+  const input = value as Partial<LlmProfile>;
+  const id = normalizeLlmProfileId(input.id);
+  if (!id || !isLlmProvider(input.provider)) {
+    return null;
+  }
+  const provider = input.provider;
+  return {
+    id,
+    provider,
+    baseUrl: normalizeLlmBaseUrl(provider, input.baseUrl),
+    model: normalizeLlmModel(provider, input.model),
+  };
+}
+
+export function defaultLlmProfile(
+  settings: Pick<AppSettings, 'llmProfiles' | 'llmDefaultProfileId'>,
+): LlmProfile | null {
+  return (
+    settings.llmProfiles.find(
+      (profile) => profile.id === settings.llmDefaultProfileId,
+    ) ??
+    settings.llmProfiles[0] ??
+    null
+  );
+}
+
+export function findLlmProfile(
+  settings: Pick<AppSettings, 'llmProfiles'>,
+  profileId: string | null | undefined,
+): LlmProfile | null {
+  if (!profileId) {
+    return null;
+  }
+  return settings.llmProfiles.find((profile) => profile.id === profileId) ?? null;
 }
 
 export function maskApiKey(value: string): string {

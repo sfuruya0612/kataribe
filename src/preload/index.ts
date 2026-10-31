@@ -7,6 +7,7 @@ import type {
   AppSettings,
   GenerateSummaryResult,
   InputSource,
+  LlmProfilesState,
   LlmRuntimeConfig,
   MeetingDetail,
   MeetingSearchResult,
@@ -32,6 +33,7 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
   SummaryPreview,
@@ -148,8 +150,11 @@ const api = {
     ipcRenderer.invoke('processing:get-state'),
   cancelProcessing: (): Promise<boolean> =>
     ipcRenderer.invoke('processing:cancel'),
-  previewSummary: (meetingId: string): Promise<SummaryPreview> =>
-    ipcRenderer.invoke('summary:preview', meetingId),
+  previewSummary: (
+    meetingId: string,
+    profileId?: string,
+  ): Promise<SummaryPreview> =>
+    ipcRenderer.invoke('summary:preview', meetingId, profileId),
   generateSummary: (
     meetingId: string,
     token: string,
@@ -158,8 +163,9 @@ const api = {
   previewTranslation: (
     meetingId: string,
     targetLanguage: SummaryLanguage,
+    profileId?: string,
   ): Promise<TranslationPreview> =>
-    ipcRenderer.invoke('translation:preview', meetingId, targetLanguage),
+    ipcRenderer.invoke('translation:preview', meetingId, targetLanguage, profileId),
   generateTranslation: (
     meetingId: string,
     token: string,
@@ -175,12 +181,23 @@ const api = {
     ipcRenderer.invoke('multi-output:create', outputUid),
   removeMultiOutput: (): Promise<MultiOutputStatus | null> =>
     ipcRenderer.invoke('multi-output:remove'),
-  getLlmRuntime: (): Promise<LlmRuntimeConfig> =>
-    ipcRenderer.invoke('llm:runtime'),
-  setLlmApiKey: (apiKey: string): Promise<LlmRuntimeConfig> =>
-    ipcRenderer.invoke('llm:set-key', apiKey),
-  clearLlmApiKey: (): Promise<LlmRuntimeConfig> =>
-    ipcRenderer.invoke('llm:clear-key'),
+  getLlmRuntime: (profileId?: string): Promise<LlmRuntimeConfig | null> =>
+    ipcRenderer.invoke('llm:runtime', profileId),
+  getLlmProfiles: (): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:profiles'),
+  saveLlmProfile: (request: SaveLlmProfileRequest): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:save-profile', request),
+  deleteLlmProfile: (profileId: string): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:delete-profile', profileId),
+  setDefaultLlmProfile: (profileId: string): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:set-default-profile', profileId),
+  setLlmApiKey: (
+    profileId: string,
+    apiKey: string,
+  ): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:set-key', profileId, apiKey),
+  clearLlmApiKey: (profileId: string): Promise<LlmProfilesState> =>
+    ipcRenderer.invoke('llm:clear-key', profileId),
   listWhisperModels: (): Promise<WhisperModelList> =>
     ipcRenderer.invoke('models:list'),
   downloadWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
@@ -205,7 +222,7 @@ const api = {
   ): (() => void) => subscribe('models:progress', listener),
   onModelsChanged: (listener: (list: WhisperModelList) => void): (() => void) =>
     subscribe('models:changed', listener),
-  onLlmChanged: (listener: (config: LlmRuntimeConfig) => void): (() => void) =>
+  onLlmChanged: (listener: (state: LlmProfilesState) => void): (() => void) =>
     subscribe('llm:changed', listener),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),
   updateSettings: (patch: Partial<AppSettings>): Promise<AppSettings> =>

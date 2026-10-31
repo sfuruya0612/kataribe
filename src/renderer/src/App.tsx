@@ -112,6 +112,28 @@ export default function App() {
   }, [refreshMeetings]);
 
   useEffect(() => {
+    if (view !== 'settings') {
+      return;
+    }
+    let cancelled = false;
+    void window.kataribe
+      .getSettings()
+      .then((value) => {
+        if (!cancelled) {
+          setSettings(value);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setToast(`設定を読み込めませんでした: ${errorText(reason)}`);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [view]);
+
+  useEffect(() => {
     let cancelled = false;
     void window.kataribe
       .listWhisperModels()

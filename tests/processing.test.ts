@@ -74,8 +74,8 @@ function createCoordinator(options: {
     meetingStore,
     modelManager: {} as ModelManager,
     apiKeyStore: {
-      status: async () => ({
-        provider: 'chatgpt',
+      status: async (profileId: string) => ({
+        profileId,
         configured: true,
         host: 'api.openai.com',
         keychainAvailable: true,
@@ -89,9 +89,21 @@ function createCoordinator(options: {
     llmClient: { complete: options.complete } as unknown as LlmClient,
     settings: () =>
       normalizeAppSettings({
-        llmProvider: 'chatgpt',
-        llmBaseUrl: 'https://api.openai.com/v1',
-        llmModel: 'gpt-5.5',
+        llmProfiles: [
+          {
+            id: 'work',
+            provider: 'chatgpt',
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-5.5',
+          },
+          {
+            id: 'local',
+            provider: 'ollama',
+            baseUrl: 'http://localhost:11434/v1',
+            model: 'qwen3',
+          },
+        ],
+        llmDefaultProfileId: 'work',
         summaryLanguage: 'ja',
         whisperModel: 'small',
       }),
@@ -156,6 +168,33 @@ describe('ProcessingCoordinator summary flow', () => {
     await expect(
       coordinator.generateSummary(meetingId, preview.token),
     ).rejects.toThrow('確認トークンが無効');
+  });
+
+  it('uses the selected LLM profile for preview and generation', async () => {
+    const { root, saveRoot, meetingId } = await createMeeting();
+    const complete = vi.fn(async () => summaryResponse);
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    const preview = await coordinator.createSummaryPreview(meetingId, 'local');
+    expect(preview).toMatchObject({
+      profileId: 'local',
+      provider: 'ollama',
+      model: 'qwen3',
+      endpoint: 'http://localhost:11434/v1/chat/completions',
+    });
+    await coordinator.generateSummary(meetingId, preview.token);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an unknown LLM profile', async () => {
+    const { root, saveRoot, meetingId } = await createMeeting();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+    });
+    await expect(
+      coordinator.createSummaryPreview(meetingId, 'missing'),
+    ).rejects.toThrow('LLM プロファイルが設定されていません');
   });
 
   it('backs up an existing summary before regenerating', async () => {

@@ -132,6 +132,13 @@ export type LlmProvider =
   | 'fireworks'
   | 'custom';
 
+export type LlmProfile = {
+  id: string;
+  provider: LlmProvider;
+  baseUrl: string;
+  model: string;
+};
+
 export type SummaryLanguage = 'ja' | 'en';
 
 export type ThemeMode = 'system' | 'light' | 'dark';
@@ -142,13 +149,11 @@ export type AppSettings = {
   theme: ThemeMode;
   whisperModel: WhisperModel;
   speakerDiarization: boolean;
-  globalShortcutEnabled: boolean;
   whisperInitialPrompt: string;
   whisperSpeedRatios: Partial<Record<WhisperModel, number>>;
   mp3BitrateKbps: 64 | 128;
-  llmProvider: LlmProvider;
-  llmModel: string;
-  llmBaseUrl: string;
+  llmProfiles: LlmProfile[];
+  llmDefaultProfileId: string;
   summaryLanguage: SummaryLanguage;
   summaryPromptTemplate: string;
   clippingConfig: ClippingConfig;
@@ -344,13 +349,10 @@ export type LlmProviderPreset = {
   defaultModel: string;
 };
 
-export type LlmRuntimeConfig = {
-  provider: LlmProvider;
+export type LlmProfileStatus = LlmProfile & {
   providerLabel: string;
   kind: 'openai' | 'anthropic';
-  baseUrl: string;
   endpoint: string;
-  model: string;
   apiKeyConfigured: boolean;
   apiKeyStored: boolean;
   storedHost: string | null;
@@ -358,10 +360,25 @@ export type LlmRuntimeConfig = {
   keychainError: string | null;
   host: string;
   hostMatchesKey: boolean;
+  isDefault: boolean;
+};
+
+export type LlmProfilesState = {
+  profiles: LlmProfileStatus[];
+  defaultProfileId: string;
+};
+
+export type LlmRuntimeConfig = LlmProfileStatus;
+
+export type SaveLlmProfileRequest = {
+  profile: LlmProfile;
+  originalId: string | null;
+  apiKey: string | null;
+  makeDefault: boolean;
 };
 
 export type LlmKeyStatus = {
-  provider: LlmProvider;
+  profileId: string;
   configured: boolean;
   host: string | null;
   keychainAvailable: boolean;
@@ -395,6 +412,7 @@ export type ModelDownloadProgress = {
 export type SummaryPreview = {
   token: string;
   meetingId: string;
+  profileId: string;
   provider: LlmProvider;
   providerLabel: string;
   model: string;
@@ -411,6 +429,7 @@ export type SummaryPreview = {
 export type TranslationPreview = {
   token: string;
   meetingId: string;
+  profileId: string;
   targetLanguage: SummaryLanguage;
   sourceLanguage: string | null;
   provider: LlmProvider;
