@@ -1,4 +1,6 @@
 import type { MeetingSummary } from '../../shared/types';
+import { useI18n } from './i18n';
+import { formatMonthLabel } from './recording-utils';
 
 export type MeetingFilter =
   | 'all'
@@ -25,6 +27,7 @@ export function Sidebar({
   onOpenRecording,
   onOpenSettings,
 }: SidebarProps) {
+  const { locale, t } = useI18n();
   const processing = meetings.filter(
     (meeting) => meeting.status === 'encoding' || meeting.status === 'transcribing',
   ).length;
@@ -50,15 +53,15 @@ export function Sidebar({
   const isMeetings = view === 'meetings';
 
   return (
-    <nav className="sidebar" aria-label="会議の絞り込み">
-      <p className="side-label">Library</p>
+    <nav className="sidebar" aria-label={t('会議の絞り込み')}>
+      <p className="side-label">{t('ライブラリ')}</p>
       <button
         type="button"
         className={`side ${isMeetings && filter === 'all' ? 'is-active' : ''}`}
         onClick={() => onFilter('all')}
         data-testid="filter-all"
       >
-        すべての会議
+        {t('すべての会議')}
         <span className="side-count">{meetings.length}</span>
       </button>
       <button
@@ -66,7 +69,7 @@ export function Sidebar({
         className={`side ${isMeetings && filter === 'processing' ? 'is-active' : ''}`}
         onClick={() => onFilter('processing')}
       >
-        処理中
+        {t('処理中')}
         <span className="side-count">{processing}</span>
       </button>
       <button
@@ -74,7 +77,7 @@ export function Sidebar({
         className={`side ${isMeetings && filter === 'recording' ? 'is-active' : ''}`}
         onClick={() => onFilter('recording')}
       >
-        録音中
+        {t('録音中')}
         <span className="side-count">{recording}</span>
       </button>
       <button
@@ -82,13 +85,13 @@ export function Sidebar({
         className={`side ${isMeetings && filter === 'error' ? 'is-active' : ''}`}
         onClick={() => onFilter('error')}
       >
-        エラー
+        {t('エラー')}
         <span className="side-count">{errors}</span>
       </button>
 
       {years.length > 0 ? (
         <>
-          <p className="side-label side-label-spaced">Year / Month</p>
+          <p className="side-label side-label-spaced">{t('年 / 月')}</p>
           {years.map((year) => {
             const group = groups.get(year);
             if (!group) {
@@ -116,7 +119,7 @@ export function Sidebar({
                       key={key}
                       onClick={() => onFilter(`month:${key}`)}
                     >
-                      {month} 月
+                      {formatMonthLabel(year, month, locale)}
                       <span className="side-count">{count}</span>
                     </button>
                   );
@@ -128,14 +131,14 @@ export function Sidebar({
       ) : null}
 
       <div className="side-spacer" />
-      <p className="side-label side-label-spaced">Actions</p>
+      <p className="side-label side-label-spaced">{t('操作')}</p>
       <button
         type="button"
         className={`side ${view === 'recording' ? 'is-active' : ''}`}
         onClick={onOpenRecording}
         data-testid="nav-recording"
       >
-        録音パネル
+        {t('録音パネル')}
       </button>
       <button
         type="button"
@@ -143,7 +146,7 @@ export function Sidebar({
         onClick={onOpenSettings}
         data-testid="nav-settings"
       >
-        設定
+        {t('設定')}
       </button>
     </nav>
   );

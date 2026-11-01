@@ -24,6 +24,7 @@ import type {
   SpeakerCount,
   SummaryLanguage,
   ThemeMode,
+  UiLanguage,
   WhisperModel,
 } from './types';
 
@@ -31,6 +32,7 @@ const INPUT_SOURCES: InputSource[] = ['microphone', 'system', 'both'];
 const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark'];
 const WHISPER_MODELS: WhisperModel[] = ['large-v3-turbo', 'medium', 'small'];
 const SUMMARY_LANGUAGES: SummaryLanguage[] = ['ja', 'en'];
+const UI_LANGUAGES: UiLanguage[] = ['ja', 'en'];
 const SPEAKER_COUNTS: SpeakerCount[] = ['auto', 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const DEFAULT_LLM_PROVIDER: LlmProvider = 'claude';
@@ -47,6 +49,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   inputSource: 'both',
   saveRoot: '',
   theme: 'system',
+  uiLanguage: 'ja',
   whisperModel: 'large-v3-turbo',
   speakerDiarization: true,
   speakerCount: 'auto',
@@ -106,6 +109,9 @@ export function normalizeAppSettings(
   const theme = THEME_MODES.includes(input?.theme as ThemeMode)
     ? (input?.theme as ThemeMode)
     : DEFAULT_APP_SETTINGS.theme;
+  const uiLanguage = UI_LANGUAGES.includes(input?.uiLanguage as UiLanguage)
+    ? (input?.uiLanguage as UiLanguage)
+    : DEFAULT_APP_SETTINGS.uiLanguage;
   const whisperModel = WHISPER_MODELS.includes(input?.whisperModel as WhisperModel)
     ? (input?.whisperModel as WhisperModel)
     : DEFAULT_APP_SETTINGS.whisperModel;
@@ -158,6 +164,7 @@ export function normalizeAppSettings(
     inputSource,
     saveRoot,
     theme,
+    uiLanguage,
     whisperModel,
     speakerDiarization,
     speakerCount,

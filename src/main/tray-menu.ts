@@ -4,6 +4,7 @@ import type {
   RecordingAppState,
   RecordingAppStatus,
 } from '../shared/types';
+import { t } from './i18n';
 
 export type TrayMenuHandlers = {
   start: () => void;
@@ -13,11 +14,16 @@ export type TrayMenuHandlers = {
   quit: () => void;
 };
 
-const INPUT_SOURCE_LABELS: Record<InputSource, string> = {
-  microphone: 'マイク',
-  system: 'システム音声',
-  both: 'マイク + システム音声',
-};
+function inputSourceLabel(source: InputSource): string {
+  switch (source) {
+    case 'microphone':
+      return t('マイク');
+    case 'system':
+      return t('システム音声');
+    case 'both':
+      return t('マイク + システム音声');
+  }
+}
 
 export function formatElapsed(seconds: number): string {
   const total = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
@@ -32,17 +38,17 @@ export function formatElapsed(seconds: number): string {
 export function statusLabel(status: RecordingAppStatus): string {
   switch (status) {
     case 'starting':
-      return '準備中';
+      return t('準備中');
     case 'recording':
-      return '録音中';
+      return t('録音中');
     case 'stopping':
-      return '停止中';
+      return t('停止中');
     case 'encoding':
-      return '変換待ち';
+      return t('変換待ち');
     case 'error':
-      return 'エラー';
+      return t('エラー');
     default:
-      return '待機中';
+      return t('待機中');
   }
 }
 
@@ -56,29 +62,33 @@ export function buildTrayMenuTemplate(
 ): MenuItemConstructorOptions[] {
   return [
     {
-      label: `状態: ${statusLabel(state.status)}`,
+      label: t('状態: {status}', { status: statusLabel(state.status) }),
       enabled: false,
     },
     {
-      label: `経過時間: ${formatElapsed(state.elapsedSeconds)}`,
+      label: t('経過時間: {elapsed}', {
+        elapsed: formatElapsed(state.elapsedSeconds),
+      }),
       enabled: false,
     },
     { type: 'separator' },
     {
-      label: '録音を開始',
+      label: t('録音を開始'),
       enabled: canStart(state.status),
       click: handlers.start,
     },
     {
-      label: '録音を停止',
+      label: t('録音を停止'),
       enabled: state.status === 'recording',
       click: handlers.stop,
     },
     { type: 'separator' },
     {
-      label: `入力ソース: ${INPUT_SOURCE_LABELS[state.inputSource]}`,
+      label: t('入力ソース: {source}', {
+        source: inputSourceLabel(state.inputSource),
+      }),
       submenu: (['microphone', 'system', 'both'] as InputSource[]).map((source) => ({
-        label: INPUT_SOURCE_LABELS[source],
+        label: inputSourceLabel(source),
         type: 'radio',
         checked: state.inputSource === source,
         click: () => handlers.selectInputSource(source),
@@ -86,12 +96,12 @@ export function buildTrayMenuTemplate(
     },
     { type: 'separator' },
     {
-      label: 'メインウィンドウを開く',
+      label: t('メインウィンドウを開く'),
       click: handlers.openWindow,
     },
     { type: 'separator' },
     {
-      label: 'Kataribe を終了',
+      label: t('Kataribe を終了'),
       click: handlers.quit,
     },
   ];

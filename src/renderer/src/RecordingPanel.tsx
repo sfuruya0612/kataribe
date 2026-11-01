@@ -4,9 +4,11 @@ import type {
   RecordingEvent,
   RecordingSession,
 } from '../../shared/types';
+import { useI18n, type I18nValue } from './i18n';
 import {
   deviceLabel,
   formatDuration,
+  inputSourceLabel,
   type InputDevice,
 } from './recording-utils';
 import type { PermissionState } from './use-recorder';
@@ -35,43 +37,39 @@ type RecordingPanelProps = {
   onSetInputSource: (source: InputSource) => void;
 };
 
-const sourceOptions: Array<{ value: InputSource; label: string }> = [
-  { value: 'microphone', label: 'マイク' },
-  { value: 'system', label: 'システム音声' },
-  { value: 'both', label: '両方' },
-];
+const sourceOptions: InputSource[] = ['microphone', 'system', 'both'];
 
-function phaseTitle(status: RecordingAppStatus): string {
+function phaseTitle(status: RecordingAppStatus, t: I18nValue['t']): string {
   switch (status) {
     case 'starting':
-      return '録音を準備しています';
+      return t('録音を準備しています');
     case 'recording':
-      return '録音中';
+      return t('録音中');
     case 'stopping':
-      return '録音を保存しています';
+      return t('録音を保存しています');
     case 'encoding':
-      return '録音を保存しました';
+      return t('録音を保存しました');
     case 'error':
-      return '録音でエラーが発生しました';
+      return t('録音でエラーが発生しました');
     default:
-      return '録音の準備';
+      return t('録音の準備');
   }
 }
 
-function phaseLabel(status: RecordingAppStatus): string {
+function phaseLabel(status: RecordingAppStatus, t: I18nValue['t']): string {
   switch (status) {
     case 'starting':
-      return '準備中';
+      return t('準備中');
     case 'recording':
       return 'REC';
     case 'stopping':
-      return '保存中';
+      return t('保存中');
     case 'encoding':
-      return '変換待ち';
+      return t('変換待ち');
     case 'error':
-      return 'エラー';
+      return t('エラー');
     default:
-      return '待機中';
+      return t('待機中');
   }
 }
 
@@ -98,6 +96,7 @@ export function RecordingPanel({
   onOpenReadme,
   onSetInputSource,
 }: RecordingPanelProps) {
+  const { locale, t } = useI18n();
   const isRecording = status === 'recording';
   const isBusy = status === 'starting' || status === 'stopping';
   const canStart = status === 'idle' || status === 'encoding' || status === 'error';
@@ -112,14 +111,14 @@ export function RecordingPanel({
 
   const permissionMessage =
     permission === 'granted'
-      ? 'マイク権限: 許可済み'
+      ? t('マイク権限: 許可済み')
       : permission === 'requesting'
-        ? 'マイク権限: 確認中'
+        ? t('マイク権限: 確認中')
         : permission === 'denied' || permission === 'restricted'
-          ? 'マイク権限: 拒否'
+          ? t('マイク権限: 拒否')
           : permission === 'not-determined'
-            ? 'マイク権限: 未確認'
-            : 'マイク権限: 不明';
+            ? t('マイク権限: 未確認')
+            : t('マイク権限: 不明');
 
   return (
     <section
@@ -128,11 +127,11 @@ export function RecordingPanel({
     >
       <div className="panel-head">
         <div>
-          <p className="section-label">Recorder</p>
-          <h2 id="recorder-title">{phaseTitle(status)}</h2>
+          <p className="section-label">{t('録音パネル')}</p>
+          <h2 id="recorder-title">{phaseTitle(status, t)}</h2>
         </div>
         <span className={`state state-${status}`} data-testid="recording-state">
-          {phaseLabel(status)}
+          {phaseLabel(status, t)}
         </span>
       </div>
 
@@ -142,33 +141,33 @@ export function RecordingPanel({
         </span>
         <span className="timer-caption">
           {isRecording
-            ? '録音中'
+            ? t('録音中')
             : status === 'encoding'
-              ? '保存した音声の長さ'
-              : '録音は停止しています'}
+              ? t('保存した音声の長さ')
+              : t('録音は停止しています')}
         </span>
       </div>
 
       <fieldset className="source-picker" disabled={sourceDisabled}>
-        <legend>入力ソース</legend>
+        <legend>{t('入力ソース')}</legend>
         {sourceOptions.map((option) => {
           const unavailable =
             permissionDenied ||
-            (option.value === 'microphone' && !microphoneAvailable) ||
-            (option.value === 'system' && !systemAvailable) ||
-            (option.value === 'both' && (!microphoneAvailable || !systemAvailable));
+            (option === 'microphone' && !microphoneAvailable) ||
+            (option === 'system' && !systemAvailable) ||
+            (option === 'both' && (!microphoneAvailable || !systemAvailable));
           return (
-            <label className="source-option" key={option.value}>
+            <label className="source-option" key={option}>
               <input
                 type="radio"
                 name="input-source"
-                value={option.value}
-                checked={inputSource === option.value}
-                onChange={() => onSetInputSource(option.value)}
+                value={option}
+                checked={inputSource === option}
+                onChange={() => onSetInputSource(option)}
                 disabled={unavailable}
-                data-testid={`source-${option.value}`}
+                data-testid={`source-${option}`}
               />
-              <span>{option.label}</span>
+              <span>{inputSourceLabel(option, locale)}</span>
             </label>
           );
         })}
@@ -176,13 +175,13 @@ export function RecordingPanel({
 
       {sourceChanged ? (
         <p className="hint">
-          入力ソースを変更しました。この変更は次の録音から適用されます。
+          {t('入力ソースを変更しました。この変更は次の録音から適用されます。')}
         </p>
       ) : null}
 
       <div className="device-grid">
         <label className="field">
-          <span>マイク</span>
+          <span>{t('マイク')}</span>
           <select
             value={micDeviceId}
             onChange={(event) => onMicDeviceChange(event.target.value)}
@@ -195,11 +194,14 @@ export function RecordingPanel({
             data-testid="mic-select"
           >
             {microphones.length === 0 ? (
-              <option value="">マイクが見つかりません</option>
+              <option value="">{t('マイクが見つかりません')}</option>
             ) : (
               microphones.map((device, index) => (
                 <option value={device.deviceId} key={device.deviceId}>
-                  {deviceLabel(device, `マイク ${index + 1}`)}
+                  {deviceLabel(
+                    device,
+                    t('マイク {index}', { index: index + 1 }),
+                  )}
                 </option>
               ))
             )}
@@ -207,7 +209,7 @@ export function RecordingPanel({
         </label>
 
         <label className="field">
-          <span>システム音声（BlackHole 2ch）</span>
+          <span>{t('システム音声（BlackHole 2ch）')}</span>
           <select
             value={systemDeviceId}
             onChange={(event) => onSystemDeviceChange(event.target.value)}
@@ -220,7 +222,7 @@ export function RecordingPanel({
             data-testid="system-select"
           >
             {systemDevices.length === 0 ? (
-              <option value="">BlackHole 2ch が見つかりません</option>
+              <option value="">{t('BlackHole 2ch が見つかりません')}</option>
             ) : (
               systemDevices.map((device) => (
                 <option value={device.deviceId} key={device.deviceId}>
@@ -241,7 +243,7 @@ export function RecordingPanel({
             onClick={onRequestPermission}
             disabled={permission === 'requesting' || controlsDisabled}
           >
-            マイク権限を確認する
+            {t('マイク権限を確認する')}
           </button>
         ) : null}
         {permissionDenied ? (
@@ -251,36 +253,38 @@ export function RecordingPanel({
             onClick={onOpenMicrophoneSettings}
             disabled={controlsDisabled}
           >
-            システム設定を開く
+            {t('システム設定を開く')}
           </button>
         ) : null}
       </div>
 
       {permissionDenied ? (
         <div className="alert alert-error" role="alert">
-          マイク権限が拒否されています。システム設定の「プライバシーとセキュリティ」&gt;「マイク」で
-          Kataribe を許可してください。
+          {t(
+            'マイク権限が拒否されています。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
+          )}
         </div>
       ) : null}
 
       {permission !== 'granted' ? (
         <p className="hint">
-          入力デバイスの検出と録音にマイク権限を使います。システム音声だけの場合も、BlackHole
-          2ch のラベル取得に必要です。
+          {t(
+            '入力デバイスの検出と録音にマイク権限を使います。システム音声だけの場合も、BlackHole 2ch のラベル取得に必要です。',
+          )}
         </p>
       ) : null}
 
       {needsMicrophone && !microphoneAvailable ? (
         <p className="hint">
-          マイクが見つかりません。マイクを接続し、マイク権限を確認してください。
+          {t('マイクが見つかりません。マイクを接続し、マイク権限を確認してください。')}
         </p>
       ) : null}
 
       {needsSystem && systemDevices.length === 0 ? (
         <div className="hint">
-          BlackHole 2ch が見つかりません。
+          {t('BlackHole 2ch が見つかりません。')}
           <button type="button" className="link-button" onClick={onOpenReadme}>
-            セットアップ手順を開く
+            {t('セットアップ手順を開く')}
           </button>
         </div>
       ) : null}
@@ -296,7 +300,7 @@ export function RecordingPanel({
             disabled={status === 'stopping'}
             data-testid="stop-button"
           >
-            {status === 'stopping' ? '保存しています...' : '録音を停止'}
+            {status === 'stopping' ? t('保存しています...') : t('録音を停止')}
           </button>
         ) : (
           <button
@@ -306,12 +310,12 @@ export function RecordingPanel({
             disabled={!canStart}
             data-testid="start-button"
           >
-            {status === 'starting' ? '準備しています...' : '録音を開始'}
+            {status === 'starting' ? t('準備しています...') : t('録音を開始')}
           </button>
         )}
         {session ? (
           <span className="path-inline" data-testid="active-path">
-            保存先: {session.meetingDir}
+             {t('保存先: {path}', { path: session.meetingDir })}
           </span>
         ) : null}
       </div>

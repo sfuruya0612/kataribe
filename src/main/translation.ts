@@ -4,6 +4,7 @@ import {
   type TranscriptSegment,
 } from '../shared/markdown';
 import type { SummaryLanguage } from '../shared/types';
+import { t } from './i18n';
 import type { LlmClient } from './llm';
 
 export const TRANSLATION_CHUNK_CHARS = 24_000;
@@ -185,8 +186,11 @@ export async function translateTranscript(
   for (let index = 0; index < chunks.length; index += 1) {
     options.onProgress?.(
       chunks.length > 1
-        ? `翻訳しています（${index + 1}/${chunks.length}）`
-        : '翻訳しています',
+        ? t('翻訳しています（{index}/{total}）', {
+            index: index + 1,
+            total: chunks.length,
+          })
+        : t('翻訳しています'),
       chunks.length > 1 ? index / chunks.length : 0.2,
     );
     const sourceLines = chunks[index].map(

@@ -1,8 +1,10 @@
+import { translate } from './i18n';
 import type {
   AppSettings,
   LlmProfile,
   LlmProvider,
   LlmProviderPreset,
+  UiLanguage,
 } from './types';
 
 export const LLM_PROVIDER_PRESETS: LlmProviderPreset[] = [
@@ -72,30 +74,57 @@ export type EndpointValidation =
   | { ok: true; url: URL; normalized: string }
   | { ok: false; error: string };
 
-export function validateEndpointUrl(raw: string): EndpointValidation {
+export function validateEndpointUrl(
+  raw: string,
+  locale: UiLanguage = 'ja',
+): EndpointValidation {
   const value = raw.trim();
   if (!value) {
-    return { ok: false, error: 'エンドポイント URL を入力してください。' };
+    return {
+      ok: false,
+      error: translate(locale, 'エンドポイント URL を入力してください。'),
+    };
   }
   let url: URL;
   try {
     url = new URL(value);
   } catch {
-    return { ok: false, error: 'エンドポイント URL の形式が正しくありません。' };
+    return {
+      ok: false,
+      error: translate(locale, 'エンドポイント URL の形式が正しくありません。'),
+    };
   }
   if (url.username || url.password) {
-    return { ok: false, error: 'エンドポイント URL に認証情報を含めないでください。' };
+    return {
+      ok: false,
+      error: translate(
+        locale,
+        'エンドポイント URL に認証情報を含めないでください。',
+      ),
+    };
   }
   if (url.hash) {
-    return { ok: false, error: 'エンドポイント URL にフラグメントを含めないでください。' };
+    return {
+      ok: false,
+      error: translate(
+        locale,
+        'エンドポイント URL にフラグメントを含めないでください。',
+      ),
+    };
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    return { ok: false, error: 'エンドポイント URL は HTTPS を指定してください。' };
+    return {
+      ok: false,
+      error: translate(locale, 'エンドポイント URL は HTTPS を指定してください。'),
+    };
   }
   if (url.protocol === 'http:' && !isLocalHostname(url.hostname)) {
     return {
       ok: false,
-      error: 'HTTP は localhost、127.0.0.1、::1 のいずれかでのみ使用できます。',
+      error: translate(
+        locale,
+        'HTTP は localhost、127.0.0.1、::1 のいずれかでのみ使用できます。',
+      ),
     };
   }
   return { ok: true, url, normalized: url.toString().replace(/\/$/, '') };

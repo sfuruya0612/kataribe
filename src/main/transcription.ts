@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { WhisperModel } from '../shared/types';
+import { t } from './i18n';
 import type { BinaryLocator } from './media';
 import { MediaError } from './media';
 import { runProcess, ProcessStartError } from './process';
@@ -436,7 +437,7 @@ export class TranscriptionService {
                   watchdogError = 'hard-limit';
                   internal.abort();
                 } else if (shouldContinue) {
-                  emit('ユーザーの確認により処理を継続しています。');
+                  emit(t('ユーザーの確認により処理を継続しています。'));
                 }
               })
               .catch(() => {
@@ -447,7 +448,7 @@ export class TranscriptionService {
                 }
               });
           } else {
-            emit('予想より時間がかかっています。処理は続行しています。');
+            emit(t('予想より時間がかかっています。処理は続行しています。'));
           }
         }
         if (elapsed >= absoluteLimitMs) {
@@ -459,7 +460,7 @@ export class TranscriptionService {
 
       try {
         const whisperPath = await this.locator.whisperPath();
-        emit(attempt === 0 ? null : '文字起こしを再開しています。');
+        emit(attempt === 0 ? null : t('文字起こしを再開しています。'));
         const result = await this.runner({
           command: whisperPath,
           args: buildWhisperArgs({

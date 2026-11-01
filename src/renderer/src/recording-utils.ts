@@ -1,4 +1,6 @@
 import type { InputSource, MeetingStatus, RecordingCaptureStats } from '../../shared/types';
+import type { UiLanguage } from '../../shared/types';
+import { translate } from '../../shared/i18n';
 
 export type InputDevice = {
   deviceId: string;
@@ -123,12 +125,15 @@ export function frameClockDeltaSeconds(stats: RecordingCaptureStats): number {
   return Math.abs(stats.currentTime - stats.frames / stats.sampleRate);
 }
 
-export function formatDateTime(value: string): string {
+export function formatDateTime(
+  value: string,
+  locale: UiLanguage = 'ja',
+): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-  return date.toLocaleString('ja-JP', {
+  return date.toLocaleString(locale === 'en' ? 'en-US' : 'ja-JP', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -137,7 +142,10 @@ export function formatDateTime(value: string): string {
   });
 }
 
-export function formatMeetingDate(value: string): string {
+export function formatMeetingDate(
+  value: string,
+  locale: UiLanguage = 'ja',
+): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
     return value;
@@ -146,23 +154,41 @@ export function formatMeetingDate(value: string): string {
   const day = String(date.getDate()).padStart(2, '0');
   const hour = String(date.getHours()).padStart(2, '0');
   const minute = String(date.getMinutes()).padStart(2, '0');
-  return `${month}-${day} ${hour}:${minute}`;
+  return locale === 'en'
+    ? `${month}/${day} ${hour}:${minute}`
+    : `${month}-${day} ${hour}:${minute}`;
 }
 
-export function meetingStatusLabel(status: MeetingStatus): string {
+export function formatMonthLabel(
+  year: number,
+  month: number,
+  locale: UiLanguage = 'ja',
+): string {
+  if (locale === 'en') {
+    return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(
+      new Date(year, month - 1, 1),
+    );
+  }
+  return `${month} 月`;
+}
+
+export function meetingStatusLabel(
+  status: MeetingStatus,
+  locale: UiLanguage = 'ja',
+): string {
   switch (status) {
     case 'recording':
-      return '録音中';
+      return translate(locale, '録音中');
     case 'encoding':
-      return '変換中';
+      return translate(locale, '変換中');
     case 'transcribing':
-      return '文字起こし中';
+      return translate(locale, '文字起こし中');
     case 'transcribed':
-      return '文字起こし済み';
+      return translate(locale, '文字起こし済み');
     case 'summarized':
-      return '要約済み';
+      return translate(locale, '要約済み');
     case 'error':
-      return 'エラー';
+      return translate(locale, 'エラー');
   }
 }
 
@@ -170,14 +196,17 @@ export function meetingStatusClass(status: MeetingStatus): string {
   return `status-${status}`;
 }
 
-export function inputSourceLabel(source: InputSource): string {
+export function inputSourceLabel(
+  source: InputSource,
+  locale: UiLanguage = 'ja',
+): string {
   switch (source) {
     case 'microphone':
-      return 'マイク';
+      return translate(locale, 'マイク');
     case 'system':
-      return 'システム音声';
+      return translate(locale, 'システム音声');
     case 'both':
-      return 'マイク + システム音声';
+      return translate(locale, 'マイク + システム音声');
   }
 }
 
@@ -199,17 +228,32 @@ export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function recordingErrorText(error: unknown): string {
+export function recordingErrorText(
+  error: unknown,
+  locale: UiLanguage = 'ja',
+): string {
   if (error instanceof DOMException) {
     switch (error.name) {
       case 'NotAllowedError':
-        return 'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。';
+        return translate(
+          locale,
+          'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
+        );
       case 'NotFoundError':
-        return '選択した入力デバイスが見つかりません。デバイスを接続してから再試行してください。';
+        return translate(
+          locale,
+          '選択した入力デバイスが見つかりません。デバイスを接続してから再試行してください。',
+        );
       case 'NotReadableError':
-        return '入力デバイスを開けませんでした。他のアプリが使用していないか確認してください。';
+        return translate(
+          locale,
+          '入力デバイスを開けませんでした。他のアプリが使用していないか確認してください。',
+        );
       case 'OverconstrainedError':
-        return '選択した入力デバイスの設定に対応できません。別のデバイスを選んでください。';
+        return translate(
+          locale,
+          '選択した入力デバイスの設定に対応できません。別のデバイスを選んでください。',
+        );
       default:
         break;
     }

@@ -30,6 +30,7 @@ describe('SettingsStore', () => {
 
     const updated = await store.save({
       whisperModel: 'medium',
+      uiLanguage: 'en',
       llmProfiles: [
         {
           id: 'work',
@@ -59,6 +60,7 @@ describe('SettingsStore', () => {
     });
 
     expect(updated.whisperModel).toBe('medium');
+    expect(updated.uiLanguage).toBe('en');
     expect(updated.llmProfiles.map((profile) => profile.id)).toEqual([
       'work',
       'local',
@@ -167,6 +169,15 @@ describe('SettingsStore', () => {
     );
     expect(normalizeAppSettings({ speakerCount: 'many' as never }).speakerCount).toBe(
       'auto',
+    );
+  });
+
+  it('req_ui_001_normalizes_the_ui_language', () => {
+    expect(DEFAULT_APP_SETTINGS.uiLanguage).toBe('ja');
+    expect(normalizeAppSettings({ uiLanguage: 'en' }).uiLanguage).toBe('en');
+    expect(normalizeAppSettings({ uiLanguage: 'ja' }).uiLanguage).toBe('ja');
+    expect(normalizeAppSettings({ uiLanguage: 'fr' as never }).uiLanguage).toBe(
+      'ja',
     );
   });
 

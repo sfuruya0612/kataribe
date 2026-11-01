@@ -10,17 +10,21 @@ import type {
   LlmProfileStatus,
   LlmProfilesState,
   SaveLlmProfileRequest,
+  UiLanguage,
 } from '../shared/types';
+import { translate } from '../shared/i18n';
 import type { ApiKeyStore } from './api-keys';
+import { t } from './i18n';
 import type { SettingsStore } from './settings';
 
 export async function buildLlmProfileStatus(
   profile: LlmProfile,
   isDefault: boolean,
   apiKeyStore: ApiKeyStore,
+  locale: UiLanguage = 'ja',
 ): Promise<LlmProfileStatus> {
   const preset = getLlmProviderPreset(profile.provider);
-  const validation = validateEndpointUrl(profile.baseUrl);
+  const validation = validateEndpointUrl(profile.baseUrl, locale);
   const endpoint = validation.ok
     ? buildChatEndpoint(validation.normalized, preset.kind)
     : '';
@@ -31,7 +35,8 @@ export async function buildLlmProfileStatus(
   return {
     id: profile.id,
     provider: profile.provider,
-    providerLabel: preset.label,
+    providerLabel:
+      profile.provider === 'custom' ? translate(locale, 'カスタム') : preset.label,
     kind: preset.kind,
     baseUrl: profile.baseUrl,
     endpoint,
@@ -73,6 +78,7 @@ export class LlmProfileManager {
           profile,
           profile.id === defaultProfileId,
           this.apiKeyStore,
+          settings.uiLanguage,
         ),
       ),
     );
@@ -80,27 +86,29 @@ export class LlmProfileManager {
   }
 
   async saveProfile(request: SaveLlmProfileRequest): Promise<LlmProfilesState> {
+    const locale = this.settingsStore.get().uiLanguage;
     if (typeof request !== 'object' || request === null) {
-      throw new Error('LLM プロファイルの形式が正しくありません。');
+      throw new Error(t('LLM プロファイルの形式が正しくありません。'));
     }
     const raw = request.profile;
     if (typeof raw !== 'object' || raw === null) {
-      throw new Error('LLM プロファイルの形式が正しくありません。');
+      throw new Error(t('LLM プロファイルの形式が正しくありません。'));
     }
     const id = normalizeLlmProfileId(raw.id);
     if (!id) {
-      throw new Error('ID は 1〜64 文字で入力してください。');
+      throw new Error(t('ID は 1〜64 文字で入力してください。'));
     }
     if (!isLlmProvider(raw.provider)) {
-      throw new Error('Provider が正しくありません。');
+      throw new Error(t('Provider が正しくありません。'));
     }
     const model =
       typeof raw.model === 'string' ? raw.model.trim().slice(0, 120) : '';
     if (!model) {
-      throw new Error('モデルを入力してください。');
+      throw new Error(t('モデルを入力してください。'));
     }
     const endpoint = validateEndpointUrl(
       typeof raw.baseUrl === 'string' ? raw.baseUrl : '',
+      locale,
     );
     if (!endpoint.ok) {
       throw new Error(endpoint.error);
@@ -121,14 +129,14 @@ export class LlmProfileManager {
       ? current.llmProfiles.findIndex((entry) => entry.id === originalId)
       : -1;
     if (originalId && index < 0) {
-      throw new Error('編集する LLM プロファイルが見つかりません。');
+      throw new Error(t('編集する LLM プロファイルが見つかりません。'));
     }
     if (
       current.llmProfiles.some(
         (entry) => entry.id === profile.id && entry.id !== originalId,
       )
     ) {
-      throw new Error('その ID は既に使われています。別の ID を入力してください。');
+      throw new Error(t('その ID は既に使われています。別の ID を入力してください。'));
     }
 
     const profiles = [...current.llmProfiles];
@@ -171,7 +179,7 @@ export class LlmProfileManager {
   async deleteProfile(profileId: string): Promise<LlmProfilesState> {
     const current = this.settingsStore.get();
     if (!current.llmProfiles.some((profile) => profile.id === profileId)) {
-      throw new Error('削除する LLM プロファイルが見つかりません。');
+      throw new Error(t('削除する LLM プロファイルが見つかりません。'));
     }
     const profiles = current.llmProfiles.filter(
       (profile) => profile.id !== profileId,
@@ -195,7 +203,7 @@ export class LlmProfileManager {
   async setDefaultProfile(profileId: string): Promise<LlmProfilesState> {
     const current = this.settingsStore.get();
     if (!current.llmProfiles.some((profile) => profile.id === profileId)) {
-      throw new Error('既定に設定する LLM プロファイルが見つかりません。');
+      throw new Error(t('既定に設定する LLM プロファイルが見つかりません。'));
     }
     await this.settingsStore.save({ llmDefaultProfileId: profileId });
     return this.state();
@@ -209,7 +217,7 @@ export class LlmProfileManager {
       .get()
       .llmProfiles.find((entry) => entry.id === profileId);
     if (!profile) {
-      throw new Error('LLM プロファイルが見つかりません。');
+      throw new Error(t('LLM プロファイルが見つかりません。'));
     }
     await this.apiKeyStore.setKey(
       profile.id,
@@ -225,7 +233,7 @@ export class LlmProfileManager {
       .get()
       .llmProfiles.find((entry) => entry.id === profileId);
     if (!profile) {
-      throw new Error('LLM プロファイルが見つかりません。');
+      throw new Error(t('LLM プロファイルが見つかりません。'));
     }
     await this.apiKeyStore.clearKey(profileId);
     return this.state();

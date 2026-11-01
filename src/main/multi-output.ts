@@ -3,6 +3,7 @@ import type {
   MultiOutputStatus,
 } from '../shared/types';
 import type { BinaryLocator } from './media';
+import { t } from './i18n';
 import { runProcess, ProcessStartError } from './process';
 
 export const MULTI_OUTPUT_NAME = 'Kataribe Multi-Output';
@@ -122,16 +123,18 @@ export class MultiOutputController {
     }
     const output = current.outputDevices.find((device) => device.uid === outputUid);
     if (!output) {
-      throw new Error('選択した出力デバイスが見つかりません。');
+      throw new Error(t('選択した出力デバイスが見つかりません。'));
     }
     if (output.name.toLowerCase().includes('blackhole')) {
-      throw new Error('BlackHole 2ch を通常の出力デバイスとして選択できません。');
+      throw new Error(t('BlackHole 2ch を通常の出力デバイスとして選択できません。'));
     }
     if (output.name === MULTI_OUTPUT_NAME) {
-      throw new Error('Kataribe Multi-Output 自身を出力デバイスにできません。');
+      throw new Error(t('Kataribe Multi-Output 自身を出力デバイスにできません。'));
     }
     if (output.isAggregate) {
-      throw new Error('既存の Aggregate Device を出力デバイスにできません。通常の出力デバイスを選択してください。');
+      throw new Error(
+        t('既存の Aggregate Device を出力デバイスにできません。通常の出力デバイスを選択してください。'),
+      );
     }
     const blackHole = current.outputDevices.find(
       (device) =>
@@ -139,7 +142,9 @@ export class MultiOutputController {
         device.channels > 0,
     );
     if (!blackHole) {
-      throw new Error('BlackHole 2ch が見つかりません。先に BlackHole 2ch をインストールしてください。');
+      throw new Error(
+        t('BlackHole 2ch が見つかりません。先に BlackHole 2ch をインストールしてください。'),
+      );
     }
     const helper = await this.locator.multiOutputPath();
     await this.runHelper(helper, ['create', output.uid, blackHole.uid]);
@@ -170,12 +175,14 @@ export class MultiOutputController {
       throw error;
     }
     if (result.timedOut) {
-      throw new Error('Multi-Output Device の作成がタイムアウトしました。');
+      throw new Error(t('Multi-Output Device の作成がタイムアウトしました。'));
     }
     if (result.code !== 0) {
       const detail = result.stderr.trim().split('\n').slice(-2).join(' ');
       throw new Error(
-        `Multi-Output Device の操作に失敗しました。${detail ? ` ${detail}` : ''}`.trim(),
+        t('Multi-Output Device の操作に失敗しました。{detail}', {
+          detail: detail ? ` ${detail}` : '',
+        }).trim(),
       );
     }
     return result.stdout.trim();

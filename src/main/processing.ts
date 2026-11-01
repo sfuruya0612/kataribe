@@ -47,6 +47,7 @@ import {
 } from './diarization-cache';
 import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
+import { t } from './i18n';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
 import {
   readMeetingMeta,
@@ -202,23 +203,37 @@ function dateOnly(iso: string): string {
 function transcriptionErrorMessage(outcome: TranscriptionOutcome): string {
   switch (outcome.errorCode) {
     case 'model-missing':
-      return 'whisper モデルが見つかりません。設定画面からモデルをダウンロードしてください。';
+      return t(
+        'whisper モデルが見つかりません。設定画面からモデルをダウンロードしてください。',
+      );
     case 'binary-missing':
-      return 'whisper-cli が見つかりません。アプリに同梱されたバイナリを確認してください。';
+      return t(
+        'whisper-cli が見つかりません。アプリに同梱されたバイナリを確認してください。',
+      );
     case 'stalled':
-      return '文字起こしの進捗が止まったため、処理を中断しました。部分的な結果を保存しています。';
+      return t(
+        '文字起こしの進捗が止まったため、処理を中断しました。部分的な結果を保存しています。',
+      );
     case 'hard-limit':
-      return '文字起こしが制限時間を超えたため、処理を中断しました。部分的な結果を保存しています。';
+      return t(
+        '文字起こしが制限時間を超えたため、処理を中断しました。部分的な結果を保存しています。',
+      );
     case 'empty-output':
-      return '音声から文字起こし結果が得られませんでした。音声に発話が含まれているか確認してください。';
+      return t(
+        '音声から文字起こし結果が得られませんでした。音声に発話が含まれているか確認してください。',
+      );
     case 'incomplete':
-      return '文字起こしが最後まで完了しませんでした。部分的な結果を保存しています。より小さいモデルで再実行してください。';
+      return t(
+        '文字起こしが最後まで完了しませんでした。部分的な結果を保存しています。より小さいモデルで再実行してください。',
+      );
     case 'cancelled':
-      return '文字起こしをキャンセルしました。部分的な結果を保存しています。';
+      return t('文字起こしをキャンセルしました。部分的な結果を保存しています。');
     case 'invalid-audio':
-      return '文字起こし用の音声ファイルを読み込めませんでした。';
+      return t('文字起こし用の音声ファイルを読み込めませんでした。');
     default:
-      return `whisper.cpp の実行に失敗しました。${outcome.error ?? ''}`.trim();
+      return t('whisper.cpp の実行に失敗しました。{detail}', {
+        detail: outcome.error ?? '',
+      }).trim();
   }
 }
 
@@ -352,8 +367,9 @@ export class ProcessingCoordinator {
               return;
             }
             meta.status = 'error';
-            meta.error =
-              '前回の文字起こしが中断されました。会議詳細から再実行してください。部分的な結果は保存されています。';
+            meta.error = t(
+              '前回の文字起こしが中断されました。会議詳細から再実行してください。部分的な結果は保存されています。',
+            );
             meta.transcription = {
               ...(meta.transcription ?? {}),
               state: 'interrupted',
@@ -363,8 +379,9 @@ export class ProcessingCoordinator {
             return;
           }
           meta.status = 'error';
-          meta.error =
-            '前回の音声変換が中断されました。会議詳細から文字起こしを再実行してください。';
+          meta.error = t(
+            '前回の音声変換が中断されました。会議詳細から文字起こしを再実行してください。',
+          );
           if (meta.encoding?.state === 'running') {
             meta.encoding = {
               ...meta.encoding,
@@ -399,6 +416,7 @@ export class ProcessingCoordinator {
       profile,
       profile.id === settings.llmDefaultProfileId,
       this.apiKeyStore,
+      settings.uiLanguage,
     );
   }
 
@@ -408,19 +426,27 @@ export class ProcessingCoordinator {
   ): Promise<SummaryPreview> {
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
-      throw new Error('文字起こしがありません。先に文字起こしを完了してください。');
+      throw new Error(
+        t('文字起こしがありません。先に文字起こしを完了してください。'),
+      );
     }
     const config = await this.runtimeConfig(profileId);
     if (!config) {
       throw new Error(
-        'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        t(
+          'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        ),
       );
     }
     if (!config.endpoint) {
-      throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
+      throw new Error(
+        t('LLM のエンドポイント URL が正しくありません。設定を確認してください。'),
+      );
     }
     if (!config.apiKeyConfigured) {
-      throw new Error('LLM の API キーが設定されていません。設定画面で保存してください。');
+      throw new Error(
+        t('LLM の API キーが設定されていません。設定画面で保存してください。'),
+      );
     }
     const transcript = detail.transcript.body.trim();
     const hash = createHash('sha256').update(transcript, 'utf8').digest('hex');
@@ -456,7 +482,9 @@ export class ProcessingCoordinator {
       text: transcript,
       partial: detail.transcript.partial,
       warning: detail.transcript.partial
-        ? '部分的な文字起こしを送信します。完了済みの文字起こしで再実行することを推奨します。'
+        ? t(
+            '部分的な文字起こしを送信します。完了済みの文字起こしで再実行することを推奨します。',
+          )
         : null,
     };
   }
@@ -464,23 +492,33 @@ export class ProcessingCoordinator {
   async generateSummary(meetingId: string, token: string): Promise<GenerateSummaryResult> {
     const preview = this.previewTokens.get(token);
     if (!preview || preview.meetingId !== meetingId) {
-      throw new Error('要約の確認トークンが無効です。もう一度プレビューを開いてください。');
+      throw new Error(
+        t('要約の確認トークンが無効です。もう一度プレビューを開いてください。'),
+      );
     }
     if (this.active || this.state.stage !== null) {
-      throw new Error('別の処理が実行中です。完了してから要約を生成してください。');
+      throw new Error(
+        t('別の処理が実行中です。完了してから要約を生成してください。'),
+      );
     }
     if (this.now().getTime() > preview.expiresAt) {
       this.previewTokens.delete(token);
-      throw new Error('要約の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。');
+      throw new Error(
+        t(
+          '要約の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。',
+        ),
+      );
     }
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
-      throw new Error('文字起こしがありません。');
+      throw new Error(t('文字起こしがありません。'));
     }
     const body = detail.transcript.body.trim();
     if (createHash('sha256').update(body, 'utf8').digest('hex') !== preview.contentHash) {
       this.previewTokens.delete(token);
-      throw new Error('文字起こしが変更されました。もう一度プレビューを開いてください。');
+      throw new Error(
+        t('文字起こしが変更されました。もう一度プレビューを開いてください。'),
+      );
     }
 
     const config = {
@@ -502,14 +540,19 @@ export class ProcessingCoordinator {
         )) ?? '';
     } catch (error) {
       throw new Error(
-        `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,
+        t('API キーを復号できませんでした。設定画面で再入力してください。{detail}', {
+          detail:
+            error instanceof Error ? ` (${error.message})` : '',
+        }),
       );
     }
     if (!apiKey) {
-      throw new Error('API キーが設定されていません。');
+      throw new Error(t('API キーが設定されていません。'));
     }
     if (this.active || this.state.stage !== null) {
-      throw new Error('別の処理が実行中です。完了してから要約を生成してください。');
+      throw new Error(
+        t('別の処理が実行中です。完了してから要約を生成してください。'),
+      );
     }
     this.previewTokens.delete(token);
 
@@ -520,7 +563,7 @@ export class ProcessingCoordinator {
       meetingId,
       progress: 0,
       etaSeconds: null,
-      message: '要約を生成しています',
+      message: t('要約を生成しています'),
       cancellable: true,
       error: null,
     });
@@ -625,7 +668,7 @@ export class ProcessingCoordinator {
       }
       const summary = await this.meetingStore.readSummary(meeting);
       if (!summary) {
-        throw new Error('summary.md の読み込みに失敗しました。');
+        throw new Error(t('summary.md の読み込みに失敗しました。'));
       }
       this.onMeetingUpdated(meetingId);
       this.setState({ ...IDLE_STATE });
@@ -644,8 +687,8 @@ export class ProcessingCoordinator {
             error: 'cancelled',
           };
         }).catch(() => undefined);
-        this.setState({ ...IDLE_STATE, error: '要約をキャンセルしました。' });
-        throw new Error('要約をキャンセルしました。');
+        this.setState({ ...IDLE_STATE, error: t('要約をキャンセルしました。') });
+        throw new Error(t('要約をキャンセルしました。'));
       }
       const message = summaryErrorMessage(error);
       await updateMeetingMeta(metaPath, (meta) => {
@@ -672,7 +715,9 @@ export class ProcessingCoordinator {
   ): Promise<TranslationPreview> {
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
-      throw new Error('文字起こしがありません。先に文字起こしを完了してください。');
+      throw new Error(
+        t('文字起こしがありません。先に文字起こしを完了してください。'),
+      );
     }
     if (targetLanguage !== 'ja' && targetLanguage !== 'en') {
       throw new Error('translation target is invalid');
@@ -682,19 +727,25 @@ export class ProcessingCoordinator {
       (targetLanguage === 'ja' && sourceLanguage.startsWith('ja')) ||
       (targetLanguage === 'en' && sourceLanguage.startsWith('en'))
     ) {
-      throw new Error('原文と同じ言語には翻訳できません。');
+      throw new Error(t('原文と同じ言語には翻訳できません。'));
     }
     const config = await this.runtimeConfig(profileId);
     if (!config) {
       throw new Error(
-        'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        t(
+          'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        ),
       );
     }
     if (!config.endpoint) {
-      throw new Error('LLM のエンドポイント URL が正しくありません。設定を確認してください。');
+      throw new Error(
+        t('LLM のエンドポイント URL が正しくありません。設定を確認してください。'),
+      );
     }
     if (!config.apiKeyConfigured) {
-      throw new Error('LLM の API キーが設定されていません。設定画面で保存してください。');
+      throw new Error(
+        t('LLM の API キーが設定されていません。設定画面で保存してください。'),
+      );
     }
     const transcript = detail.transcript.body.trim();
     const hash = createHash('sha256').update(transcript, 'utf8').digest('hex');
@@ -729,7 +780,9 @@ export class ProcessingCoordinator {
       text: transcript,
       partial: detail.transcript.partial,
       warning: detail.transcript.partial
-        ? '部分的な文字起こしを翻訳します。完了済みの文字起こしで再実行することを推奨します。'
+        ? t(
+            '部分的な文字起こしを翻訳します。完了済みの文字起こしで再実行することを推奨します。',
+          )
         : null,
     };
   }
@@ -740,18 +793,26 @@ export class ProcessingCoordinator {
   ): Promise<TranslationResult> {
     const preview = this.translationTokens.get(token);
     if (!preview || preview.meetingId !== meetingId) {
-      throw new Error('翻訳の確認トークンが無効です。もう一度プレビューを開いてください。');
+      throw new Error(
+        t('翻訳の確認トークンが無効です。もう一度プレビューを開いてください。'),
+      );
     }
     if (this.active || this.state.stage !== null) {
-      throw new Error('別の処理が実行中です。完了してから翻訳を実行してください。');
+      throw new Error(
+        t('別の処理が実行中です。完了してから翻訳を実行してください。'),
+      );
     }
     if (this.now().getTime() > preview.expiresAt) {
       this.translationTokens.delete(token);
-      throw new Error('翻訳の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。');
+      throw new Error(
+        t(
+          '翻訳の確認トークンの有効期限が切れました。もう一度プレビューを開いてください。',
+        ),
+      );
     }
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail?.transcript?.body.trim()) {
-      throw new Error('文字起こしがありません。');
+      throw new Error(t('文字起こしがありません。'));
     }
     const body = detail.transcript.body.trim();
     if (
@@ -759,7 +820,9 @@ export class ProcessingCoordinator {
       preview.contentHash
     ) {
       this.translationTokens.delete(token);
-      throw new Error('文字起こしが変更されました。もう一度プレビューを開いてください。');
+      throw new Error(
+        t('文字起こしが変更されました。もう一度プレビューを開いてください。'),
+      );
     }
     this.translationTokens.delete(token);
 
@@ -773,11 +836,14 @@ export class ProcessingCoordinator {
         )) ?? '';
     } catch (error) {
       throw new Error(
-        `API キーを復号できませんでした。設定画面で再入力してください。${error instanceof Error ? ` (${error.message})` : ''}`,
+        t('API キーを復号できませんでした。設定画面で再入力してください。{detail}', {
+          detail:
+            error instanceof Error ? ` (${error.message})` : '',
+        }),
       );
     }
     if (!apiKey) {
-      throw new Error('API キーが設定されていません。');
+      throw new Error(t('API キーが設定されていません。'));
     }
 
     const controller = new AbortController();
@@ -787,7 +853,7 @@ export class ProcessingCoordinator {
       meetingId,
       progress: 0,
       etaSeconds: null,
-      message: '翻訳しています',
+      message: t('翻訳しています'),
       cancellable: true,
       error: null,
     });
@@ -875,7 +941,7 @@ export class ProcessingCoordinator {
         preview.targetLanguage,
       );
       if (!translation) {
-        throw new Error('翻訳ファイルの読み込みに失敗しました。');
+        throw new Error(t('翻訳ファイルの読み込みに失敗しました。'));
       }
       this.onMeetingUpdated(meetingId);
       this.setState({ ...IDLE_STATE });
@@ -887,7 +953,7 @@ export class ProcessingCoordinator {
     } catch (error) {
       const message =
         controller.signal.aborted
-          ? '翻訳をキャンセルしました。'
+          ? t('翻訳をキャンセルしました。')
           : error instanceof Error
             ? error.message
             : String(error);
@@ -915,40 +981,40 @@ export class ProcessingCoordinator {
 
   async saveTranscript(meetingId: string, markdown: string): Promise<MeetingDetail> {
     if (this.active || this.state.stage !== null) {
-      throw new Error('処理中は文字起こしを編集できません。');
+      throw new Error(t('処理中は文字起こしを編集できません。'));
     }
     if (markdown.length > 5 * 1024 * 1024) {
-      throw new Error('文字起こしが大きすぎます。');
+      throw new Error(t('文字起こしが大きすぎます。'));
     }
     const meeting = await this.meetingStore.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
     this.onMeetingUpdated(meetingId);
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     return detail;
   }
 
   async saveSummary(meetingId: string, markdown: string): Promise<MeetingDetail> {
     if (this.active || this.state.stage !== null) {
-      throw new Error('処理中は要約を編集できません。');
+      throw new Error(t('処理中は要約を編集できません。'));
     }
     if (markdown.length > 5 * 1024 * 1024) {
-      throw new Error('要約が大きすぎます。');
+      throw new Error(t('要約が大きすぎます。'));
     }
     const meeting = await this.meetingStore.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     await writePrivateText(join(meeting.meetingDir, 'summary.md'), markdown);
     this.onMeetingUpdated(meetingId);
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     return detail;
   }
@@ -997,12 +1063,12 @@ export class ProcessingCoordinator {
   private async processMeeting(meetingId: string): Promise<void> {
     const meeting = await this.meetingStore.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     const metaPath = join(meeting.meetingDir, 'meta.json');
     let meta = await readMeetingMeta(metaPath);
     if (meta.status === 'recording') {
-      throw new Error('録音中の会議は処理できません。');
+      throw new Error(t('録音中の会議は処理できません。'));
     }
     const controller = new AbortController();
     this.active = { meetingId, controller };
@@ -1015,7 +1081,7 @@ export class ProcessingCoordinator {
     const hasSourceWav = await exists(sourceWav);
     const hasMp3 = await exists(mp3Path);
     if (!hasSourceWav && !hasMp3) {
-      throw new Error('変換できる音声ファイルがありません。');
+      throw new Error(t('変換できる音声ファイルがありません。'));
     }
     let duration = meta.duration;
     if (hasSourceWav) {
@@ -1045,7 +1111,7 @@ export class ProcessingCoordinator {
           meetingId,
           progress: 0,
           etaSeconds: null,
-          message: 'mp3 に変換しています',
+          message: t('mp3 に変換しています'),
           cancellable: true,
           error: null,
         });
@@ -1070,7 +1136,7 @@ export class ProcessingCoordinator {
           ...this.state,
           stage: 'encoding',
           progress: 0,
-          message: '文字起こし用の 16 kHz WAV を生成しています',
+          message: t('文字起こし用の 16 kHz WAV を生成しています'),
           etaSeconds: null,
         });
         await this.mediaEncoder.createTranscriptionWav({
@@ -1146,9 +1212,9 @@ export class ProcessingCoordinator {
     } catch (error) {
       const message =
         error instanceof MediaError && error.code === 'cancelled'
-          ? '音声の変換をキャンセルしました。'
+          ? t('音声の変換をキャンセルしました。')
           : error instanceof MediaError
-            ? `音声の変換に失敗しました。${error.message}`
+            ? t('音声の変換に失敗しました。{detail}', { detail: error.message })
             : error instanceof Error
               ? error.message
               : String(error);
@@ -1186,7 +1252,10 @@ export class ProcessingCoordinator {
     const model = this.settings().whisperModel;
     const modelPath = await this.modelManager.installedPath(model);
     if (!modelPath) {
-      const message = `whisper モデル（${model}）がダウンロードされていません。設定画面から取得してください。`;
+      const message = t(
+        'whisper モデル（{model}）がダウンロードされていません。設定画面から取得してください。',
+        { model },
+      );
       await updateMeetingMeta(metaPath, (value) => {
         value.status = 'error';
         value.error = message;
@@ -1207,7 +1276,7 @@ export class ProcessingCoordinator {
       meetingId,
       progress: 0,
       etaSeconds: null,
-      message: '文字起こしをしています',
+      message: t('文字起こしをしています'),
       cancellable: true,
       error: null,
     });
@@ -1291,8 +1360,11 @@ export class ProcessingCoordinator {
             return true;
           }
           return this.confirmContinue(
-            '文字起こしに予想以上の時間がかかっています。',
-            `経過 ${Math.round(elapsedSeconds / 60)} 分、予想 ${Math.round(predictedSeconds / 60)} 分を超えました。処理を続けますか？`,
+            t('文字起こしに予想以上の時間がかかっています。'),
+            t('経過 {elapsed} 分、予想 {predicted} 分を超えました。処理を続けますか？', {
+              elapsed: Math.round(elapsedSeconds / 60),
+              predicted: Math.round(predictedSeconds / 60),
+            }),
           );
         },
         onUpdate: (progress) => {
@@ -1302,7 +1374,7 @@ export class ProcessingCoordinator {
             ...this.state,
             progress: progress.ratio,
             etaSeconds: progress.etaSeconds,
-            message: progress.message ?? '文字起こしをしています',
+            message: progress.message ?? t('文字起こしをしています'),
           });
           void queuePartial(progress.segments, progress.language, true);
         },
@@ -1382,8 +1454,10 @@ export class ProcessingCoordinator {
               etaSeconds: null,
               message:
                 progress.phase === 'models'
-                  ? `話者分離モデルを準備しています${percent}`
-                  : `話者を分離しています${percent}`,
+                  ? t('話者分離モデルを準備しています{suffix}', {
+                      suffix: percent,
+                    })
+                  : t('話者を分離しています{suffix}', { suffix: percent }),
             });
           },
         });

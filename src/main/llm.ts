@@ -1,4 +1,5 @@
 import { validateEndpointUrl } from '../shared/llm';
+import { getUiLanguage } from './i18n';
 
 export type LlmErrorCode =
   | 'configuration'
@@ -154,7 +155,7 @@ export class LlmClient {
   }
 
   async complete(request: ChatCompletionRequest): Promise<ChatCompletionResult> {
-    const validation = validateEndpointUrl(request.endpoint);
+    const validation = validateEndpointUrl(request.endpoint, getUiLanguage());
     if (!validation.ok) {
       throw new LlmError('configuration', validation.error);
     }

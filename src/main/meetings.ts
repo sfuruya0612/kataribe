@@ -41,6 +41,7 @@ import {
   writeMeetingMeta,
   type MeetingMeta,
 } from './meeting-meta';
+import { getUiLanguage, t } from './i18n';
 import { readWavInfo } from './wav';
 
 const MEETING_STATUSES: MeetingStatus[] = [
@@ -156,20 +157,11 @@ async function replaceFrontMatterTitle(
 const SEARCH_FILES: Array<{
   file: string;
   kind: MeetingSearchHit['kind'];
-  kindLabel: string;
 }> = [
-  { file: 'transcript.md', kind: 'transcript', kindLabel: '文字起こし' },
-  {
-    file: 'transcript.ja.md',
-    kind: 'translation-ja',
-    kindLabel: '文字起こし（日本語訳）',
-  },
-  {
-    file: 'transcript.en.md',
-    kind: 'translation-en',
-    kindLabel: '文字起こし（English）',
-  },
-  { file: 'summary.md', kind: 'summary', kindLabel: '要約' },
+  { file: 'transcript.md', kind: 'transcript' },
+  { file: 'transcript.ja.md', kind: 'translation-ja' },
+  { file: 'transcript.en.md', kind: 'translation-en' },
+  { file: 'summary.md', kind: 'summary' },
 ];
 
 function audioCandidate(meta: MeetingMeta, name: string): string | null {
@@ -344,7 +336,7 @@ export class MeetingStore {
       speakers,
       diarizationError:
         meta?.diarization?.state === 'failed'
-          ? meta.diarization.error ?? '話者分離に失敗しました。'
+          ? meta.diarization.error ?? t('話者分離に失敗しました。')
           : null,
     };
   }
@@ -444,7 +436,6 @@ export class MeetingStore {
           title: meeting.title,
           startedAt: meeting.startedAt,
           kind: 'title',
-          kindLabel: 'タイトル',
           lineNumber: null,
           timestamp: null,
           text: meeting.title,
@@ -483,7 +474,6 @@ export class MeetingStore {
             title: meeting.title,
             startedAt: meeting.startedAt,
             kind: entry.kind,
-            kindLabel: entry.kindLabel,
             lineNumber: index + 1,
             timestamp,
             text: line.trim().slice(0, 500),
@@ -505,11 +495,11 @@ export class MeetingStore {
   ): Promise<MeetingSummary> {
     const extension = extname(sourcePath).toLowerCase();
     if (extension !== '.mp3' && extension !== '.wav') {
-      throw new Error('mp3 または wav を選択してください。');
+      throw new Error(t('mp3 または wav を選択してください。'));
     }
     const info = await stat(sourcePath);
     if (!info.isFile() || info.size <= 0) {
-      throw new Error('音声ファイルが空です。');
+      throw new Error(t('音声ファイルが空です。'));
     }
     const title = sanitizeMeetingTitle(
       basename(sourcePath, extension),
@@ -561,7 +551,7 @@ export class MeetingStore {
     }
     const imported = await this.find(meetingId);
     if (!imported) {
-      throw new Error('取り込んだ会議が見つかりません。');
+      throw new Error(t('取り込んだ会議が見つかりません。'));
     }
     return imported;
   }
@@ -569,7 +559,7 @@ export class MeetingStore {
   async setPinned(meetingId: string, pinned: boolean): Promise<MeetingSummary> {
     const meeting = await this.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     await updateMeetingMeta(join(meeting.meetingDir, 'meta.json'), (meta) => {
       if (pinned) {
@@ -582,7 +572,7 @@ export class MeetingStore {
     });
     const updated = await this.find(meetingId);
     if (!updated) {
-      throw new Error('会議の更新後に会議が見つかりません。');
+      throw new Error(t('会議の更新後に会議が見つかりません。'));
     }
     return updated;
   }
@@ -590,10 +580,10 @@ export class MeetingStore {
   async delete(meetingId: string): Promise<void> {
     const meeting = await this.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     if (!isInside(this.saveRoot, meeting.meetingDir)) {
-      throw new Error('会議フォルダが保存先の外にあります。');
+      throw new Error(t('会議フォルダが保存先の外にあります。'));
     }
     await rm(meeting.meetingDir, { recursive: true, force: true });
   }
@@ -604,7 +594,7 @@ export class MeetingStore {
   ): Promise<MeetingSummary> {
     const meeting = await this.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     if (language !== null && language !== 'ja' && language !== 'en') {
       throw new Error('summary language is invalid');
@@ -618,14 +608,14 @@ export class MeetingStore {
     });
     const updated = await this.find(meetingId);
     if (!updated) {
-      throw new Error('会議の更新後に会議が見つかりません。');
+      throw new Error(t('会議の更新後に会議が見つかりません。'));
     }
     return updated;
   }
 
   async updateTitle(meetingId: string, rawTitle: string): Promise<MeetingSummary> {    const meeting = await this.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     const title = sanitizeMeetingTitle(rawTitle);
     const parent = dirname(meeting.meetingDir);
@@ -641,7 +631,7 @@ export class MeetingStore {
       index += 1;
     }
     if (!isInside(this.saveRoot, targetDir)) {
-      throw new Error('会議フォルダのパスが保存先の外になります。');
+      throw new Error(t('会議フォルダのパスが保存先の外になります。'));
     }
 
     const renamed = targetDir !== meeting.meetingDir;
@@ -676,7 +666,7 @@ export class MeetingStore {
 
     const updated = await this.find(meetingId);
     if (!updated) {
-      throw new Error('会議の更新後に会議が見つかりません。');
+      throw new Error(t('会議の更新後に会議が見つかりません。'));
     }
     return updated;
   }
@@ -687,12 +677,12 @@ export class MeetingStore {
   ): Promise<MeetingDetail> {
     const meeting = await this.find(meetingId);
     if (!meeting) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
-    const names = validateSpeakerNames(rawNames);
+    const names = validateSpeakerNames(rawNames, getUiLanguage());
     const transcript = await this.readTranscript(meeting);
     if (!transcript) {
-      throw new Error('文字起こしがありません。');
+      throw new Error(t('文字起こしがありません。'));
     }
     const meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
     const diarizationCache = await readDiarizationCache(
@@ -711,15 +701,17 @@ export class MeetingStore {
       diarizationCache !== null,
     );
     if (currentNames.length !== names.length) {
-      throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
+      throw new Error(
+        t('話者数が一致しません。最新の文字起こしを読み直してください。'),
+      );
     }
     if (new Set(currentNames).size !== currentNames.length) {
-      throw new Error('文字起こしの話者名が重複しています。');
+      throw new Error(t('文字起こしの話者名が重複しています。'));
     }
     if (currentNames.every((name, index) => name === names[index])) {
       const unchanged = await this.detail(meetingId);
       if (!unchanged) {
-        throw new Error('会議が見つかりません。');
+        throw new Error(t('会議が見つかりません。'));
       }
       return unchanged;
     }
@@ -732,7 +724,7 @@ export class MeetingStore {
       const clusters = currentNames.map((name) => {
         const cluster = diarizationCache.labels[name];
         if (cluster === undefined) {
-          throw new Error('話者名に対応するクラスタが見つかりません。');
+          throw new Error(t('話者名に対応するクラスタが見つかりません。'));
         }
         return cluster;
       });
@@ -762,7 +754,7 @@ export class MeetingStore {
     const transcriptPath = join(meeting.meetingDir, 'transcript.md');
     const renamedTranscript = renameTranscriptSpeakers(transcript.markdown, mapping);
     if (renamedTranscript === transcript.markdown) {
-      throw new Error('文字起こしに話者名が見つかりません。');
+      throw new Error(t('文字起こしに話者名が見つかりません。'));
     }
     for (const entry of TRANSLATION_FILES) {
       const path = join(meeting.meetingDir, entry.file);
@@ -799,7 +791,7 @@ export class MeetingStore {
     });
     const updated = await this.detail(meetingId);
     if (!updated) {
-      throw new Error('会議が見つかりません。');
+      throw new Error(t('会議が見つかりません。'));
     }
     return updated;
   }

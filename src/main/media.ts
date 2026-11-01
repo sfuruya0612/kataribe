@@ -1,6 +1,7 @@
 import { access, chmod, mkdir, open, rename, rm, stat } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
+import { t } from './i18n';
 import { runProcess, ProcessStartError } from './process';
 import { readWavInfo } from './wav';
 
@@ -143,7 +144,14 @@ export class BinaryLocator {
   private missingError(binaryName: string, label: string): MediaError {
     return new MediaError(
       'binary-missing',
-      `${label} が見つかりません。resources/${join('bin', this.options.arch)}/${binaryName} に実行ファイルを置くか、PATH の通った ${binaryName} をインストールしてください。`,
+      t(
+        '{label} が見つかりません。resources/{directory}/{binary} に実行ファイルを置くか、PATH の通った {binary} をインストールしてください。',
+        {
+          label,
+          directory: join('bin', this.options.arch),
+          binary: binaryName,
+        },
+      ),
     );
   }
 }

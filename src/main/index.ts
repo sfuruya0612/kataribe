@@ -51,6 +51,7 @@ import { ApiKeyStore, type SecretCrypto } from './api-keys';
 import { ChildProcessRegistry } from './child-registry';
 import { DiarizationService } from './diarization';
 import { DiarizationModelManager } from './diarization-models';
+import { getUiLanguage, setUiLanguage, t } from './i18n';
 import { LlmClient } from './llm';
 import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
@@ -216,7 +217,7 @@ function cloudSyncService(path: string): string | null {
     return 'Google Drive';
   }
   if (value.includes('/obsidian')) {
-    return 'Obsidian の同期フォルダ';
+    return 'Obsidian';
   }
   return null;
 }
@@ -271,12 +272,13 @@ function registerAudioProtocol(meetingStore: MeetingStore): void {
 
 function registerAppMenu(): void {
   app.setAboutPanelOptions({
-    applicationName: 'Kataribe 会議録',
+    applicationName: t('Kataribe 会議録'),
     applicationVersion: app.getVersion(),
     version: app.getVersion(),
     copyright: 'Copyright 2026 Shoichi Furuya',
-    credits:
+    credits: t(
       'BlackHole 2ch は GPLv3 のソフトウェアです。Kataribe は BlackHole 2ch を同梱せず、再配布しません。配布元: https://existential.audio/blackhole/',
+    ),
   });
 
   const template: MenuItemConstructorOptions[] = [
@@ -284,23 +286,23 @@ function registerAppMenu(): void {
       label: app.name,
       submenu: [
         {
-          label: 'Kataribe 会議録 について',
+          label: t('Kataribe 会議録 について'),
           click: () => app.showAboutPanel(),
         },
         { type: 'separator' },
-        { role: 'hide', label: 'Kataribe を隠す' },
-        { role: 'hideOthers', label: 'ほかのアプリを隠す' },
-        { role: 'unhide', label: 'すべてを表示' },
+        { role: 'hide', label: t('Kataribe を隠す') },
+        { role: 'hideOthers', label: t('ほかのアプリを隠す') },
+        { role: 'unhide', label: t('すべてを表示') },
         { type: 'separator' },
-        { role: 'quit', label: 'Kataribe を終了' },
+        { role: 'quit', label: t('Kataribe を終了') },
       ],
     },
     {
-      label: 'ファイル',
-      submenu: [{ role: 'close', label: 'ウインドウを閉じる' }],
+      label: t('ファイル'),
+      submenu: [{ role: 'close', label: t('ウインドウを閉じる') }],
     },
-    { role: 'editMenu', label: '編集' },
-    { role: 'windowMenu', label: 'ウインドウ' },
+    { role: 'editMenu', label: t('編集') },
+    { role: 'windowMenu', label: t('ウインドウ') },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -607,6 +609,11 @@ function registerIpc(
     stateStore.setClippingConfig(settings.clippingConfig);
     stateStore.setSilenceConfig(settings.silenceConfig);
     applyThemeMode(settings.theme);
+    if (settings.uiLanguage !== getUiLanguage()) {
+      setUiLanguage(settings.uiLanguage);
+      registerAppMenu();
+      trayController?.update(stateStore.getState());
+    }
     return settings;
   });
 
@@ -618,11 +625,11 @@ function registerIpc(
       recordingStatus === 'stopping' ||
       processing.isBusy()
     ) {
-      throw new Error('録音または処理中は保存先を変更できません。');
+      throw new Error(t('録音または処理中は保存先を変更できません。'));
     }
     const settings = settingsStore.get();
     const options: OpenDialogOptions = {
-      title: '保存先フォルダを選択',
+      title: t('保存先フォルダを選択'),
       defaultPath: settings.saveRoot,
       properties: ['openDirectory', 'createDirectory'],
     };
@@ -633,12 +640,21 @@ function registerIpc(
     const selected = resolve(result.filePaths[0]);
     await mkdir(selected, { recursive: true, mode: 0o700 });
     await access(selected, fsConstants.W_OK);
+    const syncService = cloudSyncService(selected);
+    const syncWarning = syncService
+      ? `${t(
+          '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
+          { service: t('{service} の同期フォルダ', { service: syncService }) },
+        )}\n\n`
+      : '';
     const confirmation = await showMessageDialog({
       type: 'warning',
-      title: '保存先を変更',
-      message: '既存の会議は新しい保存先の一覧に表示されません。',
-      detail: `${cloudSyncService(selected) ? `選択したフォルダは ${cloudSyncService(selected)} の同期対象です。音声と文字起こしが端末外に同期されます。\n\n` : ''}会議フォルダは移動しません。元のフォルダは Finder から引き続き参照できます。保存先を変更しますか？`,
-      buttons: ['変更', 'キャンセル'],
+      title: t('保存先を変更'),
+      message: t('既存の会議は新しい保存先の一覧に表示されません。'),
+      detail: `${syncWarning}${t(
+        '会議フォルダは移動しません。元のフォルダは Finder から引き続き参照できます。保存先を変更しますか？',
+      )}`,
+      buttons: [t('変更'), t('キャンセル')],
       defaultId: 1,
       cancelId: 1,
     });
@@ -674,11 +690,11 @@ function registerIpc(
 
   ipcMain.handle('meetings:update-title', async (_event, meetingId: string, title: string) => {
     if (processing.isBusy()) {
-      throw new Error('処理中はタイトルを変更できません。');
+      throw new Error(t('処理中はタイトルを変更できません。'));
     }
     const status = stateStore.getStatus();
     if (status === 'starting' || status === 'recording' || status === 'stopping') {
-      throw new Error('録音中はタイトルを変更できません。');
+      throw new Error(t('録音中はタイトルを変更できません。'));
     }
     const updated = await meetingStore.updateTitle(meetingId, String(title));
     await refreshMeetingIndex(meetingStore, meetingId);
@@ -709,7 +725,7 @@ function registerIpc(
       status === 'stopping' ||
       processing.isBusy()
     ) {
-      throw new Error('録音または処理中は会議を削除できません。');
+      throw new Error(t('録音または処理中は会議を削除できません。'));
     }
     await meetingStore.delete(meetingId);
     await rm(join(app.getPath('userData'), 'tmp', meetingId), {
@@ -731,13 +747,13 @@ function registerIpc(
       status === 'stopping' ||
       processing.isBusy()
     ) {
-      throw new Error('録音または処理中は音声を取り込めません。');
+      throw new Error(t('録音または処理中は音声を取り込めません。'));
     }
     const options: OpenDialogOptions = {
-      title: '文字起こしする音声ファイルを選択',
+      title: t('文字起こしする音声ファイルを選択'),
       properties: ['openFile'],
       filters: [
-        { name: '音声ファイル', extensions: ['mp3', 'wav'] },
+        { name: t('音声ファイル'), extensions: ['mp3', 'wav'] },
       ],
     };
     const result = await showOpenDirectoryDialog(options);
@@ -798,7 +814,7 @@ function registerIpc(
       status === 'stopping' ||
       processing.isBusy()
     ) {
-      throw new Error('録音または処理中は Multi-Output Device を作成できません。');
+      throw new Error(t('録音または処理中は Multi-Output Device を作成できません。'));
     }
     const current = await multiOutput.status();
     if (!current.helperAvailable) {
@@ -806,17 +822,23 @@ function registerIpc(
     }
     const output = current.outputDevices.find((device) => device.uid === outputUid);
     if (!output) {
-      throw new Error('出力デバイスが見つかりません。');
+      throw new Error(t('出力デバイスが見つかりません。'));
     }
     const blackHole = current.outputDevices.find((device) =>
       device.name.toLowerCase().includes('blackhole'),
     );
     const confirmation = await showMessageDialog({
       type: 'warning',
-      title: 'Multi-Output Device を自動作成',
-      message: 'macOS の音声出力を変更します。',
-      detail: `${output.name} と ${blackHole?.name ?? 'BlackHole 2ch'} を含む「Kataribe Multi-Output」を作成し、既定の出力に設定します。音量キーが効かなくなる場合があります。`,
-      buttons: ['作成', 'キャンセル'],
+      title: t('Multi-Output Device を自動作成'),
+      message: t('macOS の音声出力を変更します。'),
+      detail: t(
+        '{output} と {blackhole} を含む「Kataribe Multi-Output」を作成し、既定の出力に設定します。音量キーが効かなくなる場合があります。',
+        {
+          output: output.name,
+          blackhole: blackHole?.name ?? 'BlackHole 2ch',
+        },
+      ),
+      buttons: [t('作成'), t('キャンセル')],
       defaultId: 1,
       cancelId: 1,
     });
@@ -829,11 +851,12 @@ function registerIpc(
   ipcMain.handle('multi-output:remove', async () => {
     const confirmation = await showMessageDialog({
       type: 'warning',
-      title: 'Multi-Output Device を削除',
-      message: 'Kataribe Multi-Output を削除しますか？',
-      detail:
+      title: t('Multi-Output Device を削除'),
+      message: t('Kataribe Multi-Output を削除しますか？'),
+      detail: t(
         'macOS の出力が Kataribe Multi-Output の場合は、削除後に別の出力デバイスを選び直してください。',
-      buttons: ['削除', 'キャンセル'],
+      ),
+      buttons: [t('削除'), t('キャンセル')],
       defaultId: 1,
       cancelId: 1,
     });
@@ -971,11 +994,11 @@ function registerIpc(
         throw new Error('invalid speaker names');
       }
       if (processing.isBusy()) {
-        throw new Error('処理中は話者名を変更できません。');
+        throw new Error(t('処理中は話者名を変更できません。'));
       }
       const status = stateStore.getStatus();
       if (status === 'starting' || status === 'recording' || status === 'stopping') {
-        throw new Error('録音中は話者名を変更できません。');
+        throw new Error(t('録音中は話者名を変更できません。'));
       }
       const detail = await meetingStore.renameSpeakers(meetingId, names);
       await refreshMeetingIndex(meetingStore, meetingId);
@@ -1033,7 +1056,7 @@ function registerIpc(
       status === 'stopping' ||
       processing.isBusy()
     ) {
-      throw new Error('録音または処理中は索引を再構築できません。');
+      throw new Error(t('録音または処理中は索引を再構築できません。'));
     }
     if (activeMeetingIndex) {
       activeMeetingIndex.close();
@@ -1180,7 +1203,10 @@ function registerIpc(
         kind: 'clipping',
         device: 'microphone',
         severity: 'warning',
-        message: `マイク入力がクリップしています（ピーク ${Math.round(report.peak * 100)}%）。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。`,
+        message: t(
+          'マイク入力がクリップしています（ピーク {peak}%）。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。',
+          { peak: Math.round(report.peak * 100) },
+        ),
       };
       try {
         await recordingManager.recordEvent(event);
@@ -1193,7 +1219,7 @@ function registerIpc(
         kind: 'clipping-recovered',
         device: 'microphone',
         severity: 'warning',
-        message: 'マイク入力のクリッピングが収まりました。',
+        message: t('マイク入力のクリッピングが収まりました。'),
       };
       try {
         await recordingManager.recordEvent(event);
@@ -1218,7 +1244,9 @@ function registerIpc(
         device: 'system',
         severity: 'warning',
         message:
-          'システム音声が届いていません。Multi-Output Device と macOS の出力設定を確認してください。',
+          t(
+            'システム音声が届いていません。Multi-Output Device と macOS の出力設定を確認してください。',
+          ),
       };
       try {
         await recordingManager.recordEvent(event);
@@ -1231,7 +1259,7 @@ function registerIpc(
         kind: 'system-silence-recovered',
         device: 'system',
         severity: 'warning',
-        message: 'システム音声が戻りました。',
+        message: t('システム音声が戻りました。'),
       };
       try {
         await recordingManager.recordEvent(event);
@@ -1388,7 +1416,6 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     configureSession();
-    registerAppMenu();
     applyDockIcon();
 
     const defaultSaveRoot = join(app.getPath('documents'), 'Kataribe');
@@ -1399,6 +1426,8 @@ if (!app.requestSingleInstanceLock()) {
     if (!storedSettings.saveRoot) {
       storedSettings = await settingsStore.save({ saveRoot: defaultSaveRoot });
     }
+    setUiLanguage(storedSettings.uiLanguage);
+    registerAppMenu();
     applyThemeMode(storedSettings.theme);
     const saveRoot = storedSettings.saveRoot;
     const meetingStore = new MeetingStore(saveRoot);
@@ -1494,10 +1523,10 @@ if (!app.requestSingleInstanceLock()) {
       confirmContinue: async (message, detail) => {
         const result = await showMessageDialog({
           type: 'question',
-          title: '文字起こしの継続確認',
+          title: t('文字起こしの継続確認'),
           message,
           detail,
-          buttons: ['継続', '停止'],
+          buttons: [t('継続'), t('停止')],
           defaultId: 0,
           cancelId: 1,
         });
@@ -1560,7 +1589,7 @@ if (!app.requestSingleInstanceLock()) {
         kind: 'sleep-suspend' as const,
         device: 'unknown' as const,
         severity: 'warning' as const,
-        message: 'システムスリープに入りました。',
+        message: t('システムスリープに入りました。'),
       };
       stateStore.setNotice(event);
       void recordingManager.recordEvent(event).catch((error: unknown) => {
@@ -1592,8 +1621,11 @@ if (!app.requestSingleInstanceLock()) {
         severity: 'warning' as const,
         message:
           gapFrames > 0
-            ? `システムスリープから復帰しました。${(gapFrames / sampleRate).toFixed(1)} 秒の無音を補います。`
-            : 'システムスリープから復帰しました。',
+            ? t(
+                'システムスリープから復帰しました。{seconds} 秒の無音を補います。',
+                { seconds: (gapFrames / sampleRate).toFixed(1) },
+              )
+            : t('システムスリープから復帰しました。'),
       };
       stateStore.setNotice(event);
       void recordingManager.recordEvent(event).catch((error: unknown) => {
