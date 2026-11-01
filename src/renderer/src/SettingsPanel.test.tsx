@@ -10,12 +10,16 @@ import type { AppSettings, UiLanguage } from '../../shared/types';
 import { I18nProvider } from './i18n';
 import { SettingsPanel } from './SettingsPanel';
 
-const settings: AppSettings = {
+const baseSettings: AppSettings = {
   ...DEFAULT_APP_SETTINGS,
   saveRoot: '/tmp/Kataribe',
 };
 
-function renderSettings(locale: UiLanguage): string {
+function renderSettings(
+  locale: UiLanguage,
+  overrides: Partial<AppSettings> = {},
+): string {
+  const settings: AppSettings = { ...baseSettings, ...overrides };
   return renderToStaticMarkup(
     createElement(I18nProvider, {
       initialLocale: locale,
@@ -49,15 +53,24 @@ describe('req_ui_001_settings_panel_language', () => {
     expect(html).toContain('>English</button>');
     expect(html).toContain('>一般</button>');
     expect(html).not.toContain('>Language</p>');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>日本語<\/button>/);
   });
 
   it('renders the language selector in English', () => {
-    const html = renderSettings('en');
+    const html = renderSettings('en', { uiLanguage: 'en' });
 
     expect(html).toContain('>Language</p>');
     expect(html).toContain('>Japanese</button>');
     expect(html).toContain('>English</button>');
     expect(html).toContain('>General</button>');
     expect(html).not.toContain('>UI の言語</p>');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>English<\/button>/);
+  });
+
+  it('req_ui_001_shows_the_stored_language_as_selected', () => {
+    const html = renderSettings('en', { uiLanguage: 'en' });
+
+    expect(html).toMatch(/aria-pressed="true"[^>]*>English<\/button>/);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>Japanese<\/button>/);
   });
 });

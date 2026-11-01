@@ -1,6 +1,6 @@
 import type { InputSource, MeetingStatus, RecordingCaptureStats } from '../../shared/types';
 import type { UiLanguage } from '../../shared/types';
-import { translate } from '../../shared/i18n';
+import { INPUT_SOURCE_MESSAGE_KEYS, translate } from '../../shared/i18n';
 
 export type InputDevice = {
   deviceId: string;
@@ -169,7 +169,7 @@ export function formatMonthLabel(
       new Date(year, month - 1, 1),
     );
   }
-  return `${month} 月`;
+  return translate(locale, '{month} 月', { month });
 }
 
 export function meetingStatusLabel(
@@ -200,14 +200,7 @@ export function inputSourceLabel(
   source: InputSource,
   locale: UiLanguage = 'ja',
 ): string {
-  switch (source) {
-    case 'microphone':
-      return translate(locale, 'マイク');
-    case 'system':
-      return translate(locale, 'システム音声');
-    case 'both':
-      return translate(locale, 'マイク + システム音声');
-  }
+  return translate(locale, INPUT_SOURCE_MESSAGE_KEYS[source]);
 }
 
 export function isClipping(peak: number): boolean {

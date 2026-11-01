@@ -1,6 +1,8 @@
 const INVALID_FILENAME = /[/\\:*?"<>|\u0000-\u001f]/gu;
 const MAX_TITLE_BYTES = 120;
 
+export const DEFAULT_MEETING_TITLE = 'タイトル未入力';
+
 function truncateUtf8(value: string, maxBytes: number): string {
   const encoder = new TextEncoder();
   if (encoder.encode(value).length <= maxBytes) {
@@ -19,7 +21,7 @@ function truncateUtf8(value: string, maxBytes: number): string {
 
 export function sanitizeMeetingTitle(
   raw: string,
-  fallback = 'タイトル未入力',
+  fallback = DEFAULT_MEETING_TITLE,
 ): string {
   let value = raw
     .normalize('NFC')

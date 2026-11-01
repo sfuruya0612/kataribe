@@ -1,3 +1,7 @@
+/**
+ * 会議フォルダの読み書き、検索、話者名、保存済みデータの不変条件を検証する。
+ * 対応する要求: REQ-DIAR-001、REQ-DIAR-002、REQ-UI-001 (保存済みデータの不変)
+ */
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +15,7 @@ import {
   type DiarizationCache,
 } from '../src/main/diarization-cache';
 import { MeetingStore } from '../src/main/meetings';
+import { setUiLanguage } from '../src/main/i18n';
 import {
   formatTranscriptMarkdown,
   formatTranslationMarkdown,
@@ -58,6 +63,7 @@ async function createMeeting(
 }
 
 afterEach(async () => {
+  setUiLanguage('ja');
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
@@ -146,6 +152,54 @@ describe('MeetingStore', () => {
       message: '録音データの保存に失敗しました。',
       at: '2026-10-29T05:01:00.000Z',
     });
+  });
+
+  it('req_ui_001_keeps_the_stored_recording_error_message_when_the_ui_language_is_english', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000032';
+    await createMeeting(root, id, {
+      status: 'error',
+      recording_error: {
+        message: '録音データの保存に失敗しました。',
+        at: '2026-10-29T05:01:00.000Z',
+      },
+    });
+    setUiLanguage('en');
+
+    const detail = await store.detail(id);
+    expect(detail?.recordingError).toEqual({
+      message: '録音データの保存に失敗しました。',
+      at: '2026-10-29T05:01:00.000Z',
+    });
+  });
+
+  it('req_ui_001_keeps_meeting_content_when_the_ui_language_is_english', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000033';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'transcribed',
+      speakers: ['話者A'],
+    });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, text: 'こんにちは', speaker: '話者A' },
+        ],
+      }),
+    );
+    setUiLanguage('en');
+
+    const detail = await store.detail(id);
+    expect(detail?.meeting.title).toBe('週次定例');
+    expect(detail?.transcript?.body).toContain('話者A: こんにちは');
+    expect(detail?.speakers).toEqual(['話者A']);
   });
 
   it('falls back to the last error severity event for older recordings', async () => {

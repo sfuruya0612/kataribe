@@ -1,3 +1,7 @@
+/**
+ * 録音と会議一覧の表示ヘルパーを検証する。
+ * 対応する要求: REQ-UI-001 (表示言語のラベル、日付、件数)
+ */
 import { describe, expect, it } from 'vitest';
 import type { RecordingCaptureStats } from '../../shared/types';
 import {
@@ -211,7 +215,7 @@ describe('formatMeetingDate', () => {
 });
 
 describe('formatMonthLabel', () => {
-  it('labels months in Japanese and English', () => {
+  it('req_ui_001_labels_months_in_japanese_and_english', () => {
     expect(formatMonthLabel(2026, 10)).toBe('10 月');
     expect(formatMonthLabel(2026, 10, 'en')).toBe('Oct');
   });
@@ -245,6 +249,12 @@ describe('formatDateTime', () => {
   it('formats a valid ISO timestamp and preserves invalid values', () => {
     expect(formatDateTime('2026-10-29T05:05:00.000Z')).toContain('2026');
     expect(formatDateTime('not a date')).toBe('not a date');
+  });
+
+  it('req_ui_001_formats_the_date_time_in_english', () => {
+    expect(formatDateTime('2026-10-29T05:05:00.000Z', 'en')).toMatch(
+      /\d{1,2}\/\d{1,2}\/2026/,
+    );
   });
 });
 

@@ -33,6 +33,18 @@ describe('req_ui_001_translate', () => {
     }
   });
 
+  it('req_ui_001_composes_the_sync_warning_with_the_service_name', () => {
+    const key =
+      '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。';
+
+    expect(translate('ja', key, { service: 'iCloud Drive' })).toBe(
+      '保存先が iCloud Drive の同期対象です。音声と文字起こしが端末外に同期されます。',
+    );
+    expect(translate('en', key, { service: 'iCloud Drive' })).toBe(
+      'The save location is synced by iCloud Drive. Audio and transcripts are synced off this device.',
+    );
+  });
+
   it('keeps a placeholder that has no value', () => {
     expect(interpolate('残り {seconds} 秒', {})).toBe('残り {seconds} 秒');
     expect(interpolate('{count} 件', { count: 3 })).toBe('3 件');

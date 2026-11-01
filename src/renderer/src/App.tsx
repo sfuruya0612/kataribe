@@ -8,6 +8,7 @@ import type {
   MeetingSummary,
   ProcessingState,
   RecordingStopResult,
+  UiLanguage,
 } from '../../shared/types';
 import { MeetingDetail } from './MeetingDetail';
 import { MeetingTable } from './MeetingTable';
@@ -34,11 +35,18 @@ function cloudSyncService(path: string): string | null {
   return null;
 }
 
-export default function App() {
+export default function App({
+  initialUiLanguage = 'ja',
+}: {
+  initialUiLanguage?: UiLanguage;
+}) {
   const { t, setLocale } = useI18n();
   const recorder = useRecorder();
   const [info, setInfo] = useState<AppInfo | null>(null);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...DEFAULT_APP_SETTINGS,
+    uiLanguage: initialUiLanguage,
+  }));
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [view, setView] = useState<View>('meetings');
@@ -90,7 +98,7 @@ export default function App() {
             setToast(
               t(
                 '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
-                { service: t('{service} の同期フォルダ', { service }) },
+                { service },
               ),
             );
           }

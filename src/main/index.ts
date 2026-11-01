@@ -324,6 +324,7 @@ function registerAppMenu(): void {
       submenu: [
         { role: 'minimize', label: t('しまう') },
         { role: 'zoom', label: t('拡大/縮小') },
+        { role: 'togglefullscreen', label: t('フルスクリーンを切り替える') },
         { type: 'separator' },
         { role: 'front', label: t('すべてを手前に移動') },
       ],
@@ -531,6 +532,8 @@ function registerIpc(
     };
   });
 
+  ipcMain.handle('app:ui-language', () => getUiLanguage());
+
   ipcMain.handle('app:show-about', (): void => {
     app.showAboutPanel();
   });
@@ -669,7 +672,7 @@ function registerIpc(
     const syncWarning = syncService
       ? `${t(
           '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
-          { service: t('{service} の同期フォルダ', { service: syncService }) },
+          { service: syncService },
         )}\n\n`
       : '';
     const confirmation = await showMessageDialog({

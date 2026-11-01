@@ -41,6 +41,7 @@ import type {
   SummaryPreview,
   TranslationPreview,
   TranslationResult,
+  UiLanguage,
   WhisperModel,
   WhisperModelList,
 } from '../shared/types';
@@ -57,6 +58,7 @@ function subscribe<T>(channel: string, listener: (value: T) => void): () => void
 
 const api = {
   getAppInfo: (): Promise<AppInfo> => ipcRenderer.invoke('app:info'),
+  getUiLanguage: (): Promise<UiLanguage> => ipcRenderer.invoke('app:ui-language'),
   getMicrophoneStatus: (): Promise<MicrophonePermissionStatus> =>
     ipcRenderer.invoke('permissions:microphone-status'),
   requestMicrophone: (): Promise<boolean> =>

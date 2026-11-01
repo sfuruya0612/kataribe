@@ -1,4 +1,4 @@
-import type { UiLanguage } from './types';
+import type { InputSource, UiLanguage } from './types';
 
 export type MessageParams = Readonly<Record<string, string | number>>;
 
@@ -43,6 +43,7 @@ export const EN_MESSAGES = {
   'すべてを選択': 'Select All',
   'しまう': 'Minimize',
   '拡大/縮小': 'Zoom',
+  'フルスクリーンを切り替える': 'Toggle Full Screen',
   'すべてを手前に移動': 'Bring All to Front',
   '設定': 'Settings',
   '一般': 'General',
@@ -86,10 +87,12 @@ export const EN_MESSAGES = {
   '自動': 'Auto',
   '{count} 人': '{count} people',
   '1 人': '1 person',
+  '{month} 月': '{month}',
   '会議一覧を読み込めませんでした: {error}': 'Could not load meetings: {error}',
   '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。':
     'The save location is synced by {service}. Audio and transcripts are synced off this device.',
-  '{service} の同期フォルダ': '{service} sync folder',
+  '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。':
+    'The selected folder is synced by {service}. Audio and transcripts are synced off this device.',
   'アプリ情報を取得できませんでした: {error}': 'Could not load app information: {error}',
   '設定を読み込めませんでした: {error}': 'Could not load settings: {error}',
   'whisper モデルが未取得です。設定 > 文字起こし からダウンロードしてください。':
@@ -110,6 +113,7 @@ export const EN_MESSAGES = {
   '文字起こし済み': 'Transcribed',
   '要約済み': 'Summarized',
   '処理中': 'Working',
+  '処理中の会議': 'Processing',
   '停止': 'Stop',
   '1 件の会議': '1 meeting',
   '{count} 件の会議': '{count} meetings',
@@ -690,8 +694,6 @@ export const EN_MESSAGES = {
     '{elapsed} minutes have passed, exceeding the predicted {predicted} minutes. Continue processing?',
   'マイク入力がクリップしています（ピーク {peak}%）。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。':
     'The microphone input is clipping (peak {peak}%). Adjust the macOS input volume, the microphone gain, or the distance to the microphone.',
-  '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。':
-    'The selected folder is synced by {service}. Audio and transcripts are synced off this device.',
   '録音データが 1 つも保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。':
     'No recording data was saved, so the audio file could not be created. Check the input device and permissions, then record again.',
   '文字起こし用の 16 kHz WAV を生成しています':
@@ -796,6 +798,12 @@ export const EN_MESSAGES = {
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;
+
+export const INPUT_SOURCE_MESSAGE_KEYS: Record<InputSource, MessageKey> = {
+  microphone: 'マイク',
+  system: 'システム音声',
+  both: 'マイク + システム音声',
+};
 
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 

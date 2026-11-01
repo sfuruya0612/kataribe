@@ -110,6 +110,8 @@
 
 ### misc
 
+- [ADD] issue 0018 を起票し、1000 行を超えるソースファイルの分割方針を記録する
+  - @shoichi.furuya
 - [ADD] ADR-0022 を追加し、UI の表示言語の切り替えを記録する
   - @shoichi.furuya
 - [ADD] issue 0017 の解決方法を記録し、closed に移動する

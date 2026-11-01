@@ -69,7 +69,7 @@ export function Sidebar({
         className={`side ${isMeetings && filter === 'processing' ? 'is-active' : ''}`}
         onClick={() => onFilter('processing')}
       >
-        {t('処理中')}
+        {t('処理中の会議')}
         <span className="side-count">{processing}</span>
       </button>
       <button

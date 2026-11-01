@@ -8,7 +8,7 @@ import {
   stringifyFrontMatter,
   type FrontMatterValue,
 } from '../shared/markdown';
-import { sanitizeMeetingTitle } from '../shared/title';
+import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
 import {
   extractTranscriptSpeakers,
   recoverTranscriptSpeakers,
@@ -245,7 +245,7 @@ export class MeetingStore {
             title:
               typeof meta.title === 'string' && meta.title.length > 0
                 ? meta.title
-                : 'タイトル未入力',
+                : DEFAULT_MEETING_TITLE,
             meetingDir,
             startedAt:
               typeof meta.started_at === 'string' ? meta.started_at : '',

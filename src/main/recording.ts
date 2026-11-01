@@ -39,6 +39,7 @@ import {
   WAV_CHANNELS,
   WAV_BITS_PER_SAMPLE,
 } from './wav';
+import { DEFAULT_MEETING_TITLE } from '../shared/title';
 import { t } from './i18n';
 
 type SessionFile = {
@@ -247,7 +248,7 @@ export class RecordingManager {
       schema_version: 1,
       id: meetingId,
       status: 'recording',
-      title: 'タイトル未入力',
+      title: DEFAULT_MEETING_TITLE,
       started_at: now.toISOString(),
       duration: 0,
       source: {
@@ -716,7 +717,7 @@ export class RecordingManager {
       schema_version: 1,
       id: meetingId,
       status: 'error',
-      title: 'タイトル未入力',
+      title: DEFAULT_MEETING_TITLE,
       started_at: now.toISOString(),
       ended_at: now.toISOString(),
       duration: 0,
@@ -755,7 +756,7 @@ export class RecordingManager {
     const year = String(now.getFullYear());
     const date = `${year}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const base = `${date}_${time}_タイトル未入力`;
+    const base = `${date}_${time}_${DEFAULT_MEETING_TITLE}`;
     const yearRoot = join(this.saveRoot, year);
     await ensurePrivateDirectory(yearRoot);
 

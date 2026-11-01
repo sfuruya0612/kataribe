@@ -32,7 +32,7 @@ import type {
   TranslationPreview,
   TranslationResult,
 } from '../shared/types';
-import { sanitizeMeetingTitle } from '../shared/title';
+import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
 import { renameTranscriptSpeakers } from '../shared/speakers';
 import type { ApiKeyStore } from './api-keys';
 import { hashFile } from './asset-download';
@@ -638,7 +638,7 @@ export class ProcessingCoordinator {
       });
 
       let meeting = (await this.meetingStore.find(meetingId)) ?? detail.meeting;
-      if (meeting.title === 'タイトル未入力') {
+      if (meeting.title === DEFAULT_MEETING_TITLE) {
         try {
           const generatedTitle = await generateMeetingTitle({
             client: this.llmClient,
@@ -657,7 +657,7 @@ export class ProcessingCoordinator {
             (generated.usage.outputTokens ?? 0) +
             (generatedTitle.outputTokens ?? 0);
           const title = sanitizeMeetingTitle(generatedTitle.title);
-          if (title && title !== 'タイトル未入力') {
+          if (title && title !== DEFAULT_MEETING_TITLE) {
             meeting = await this.meetingStore.updateTitle(meetingId, title);
           }
         } catch (error) {

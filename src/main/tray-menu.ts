@@ -1,4 +1,5 @@
 import type { MenuItemConstructorOptions } from 'electron';
+import { INPUT_SOURCE_MESSAGE_KEYS } from '../shared/i18n';
 import type {
   InputSource,
   RecordingAppState,
@@ -15,14 +16,7 @@ export type TrayMenuHandlers = {
 };
 
 function inputSourceLabel(source: InputSource): string {
-  switch (source) {
-    case 'microphone':
-      return t('マイク');
-    case 'system':
-      return t('システム音声');
-    case 'both':
-      return t('マイク + システム音声');
-  }
+  return t(INPUT_SOURCE_MESSAGE_KEYS[source]);
 }
 
 export function formatElapsed(seconds: number): string {
