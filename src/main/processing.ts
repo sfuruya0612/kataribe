@@ -1353,10 +1353,7 @@ export class ProcessingCoordinator {
       const cachePath = diarizationCachePath(meeting.meetingDir);
       const currentSettings = this.settings();
       if (currentSettings.speakerDiarization) {
-        const audioPath = join(
-          meeting.meetingDir,
-          typeof meta.audio_path === 'string' ? meta.audio_path : 'audio.mp3',
-        );
+        const audioPath = join(meeting.meetingDir, 'audio.mp3');
         let audioSha256: string | undefined;
         try {
           audioSha256 = await hashFile(audioPath);

@@ -219,6 +219,7 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 計画との差分:
 
 - 音声ハッシュは再生成される 16 kHz WAV ではなく、保存済みの audio.mp3 を使う。最初の文字起こしと再文字起こしで同じ音声を参照するため。
+- 最初の文字起こしは元の WAV、再文字起こしは mp3 から 16 kHz WAV を作る。話者分離の入力は完全には一致しないが、キャッシュは audio.mp3 を同じ会議の音声として扱う。
 - `DiarizationCacheValidationError` は作らず、`readDiarizationCache` が不正なキャッシュに `null` を返す形にした。呼び出し側はログを残して通常の分離へ進む。
 - `assignSpeakerTurns` は `SpeakerAssignment` を返し、セグメント、制限後のターン、表示名からクラスタ ID への対応を含む。
 - `DiarizationService` は `DiarizationResult` を返し、`cacheHit`、`cacheKey`、`turns`、`names`、`labels` を持つ。
