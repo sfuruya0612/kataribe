@@ -23,7 +23,6 @@ describe('req_summary_001_regeneration_warning', () => {
     const html = renderWarning('ja', true);
 
     expect(html).toContain('既存の要約を上書きします');
-    expect(html).toContain('要約を再生成すると、現在の要約を上書きします。');
     expect(html).toContain('ToDo の完了状態は引き継ぎません。');
     expect(html).toContain('直前の要約は summary.previous.md に退避します。');
   });
@@ -32,9 +31,6 @@ describe('req_summary_001_regeneration_warning', () => {
     const html = renderWarning('en', true);
 
     expect(html).toContain('This replaces the existing summary');
-    expect(html).toContain(
-      'Regenerating the summary replaces the current summary.',
-    );
     expect(html).toContain('ToDo completion states are not carried over.');
     expect(html).toContain('summary.previous.md');
     expect(html).not.toContain('上書き');

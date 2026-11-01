@@ -1025,4 +1025,32 @@ describe('req_todo_001_meeting_todos', () => {
       original,
     );
   });
+
+  it('rejects a checkbox outside the ToDo section without writing the summary', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000037';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'summarized',
+    });
+    const original = stringifyFrontMatter(
+      { title: '週次定例', date: '2026-10-29', provider: 'claude', language: 'ja' },
+      [
+        '## 要約',
+        '- [ ] 要約の項目',
+        '## ToDo',
+        '- [ ] 資料をまとめる',
+        '## 未決事項',
+      ].join('\n'),
+    );
+    await writeFile(join(meetingDir, 'summary.md'), original);
+
+    await expect(
+      setMeetingTodoChecked(store, id, 1, '要約の項目', true),
+    ).rejects.toThrow(
+      '要約の ToDo が変更されました。一覧を再読み込みしてください。',
+    );
+    expect(await readFile(join(meetingDir, 'summary.md'), 'utf8')).toBe(
+      original,
+    );
+  });
 });

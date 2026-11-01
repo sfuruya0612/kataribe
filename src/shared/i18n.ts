@@ -815,8 +815,6 @@ export const EN_MESSAGES = {
   '処理中は ToDo の完了状態を変更できません。':
     'The ToDo completion state cannot be changed while processing.',
   '既存の要約を上書きします': 'This replaces the existing summary',
-  '要約を再生成すると、現在の要約を上書きします。':
-    'Regenerating the summary replaces the current summary.',
   'ToDo の完了状態は引き継ぎません。':
     'ToDo completion states are not carried over.',
   '直前の要約は summary.previous.md に退避します。':

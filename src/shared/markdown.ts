@@ -48,6 +48,8 @@ const HEADING_ALIASES: Array<{
   },
 ];
 
+const SECTION_HEADING_PATTERN = /^##\s+(.+?)\s*$/u;
+
 function unquote(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
@@ -307,7 +309,7 @@ export function normalizeSummaryMarkdown(
   let sawHeading = false;
 
   for (const line of text.split('\n')) {
-    const heading = line.match(/^##\s+(.+?)\s*$/u);
+    const heading = line.match(SECTION_HEADING_PATTERN);
     if (heading) {
       if (currentExtra) {
         extraBlocks.push(currentExtra);
@@ -401,7 +403,8 @@ export type TodoItem = {
 export type SetTodoCheckedFailure =
   | 'line-out-of-range'
   | 'not-checkbox'
-  | 'text-mismatch';
+  | 'text-mismatch'
+  | 'not-todo';
 
 /** チェックボックスの書き換え結果。 */
 export type SetTodoCheckedResult =
@@ -409,7 +412,6 @@ export type SetTodoCheckedResult =
   | { ok: false; reason: SetTodoCheckedFailure };
 
 const TODO_CHECKBOX_PATTERN = /^(\s*[-*]\s+)\[([ xX])\](.*)$/u;
-const SECTION_HEADING_PATTERN = /^##\s+(.+?)\s*$/u;
 
 function isTodoHeading(title: string): boolean {
   const todo = HEADING_ALIASES.find((entry) => entry.key === 'todo');
@@ -458,8 +460,8 @@ export function parseTodoItems(body: string): TodoItem[] {
 /**
  * 要約 Markdown の指定行が一覧の項目と一致するときだけ、チェックボックスを書き換える。
  *
- * front matter と他の行はそのまま残す。行番号、行の形式、本文のいずれかが
- * 一致しないときは書き換えず、理由を返す。
+ * front matter と他の行はそのまま残す。行番号、行の形式、本文が ToDo セクションの
+ * 項目と一致しないときは書き換えず、理由を返す。
  */
 export function setTodoChecked(
   markdown: string,
@@ -491,6 +493,12 @@ export function setTodoChecked(
   }
   if (match[3].trim() !== expectedText) {
     return { ok: false, reason: 'text-mismatch' };
+  }
+  const isTodoItem = parseTodoItems(body).some(
+    (item) => item.lineNumber === lineNumber && item.text === expectedText,
+  );
+  if (!isTodoItem) {
+    return { ok: false, reason: 'not-todo' };
   }
   const checkboxIndex = match[1].length + 1;
   lines[lineNumber] = `${line.slice(0, checkboxIndex)}${

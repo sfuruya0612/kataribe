@@ -1,6 +1,6 @@
 /**
  * 文字起こしと要約の Markdown の解析と整形を検証する。
- * 対応する要求: REQ-TODO-001、REQ-SUMMARY-001
+ * 対応する要求: REQ-TODO-001
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -256,5 +256,35 @@ describe('req_todo_001_set_todo_checked', () => {
       ok: false,
       reason: 'text-mismatch',
     });
+  });
+
+  it('rejects a checkbox outside the ToDo section without changing the markdown', () => {
+    const withSummaryCheckbox = stringifyFrontMatter(
+      { title: '週次定例', language: 'ja' },
+      ['## 要約', '- [ ] 要約の項目', '## ToDo', '- [ ] 資料をまとめる'].join(
+        '\n',
+      ),
+    );
+    const before = parseFrontMatter(withSummaryCheckbox).body;
+
+    expect(
+      setTodoChecked(withSummaryCheckbox, 1, '要約の項目', true),
+    ).toEqual({ ok: false, reason: 'not-todo' });
+
+    const result = setTodoChecked(
+      withSummaryCheckbox,
+      3,
+      '資料をまとめる',
+      true,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const after = parseFrontMatter(result.markdown).body;
+    expect(after).toBe(
+      before.replace('- [ ] 資料をまとめる', '- [x] 資料をまとめる'),
+    );
+    expect(after).toContain('- [ ] 要約の項目');
   });
 });
