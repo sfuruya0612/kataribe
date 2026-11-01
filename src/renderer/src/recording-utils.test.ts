@@ -1,3 +1,7 @@
+/**
+ * 録音と会議一覧の表示ヘルパーを検証する。
+ * 対応する要求: REQ-UI-001 (表示言語のラベル、日付、件数)
+ */
 import { describe, expect, it } from 'vitest';
 import type { RecordingCaptureStats } from '../../shared/types';
 import {
@@ -7,6 +11,7 @@ import {
   errorText,
   formatDateTime,
   formatMeetingDate,
+  formatMonthLabel,
   meetingStatusClass,
   meetingStatusLabel,
   recordingErrorText,
@@ -188,12 +193,31 @@ describe('inputSourceLabel', () => {
     expect(inputSourceLabel('system')).toBe('システム音声');
     expect(inputSourceLabel('both')).toBe('マイク + システム音声');
   });
+
+  it('req_ui_001_labels_every_input_source_in_english', () => {
+    expect(inputSourceLabel('microphone', 'en')).toBe('Microphone');
+    expect(inputSourceLabel('system', 'en')).toBe('System audio');
+    expect(inputSourceLabel('both', 'en')).toBe('Microphone + system audio');
+  });
 });
 
 describe('formatMeetingDate', () => {
   it('formats a meeting timestamp for the table', () => {
     expect(formatMeetingDate('2026-10-29T05:05:00.000Z')).toMatch(/^10-29 \d{2}:\d{2}$/);
     expect(formatMeetingDate('not a date')).toBe('not a date');
+  });
+
+  it('req_ui_001_uses_the_english_date_separator', () => {
+    expect(formatMeetingDate('2026-10-29T05:05:00.000Z', 'en')).toMatch(
+      /^10\/29 \d{2}:\d{2}$/,
+    );
+  });
+});
+
+describe('formatMonthLabel', () => {
+  it('req_ui_001_labels_months_in_japanese_and_english', () => {
+    expect(formatMonthLabel(2026, 10)).toBe('10 月');
+    expect(formatMonthLabel(2026, 10, 'en')).toBe('Oct');
   });
 });
 
@@ -207,6 +231,15 @@ describe('meeting status helpers', () => {
     expect(meetingStatusLabel('error')).toBe('エラー');
   });
 
+  it('req_ui_001_labels_every_meeting_status_in_english', () => {
+    expect(meetingStatusLabel('recording', 'en')).toBe('Recording');
+    expect(meetingStatusLabel('encoding', 'en')).toBe('Encoding');
+    expect(meetingStatusLabel('transcribing', 'en')).toBe('Transcribing');
+    expect(meetingStatusLabel('transcribed', 'en')).toBe('Transcribed');
+    expect(meetingStatusLabel('summarized', 'en')).toBe('Summarized');
+    expect(meetingStatusLabel('error', 'en')).toBe('Error');
+  });
+
   it('builds a CSS status class', () => {
     expect(meetingStatusClass('encoding')).toBe('status-encoding');
   });
@@ -216,6 +249,12 @@ describe('formatDateTime', () => {
   it('formats a valid ISO timestamp and preserves invalid values', () => {
     expect(formatDateTime('2026-10-29T05:05:00.000Z')).toContain('2026');
     expect(formatDateTime('not a date')).toBe('not a date');
+  });
+
+  it('req_ui_001_formats_the_date_time_in_english', () => {
+    expect(formatDateTime('2026-10-29T05:05:00.000Z', 'en')).toMatch(
+      /\d{1,2}\/\d{1,2}\/2026/,
+    );
   });
 });
 

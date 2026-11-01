@@ -11,6 +11,7 @@ import type {
   SummaryLanguage,
 } from '../shared/types';
 import { WAV_BITS_PER_SAMPLE, WAV_CHANNELS } from './wav';
+import { t } from './i18n';
 
 export const MEETING_META_SCHEMA_VERSION = 1;
 const MAX_RECORDING_ERROR_MESSAGE_LENGTH = 2000;
@@ -228,8 +229,9 @@ export function recordingErrorFromMeta(meta: MeetingMeta): RecordingErrorInfo | 
 
   if (meta.status === 'error' && typeof meta.audio_path !== 'string') {
     return {
-      message:
+      message: t(
         '録音データが保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。',
+      ),
       at: meta.ended_at ?? meta.started_at,
     };
   }

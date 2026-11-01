@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useI18n } from './i18n';
 import { formatDuration } from './recording-utils';
 
 type AudioPlayerProps = {
@@ -17,12 +18,13 @@ function fallbackPeaks(): number[] {
 }
 
 export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerProps) {
+  const { t } = useI18n();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [current, setCurrent] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(duration);
   const [speed, setSpeed] = useState(1);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<'play' | 'load' | null>(null);
 
   useEffect(() => {
     setPlaying(false);
@@ -56,7 +58,7 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
       try {
         await audio.play();
       } catch {
-        setError('音声を再生できませんでした。');
+        setError('play');
       }
     } else {
       audio.pause();
@@ -84,11 +86,7 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
   };
 
   if (!src) {
-    return (
-      <div className="player-empty">
-        音声ファイルがありません。
-      </div>
-    );
+    return <div className="player-empty">{t('音声ファイルがありません。')}</div>;
   }
 
   const total = mediaDuration > 0 ? mediaDuration : duration;
@@ -114,13 +112,13 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
           setPlaying(false);
           setCurrent(0);
         }}
-        onError={() => setError('音声を読み込めませんでした。')}
+        onError={() => setError('load')}
       />
       <button
         type="button"
         className="play-button"
         onClick={() => void toggle()}
-        aria-label={playing ? '一時停止' : '再生'}
+        aria-label={playing ? t('一時停止') : t('再生')}
       >
         {playing ? (
           <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -138,7 +136,7 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
         className="waveform"
         onClick={seek}
         role="slider"
-        aria-label="再生位置"
+        aria-label={t('再生位置')}
         aria-valuemin={0}
         aria-valuemax={Math.round(total)}
         aria-valuenow={Math.round(current)}
@@ -170,7 +168,13 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
       <button type="button" className="speed-button" onClick={cycleSpeed}>
         {speed.toFixed(1)}×
       </button>
-      {error ? <span className="player-error">{error}</span> : null}
+      {error ? (
+        <span className="player-error">
+          {error === 'play'
+            ? t('音声を再生できませんでした。')
+            : t('音声を読み込めませんでした。')}
+        </span>
+      ) : null}
     </div>
   );
 }

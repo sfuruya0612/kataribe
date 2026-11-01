@@ -1,3 +1,7 @@
+/**
+ * 設定の保存、読み込み、正規化を検証する。
+ * 対応する要求: REQ-UI-001 (uiLanguage)
+ */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,6 +34,7 @@ describe('SettingsStore', () => {
 
     const updated = await store.save({
       whisperModel: 'medium',
+      uiLanguage: 'en',
       llmProfiles: [
         {
           id: 'work',
@@ -59,6 +64,7 @@ describe('SettingsStore', () => {
     });
 
     expect(updated.whisperModel).toBe('medium');
+    expect(updated.uiLanguage).toBe('en');
     expect(updated.llmProfiles.map((profile) => profile.id)).toEqual([
       'work',
       'local',
@@ -167,6 +173,24 @@ describe('SettingsStore', () => {
     );
     expect(normalizeAppSettings({ speakerCount: 'many' as never }).speakerCount).toBe(
       'auto',
+    );
+  });
+
+  it('req_ui_001_normalizes_the_ui_language', () => {
+    expect(DEFAULT_APP_SETTINGS.uiLanguage).toBe('ja');
+    expect(normalizeAppSettings({ uiLanguage: 'en' }).uiLanguage).toBe('en');
+    expect(normalizeAppSettings({ uiLanguage: 'en' }).summaryLanguage).toBe('ja');
+    expect(
+      normalizeAppSettings({ uiLanguage: 'en', summaryLanguage: 'en' })
+        .summaryLanguage,
+    ).toBe('en');
+    expect(
+      normalizeAppSettings({ uiLanguage: 'en', summaryLanguage: 'ja' })
+        .summaryLanguage,
+    ).toBe('ja');
+    expect(normalizeAppSettings({ uiLanguage: 'ja' }).uiLanguage).toBe('ja');
+    expect(normalizeAppSettings({ uiLanguage: 'fr' as never }).uiLanguage).toBe(
+      'ja',
     );
   });
 

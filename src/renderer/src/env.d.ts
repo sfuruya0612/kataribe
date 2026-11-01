@@ -41,6 +41,7 @@ import type {
   SummaryPreview,
   TranslationPreview,
   TranslationResult,
+  UiLanguage,
   WhisperModel,
   WhisperModelList,
 } from '../../shared/types';
@@ -49,6 +50,7 @@ declare global {
   interface Window {
     kataribe: {
       getAppInfo: () => Promise<AppInfo>;
+      getUiLanguage: () => Promise<UiLanguage>;
       getMicrophoneStatus: () => Promise<MicrophonePermissionStatus>;
       requestMicrophone: () => Promise<boolean>;
       getRecordingState: () => Promise<RecordingAppState>;

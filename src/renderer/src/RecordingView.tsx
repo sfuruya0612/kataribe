@@ -1,4 +1,5 @@
 import type { RecordingStopResult } from '../../shared/types';
+import { useI18n } from './i18n';
 import { LevelPanel } from './LevelPanel';
 import { RecordingPanel } from './RecordingPanel';
 import { RecoveryPanel } from './RecoveryPanel';
@@ -16,17 +17,20 @@ export function RecordingView({
   onOpenDetail,
   onOpenReadme,
 }: RecordingViewProps) {
+  const { t } = useI18n();
   const appState = recorder.appState;
 
   return (
     <div className="recording-view">
       <div className="recording-intro">
         <div>
-          <p className="section-label">Recorder</p>
-          <h1 className="page-title">録音</h1>
+          <p className="section-label">{t('録音パネル')}</p>
+          <h1 className="page-title">{t('録音')}</h1>
         </div>
         <p className="muted">
-          メニューバーまたはこの画面から録音を開始できます。録音中にウィンドウを閉じても録音は続きます。
+          {t(
+            'メニューバーまたはこの画面から録音を開始できます。録音中にウィンドウを閉じても録音は続きます。',
+          )}
         </p>
       </div>
 

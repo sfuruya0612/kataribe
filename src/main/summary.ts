@@ -5,6 +5,7 @@ import {
   type SummarySectionKey,
 } from '../shared/markdown';
 import type { SummaryLanguage } from '../shared/types';
+import { t } from './i18n';
 import type { ChatCompletionResult, LlmClient } from './llm';
 
 export const SUMMARY_CHUNK_CHARS = 24_000;
@@ -162,8 +163,11 @@ export async function generateSummary(
   for (let index = 0; index < chunks.length; index += 1) {
     options.onProgress?.(
       chunks.length > 1
-        ? `要約を生成しています（${index + 1}/${chunks.length}）`
-        : '要約を生成しています',
+        ? t('要約を生成しています（{index}/{total}）', {
+            index: index + 1,
+            total: chunks.length,
+          })
+        : t('要約を生成しています'),
       chunks.length > 1 ? index / chunks.length : 0.2,
     );
     const result = await options.client.complete({
@@ -184,7 +188,7 @@ export async function generateSummary(
 
   let raw = partials.join('\n\n');
   if (chunks.length > 1) {
-    options.onProgress?.('部分要約を統合しています', 0.9);
+    options.onProgress?.(t('部分要約を統合しています'), 0.9);
     const merged = await options.client.complete({
       kind: options.kind,
       endpoint: options.endpoint,

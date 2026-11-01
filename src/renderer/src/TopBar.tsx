@@ -1,5 +1,6 @@
 import type { RecordingAppState } from '../../shared/types';
 import appIcon from './assets/app-icon.png';
+import { useI18n, type I18nValue } from './i18n';
 import { formatDuration, inputSourceLabel } from './recording-utils';
 
 type TopBarProps = {
@@ -11,20 +12,20 @@ type TopBarProps = {
   onToggleRecording: () => void;
 };
 
-function statusLabel(state: RecordingAppState): string {
+function statusLabel(state: RecordingAppState, t: I18nValue['t']): string {
   switch (state.status) {
     case 'starting':
-      return '準備中';
+      return t('準備中');
     case 'recording':
-      return '録音中';
+      return t('録音中');
     case 'stopping':
-      return '保存中';
+      return t('保存中');
     case 'encoding':
-      return '変換待ち';
+      return t('変換待ち');
     case 'error':
-      return 'エラー';
+      return t('エラー');
     default:
-      return '待機中';
+      return t('待機中');
   }
 }
 
@@ -45,6 +46,7 @@ export function TopBar({
   onSearchChange,
   onToggleRecording,
 }: TopBarProps) {
+  const { locale, t, tc } = useI18n();
   const isRecording = appState.status === 'recording';
   const isBusy = appState.status === 'starting' || appState.status === 'stopping';
 
@@ -54,24 +56,27 @@ export function TopBar({
         <img className="titlebar-icon" src={appIcon} alt="" aria-hidden="true" />
         <span className="titlebar-name">Kataribe</span>
         <span className="titlebar-path" title={saveRoot}>
-          {compactPath(saveRoot)} · {meetingCount} 件
+          {compactPath(saveRoot)} ·{' '}
+          {tc(meetingCount, '1 件の会議', '{count} 件の会議')}
         </span>
       </div>
       <label className="titlebar-search">
-        <span className="visually-hidden">会議を検索</span>
+        <span className="visually-hidden">{t('会議を検索')}</span>
         <input
           type="search"
           className="titlebar-search-input"
           value={searchQuery}
-          placeholder="文字起こし・要約を検索"
+          placeholder={t('文字起こし・要約を検索')}
           onChange={(event) => onSearchChange(event.target.value)}
         />
       </label>
       <span className="titlebar-spacer" />
       <span className={`status-chip status-${appState.status}`}>
-        {statusLabel(appState)}
+        {statusLabel(appState, t)}
       </span>
-      <span className="titlebar-source">{inputSourceLabel(appState.inputSource)}</span>
+      <span className="titlebar-source">
+        {inputSourceLabel(appState.inputSource, locale)}
+      </span>
       {isRecording ? (
         <span className="titlebar-timer">{formatDuration(appState.elapsedSeconds)}</span>
       ) : null}
@@ -82,7 +87,7 @@ export function TopBar({
         disabled={isBusy}
         data-testid="topbar-record"
       >
-        {isRecording ? '停止' : isBusy ? '処理中' : '録音を開始'}
+        {isRecording ? t('停止') : isBusy ? t('処理中') : t('録音を開始')}
       </button>
     </header>
   );

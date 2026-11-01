@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * トレイメニューの構造、操作、表示言語を検証する。
+ * 対応する要求: REQ-UI-001
+ */
+import { afterEach, describe, expect, it } from 'vitest';
 import type { InputSource, RecordingAppState } from '../shared/types';
+import { setUiLanguage } from './i18n';
 import {
   buildTrayMenuTemplate,
   formatElapsed,
@@ -60,6 +65,10 @@ function item(template: ReturnType<typeof buildTrayMenuTemplate>, label: string)
   }
   return found;
 }
+
+afterEach(() => {
+  setUiLanguage('ja');
+});
 
 describe('formatElapsed', () => {
   it('formats minutes and hours', () => {
@@ -150,5 +159,44 @@ describe('buildTrayMenuTemplate', () => {
 
     expect(calls).toEqual(['start', 'open-window', 'quit', 'source']);
     expect(sources).toEqual(['system']);
+  });
+
+  it('req_ui_001_changes_the_menu_when_the_language_changes', () => {
+    const { handlers } = createHandlers();
+    setUiLanguage('ja');
+    const japanese = buildTrayMenuTemplate(createState(), handlers);
+    expect(item(japanese, '録音を開始').enabled).toBe(true);
+
+    setUiLanguage('en');
+    const english = buildTrayMenuTemplate(createState(), handlers);
+    expect(item(english, 'Start recording').enabled).toBe(true);
+    expect(english.some((entry) => entry.label === '録音を開始')).toBe(false);
+  });
+
+  it('req_ui_001_builds_the_menu_in_english', () => {
+    setUiLanguage('en');
+    const { handlers } = createHandlers();
+    const template = buildTrayMenuTemplate(
+      createState({
+        status: 'recording',
+        inputSource: 'microphone',
+        elapsedSeconds: 65,
+      }),
+      handlers,
+    );
+
+    expect(item(template, 'Status: Recording').enabled).toBe(false);
+    expect(item(template, 'Elapsed: 01:05').enabled).toBe(false);
+    expect(item(template, 'Stop recording').enabled).toBe(true);
+    expect(item(template, 'Start recording').enabled).toBe(false);
+    expect(typeof item(template, 'Open main window').click).toBe('function');
+    expect(typeof item(template, 'Quit Kataribe').click).toBe('function');
+    const sourceMenu = item(template, 'Input source: Microphone')
+      .submenu as ReturnType<typeof buildTrayMenuTemplate>;
+    expect(sourceMenu.map((entry) => [entry.label, entry.checked])).toEqual([
+      ['Microphone', true],
+      ['System audio', false],
+      ['Microphone + system audio', false],
+    ]);
   });
 });

@@ -1,3 +1,6 @@
+import { translate } from './i18n';
+import type { UiLanguage } from './types';
+
 const SPEAKER_LABELS = [
   'A',
   'B',
@@ -98,27 +101,40 @@ export function recoverTranscriptSpeakers(
 /**
  * 話者名の入力を検証し、前後の空白を除いた名前を返す。
  */
-export function validateSpeakerNames(names: readonly string[]): string[] {
+export function validateSpeakerNames(
+  names: readonly string[],
+  locale: UiLanguage = 'ja',
+): string[] {
   const trimmed = names.map((name) => name.trim());
   const seen = new Set<string>();
   for (const name of trimmed) {
     if (name.length === 0) {
-      throw new Error('話者名を空にすることはできません。');
+      throw new Error(translate(locale, '話者名を空にすることはできません。'));
     }
     if (name.length > MAX_SPEAKER_NAME_LENGTH) {
-      throw new Error(`話者名は ${MAX_SPEAKER_NAME_LENGTH} 文字以内にしてください。`);
+      throw new Error(
+        translate(locale, '話者名は {max} 文字以内にしてください。', {
+          max: MAX_SPEAKER_NAME_LENGTH,
+        }),
+      );
     }
     if (name.includes(':')) {
-      throw new Error('話者名にコロンを含めることはできません。');
+      throw new Error(
+        translate(locale, '話者名にコロンを含めることはできません。'),
+      );
     }
     if (name.includes('\n') || name.includes('\r')) {
-      throw new Error('話者名に改行を含めることはできません。');
+      throw new Error(
+        translate(locale, '話者名に改行を含めることはできません。'),
+      );
     }
     if (name.includes('[') || name.includes(']')) {
-      throw new Error('話者名に角括弧を含めることはできません。');
+      throw new Error(
+        translate(locale, '話者名に角括弧を含めることはできません。'),
+      );
     }
     if (seen.has(name)) {
-      throw new Error('話者名が重複しています。');
+      throw new Error(translate(locale, '話者名が重複しています。'));
     }
     seen.add(name);
   }

@@ -96,7 +96,6 @@ export type MeetingSearchHit = {
   title: string;
   startedAt: string;
   kind: MeetingSearchKind;
-  kindLabel: string;
   lineNumber: number | null;
   timestamp: string | null;
   text: string;
@@ -169,12 +168,15 @@ export type LlmProfile = {
 
 export type SummaryLanguage = 'ja' | 'en';
 
+export type UiLanguage = 'ja' | 'en';
+
 export type ThemeMode = 'system' | 'light' | 'dark';
 
 export type AppSettings = {
   inputSource: InputSource;
   saveRoot: string;
   theme: ThemeMode;
+  uiLanguage: UiLanguage;
   whisperModel: WhisperModel;
   speakerDiarization: boolean;
   speakerCount: SpeakerCount;

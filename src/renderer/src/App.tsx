@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
+import { formatSaveLocationSyncWarning } from '../../shared/i18n';
 import type {
   AppInfo,
   AppSettings,
@@ -8,6 +9,7 @@ import type {
   MeetingSummary,
   ProcessingState,
   RecordingStopResult,
+  UiLanguage,
 } from '../../shared/types';
 import { MeetingDetail } from './MeetingDetail';
 import { MeetingTable } from './MeetingTable';
@@ -17,6 +19,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { Sidebar, type MeetingFilter } from './Sidebar';
 import { TopBar } from './TopBar';
 import { errorText } from './recording-utils';
+import { useI18n } from './i18n';
 import { useRecorder } from './use-recorder';
 
 type View = 'meetings' | 'detail' | 'recording' | 'settings' | 'search';
@@ -29,14 +32,22 @@ function cloudSyncService(path: string): string | null {
   if (value.includes('/google drive') || value.includes('/googledrive')) {
     return 'Google Drive';
   }
-  if (value.includes('/obsidian')) return 'Obsidian の同期フォルダ';
+  if (value.includes('/obsidian')) return 'Obsidian';
   return null;
 }
 
-export default function App() {
+export default function App({
+  initialUiLanguage = 'ja',
+}: {
+  initialUiLanguage?: UiLanguage;
+}) {
+  const { locale, t, setLocale } = useI18n();
   const recorder = useRecorder();
   const [info, setInfo] = useState<AppInfo | null>(null);
-  const [settings, setSettings] = useState<AppSettings>(DEFAULT_APP_SETTINGS);
+  const [settings, setSettings] = useState<AppSettings>(() => ({
+    ...DEFAULT_APP_SETTINGS,
+    uiLanguage: initialUiLanguage,
+  }));
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [view, setView] = useState<View>('meetings');
@@ -58,17 +69,23 @@ export default function App() {
   });
   const lastStageRef = useRef<ProcessingState['stage']>(null);
 
+  useEffect(() => {
+    setLocale(settings.uiLanguage);
+  }, [setLocale, settings.uiLanguage]);
+
   const refreshMeetings = useCallback(async () => {
     setMeetingsLoading(true);
     try {
       const list = await window.kataribe.listMeetings();
       setMeetings(list);
     } catch (reason: unknown) {
-      setToast(`会議一覧を読み込めませんでした: ${errorText(reason)}`);
+      setToast(
+        t('会議一覧を読み込めませんでした: {error}', { error: errorText(reason) }),
+      );
     } finally {
       setMeetingsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,15 +96,17 @@ export default function App() {
           setInfo(value);
           const service = cloudSyncService(value.saveRoot);
           if (service) {
-            setToast(
-              `保存先が ${service} の同期対象です。音声と文字起こしが端末外に同期されます。`,
-            );
+            setToast(formatSaveLocationSyncWarning(service, locale));
           }
         }
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
-          setToast(`アプリ情報を取得できませんでした: ${errorText(reason)}`);
+          setToast(
+            t('アプリ情報を取得できませんでした: {error}', {
+              error: errorText(reason),
+            }),
+          );
         }
       });
     void window.kataribe
@@ -99,13 +118,15 @@ export default function App() {
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
-          setToast(`設定を読み込めませんでした: ${errorText(reason)}`);
+          setToast(
+            t('設定を読み込めませんでした: {error}', { error: errorText(reason) }),
+          );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refreshMeetings();
@@ -125,13 +146,15 @@ export default function App() {
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
-          setToast(`設定を読み込めませんでした: ${errorText(reason)}`);
+          setToast(
+            t('設定を読み込めませんでした: {error}', { error: errorText(reason) }),
+          );
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [view]);
+  }, [t, view]);
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +163,9 @@ export default function App() {
       .then((list) => {
         if (!cancelled && !list.models.some((model) => model.installed)) {
           setToast(
-            'whisper モデルが未取得です。設定 > 文字起こし からダウンロードしてください。',
+            t(
+              'whisper モデルが未取得です。設定 > 文字起こし からダウンロードしてください。',
+            ),
           );
         }
       })
@@ -148,7 +173,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -205,7 +230,7 @@ export default function App() {
         })
         .catch((reason: unknown) => {
           if (!cancelled) {
-            setToast(`検索できませんでした: ${errorText(reason)}`);
+            setToast(t('検索できませんでした: {error}', { error: errorText(reason) }));
           }
         })
         .finally(() => {
@@ -218,7 +243,7 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [searchQuery]);
+  }, [searchQuery, t]);
 
   useEffect(() => {
     if (recorder.appState.lastResult) {
@@ -239,9 +264,11 @@ export default function App() {
       const next = await window.kataribe.updateSettings(patch);
       setSettings(next);
     } catch (reason: unknown) {
-      setToast(`設定を保存できませんでした: ${errorText(reason)}`);
+      setToast(
+        t('設定を保存できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const filteredMeetings = useMemo(() => {
     switch (filter) {
@@ -297,7 +324,7 @@ export default function App() {
     try {
       await action();
     } catch (reason: unknown) {
-      setToast(`操作に失敗しました: ${errorText(reason)}`);
+      setToast(t('操作に失敗しました: {error}', { error: errorText(reason) }));
     }
   };
 
@@ -315,11 +342,13 @@ export default function App() {
       setSearchQuery('');
       setSearchResult(null);
       await refreshMeetings();
-      setToast('保存先を変更しました。');
+      setToast(t('保存先を変更しました。'));
     } catch (reason: unknown) {
-      setToast(`保存先を変更できませんでした: ${errorText(reason)}`);
+      setToast(
+        t('保存先を変更できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, [refreshMeetings]);
+  }, [refreshMeetings, t]);
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -375,7 +404,7 @@ export default function App() {
       setView('detail');
       await refreshMeetings();
     } catch (reason: unknown) {
-      setToast(`音声を取り込めませんでした: ${errorText(reason)}`);
+      setToast(t('音声を取り込めませんでした: {error}', { error: errorText(reason) }));
     }
   };
 
@@ -395,14 +424,17 @@ export default function App() {
           ),
       );
     } catch (reason: unknown) {
-      setToast(`Pin を変更できませんでした: ${errorText(reason)}`);
+      setToast(t('Pin を変更できませんでした: {error}', { error: errorText(reason) }));
     }
   };
 
   const deleteMeeting = async (meeting: MeetingSummary) => {
     if (
       !window.confirm(
-        `「${meeting.title}」を削除します。音声、文字起こし、要約、メタデータがすべて削除され、元に戻せません。`,
+        t(
+          '「{title}」を削除します。音声、文字起こし、要約、メタデータがすべて削除され、元に戻せません。',
+          { title: meeting.title },
+        ),
       )
     ) {
       return;
@@ -415,9 +447,9 @@ export default function App() {
         setView('meetings');
       }
       await refreshMeetings();
-      setToast('会議を削除しました。');
+      setToast(t('会議を削除しました。'));
     } catch (reason: unknown) {
-      setToast(`会議を削除できませんでした: ${errorText(reason)}`);
+      setToast(t('会議を削除できませんでした: {error}', { error: errorText(reason) }));
     }
   };
 

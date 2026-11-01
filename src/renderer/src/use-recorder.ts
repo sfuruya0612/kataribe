@@ -33,6 +33,7 @@ import {
   splitInputDevices,
   type InputDevice,
 } from './recording-utils';
+import { useI18n } from './i18n';
 
 export type PermissionState = MicrophonePermissionStatus | 'requesting';
 
@@ -138,12 +139,13 @@ function makeEvent(
 function mediaFailureEvent(
   role: 'microphone' | 'system',
   reason: unknown,
+  locale: 'ja' | 'en',
 ): RecordingEvent {
   const kind =
     reason instanceof DOMException && reason.name === 'NotAllowedError'
       ? 'permission-denied'
       : 'device-open-failed';
-  return makeEvent(kind, role, 'error', recordingErrorText(reason));
+  return makeEvent(kind, role, 'error', recordingErrorText(reason, locale));
 }
 
 function removeInput(graph: RecorderGraph, role: RecorderInput['role']): void {
@@ -227,6 +229,7 @@ async function teardownGraph(graph: RecorderGraph): Promise<void> {
 }
 
 export function useRecorder(): RecorderController {
+  const { locale, t } = useI18n();
   const [appState, setAppState] = useState<RecordingAppState>(() =>
     createInitialRecordingAppState(),
   );
@@ -283,9 +286,11 @@ export function useRecorder(): RecorderController {
       const recordings = await window.kataribe.listRecoverableRecordings();
       setRecoverable(recordings);
     } catch (reason: unknown) {
-      setWarning(`復旧対象の確認に失敗しました: ${errorText(reason)}`);
+      setWarning(
+        t('復旧対象の確認に失敗しました: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const enqueueChunk = useCallback((data: WorkletChunkData) => {
     chunkQueueRef.current = chunkQueueRef.current.then(async () => {
@@ -303,10 +308,14 @@ export function useRecorder(): RecorderController {
         await window.kataribe.appendChunk(chunk);
       } catch (reason: unknown) {
         chunkErrorRef.current = errorText(reason);
-        setWarning(`チャンクの保存に失敗しました: ${chunkErrorRef.current}`);
+        setWarning(
+          t('チャンクの保存に失敗しました: {error}', {
+            error: chunkErrorRef.current,
+          }),
+        );
       }
     });
-  }, []);
+  }, [t]);
 
   const reportLevel = useCallback((message: WorkletLevelMessage) => {
     const stats: RecordingCaptureStats = {
@@ -327,7 +336,7 @@ export function useRecorder(): RecorderController {
     void window.kataribe.reportRecordingLevel(update).catch((reason: unknown) => {
       if (!levelErrorRef.current) {
         levelErrorRef.current = true;
-        setWarning(`入力レベルの送信に失敗しました: ${errorText(reason)}`);
+        setWarning(t('入力レベルの送信に失敗しました: {error}', { error: errorText(reason) }));
       }
     });
 
@@ -363,7 +372,11 @@ export function useRecorder(): RecorderController {
           .catch((reason: unknown) => {
             if (!clippingErrorRef.current) {
               clippingErrorRef.current = true;
-              setWarning(`クリッピング状態の送信に失敗しました: ${errorText(reason)}`);
+              setWarning(
+                t('クリッピング状態の送信に失敗しました: {error}', {
+                  error: errorText(reason),
+                }),
+              );
             }
           });
       }
@@ -410,12 +423,14 @@ export function useRecorder(): RecorderController {
           .catch((reason: unknown) => {
             if (!silenceErrorRef.current) {
               silenceErrorRef.current = true;
-              setWarning(`無音状態の送信に失敗しました: ${errorText(reason)}`);
+              setWarning(
+                t('無音状態の送信に失敗しました: {error}', { error: errorText(reason) }),
+              );
             }
           });
       }
     }
-  }, []);
+  }, [t]);
 
   const handleWorkletMessage = useCallback(
     (message: WorkletMessage) => {
@@ -436,7 +451,11 @@ export function useRecorder(): RecorderController {
             await window.kataribe.appendGap(message.frames);
           } catch (reason: unknown) {
             chunkErrorRef.current = errorText(reason);
-            setWarning(`スリープ中の無音を保存できませんでした: ${chunkErrorRef.current}`);
+            setWarning(
+              t('スリープ中の無音を保存できませんでした: {error}', {
+                error: chunkErrorRef.current,
+              }),
+            );
           }
         });
         return;
@@ -494,10 +513,10 @@ export function useRecorder(): RecorderController {
       const fatal = action === 'stop';
       const message =
         role === 'system'
-          ? 'BlackHole 2ch が切断されました。録音を停止してチャンクを保存します。'
+          ? t('BlackHole 2ch が切断されました。録音を停止してチャンクを保存します。')
           : fatal
-            ? 'マイクが切断されました。録音を停止してチャンクを保存します。'
-            : 'マイクが切断されました。システム音声の録音を続けます。';
+            ? t('マイクが切断されました。録音を停止してチャンクを保存します。')
+            : t('マイクが切断されました。システム音声の録音を続けます。');
       const event: RecordingEvent = {
         at: new Date().toISOString(),
         kind: 'device-lost',
@@ -529,7 +548,11 @@ export function useRecorder(): RecorderController {
             await window.kataribe.requestStopRecording();
           }
         } catch (reason: unknown) {
-          setWarning(`デバイスの切断を記録できませんでした: ${errorText(reason)}`);
+          setWarning(
+            t('デバイスの切断を記録できませんでした: {error}', {
+              error: errorText(reason),
+            }),
+          );
           if (fatal) {
             try {
               await window.kataribe.requestStopRecording();
@@ -540,7 +563,7 @@ export function useRecorder(): RecorderController {
         }
       })();
     },
-    [],
+    [t],
   );
 
   const detectDeviceLoss = useCallback(async () => {
@@ -571,9 +594,13 @@ export function useRecorder(): RecorderController {
         reportInputLoss('microphone');
       }
     } catch (reason: unknown) {
-      setWarning(`入力デバイスの状態を確認できませんでした: ${errorText(reason)}`);
+      setWarning(
+        t('入力デバイスの状態を確認できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
     }
-  }, [reportInputLoss]);
+  }, [reportInputLoss, t]);
 
   const startCapture = useCallback(
     async (inputSource: InputSource) => {
@@ -616,8 +643,9 @@ export function useRecorder(): RecorderController {
         const granted = await window.kataribe.requestMicrophone();
         if (!granted) {
           setPermission('denied');
-          const message =
-            'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。';
+          const message = t(
+            'マイクの使用が許可されていません。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
+          );
           failureEvent = makeEvent('permission-denied', 'microphone', 'error', message);
           throw new Error(message);
         }
@@ -638,13 +666,16 @@ export function useRecorder(): RecorderController {
         const needsMicrophone = inputSource !== 'system';
         const needsSystem = inputSource !== 'microphone';
         if (needsMicrophone && !micId) {
-          const message = 'マイクが見つかりません。マイクを接続してから再試行してください。';
+          const message = t(
+            'マイクが見つかりません。マイクを接続してから再試行してください。',
+          );
           failureEvent = makeEvent('device-open-failed', 'microphone', 'error', message);
           throw new Error(message);
         }
         if (needsSystem && !systemId) {
-          const message =
-            'BlackHole 2ch が見つかりません。README の初期セットアップに従ってインストールしてください。';
+          const message = t(
+            'BlackHole 2ch が見つかりません。README の初期セットアップに従ってインストールしてください。',
+          );
           failureEvent = makeEvent('device-open-failed', 'system', 'error', message);
           throw new Error(message);
         }
@@ -663,7 +694,7 @@ export function useRecorder(): RecorderController {
             if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
               setPermission('denied');
             }
-            failureEvent = mediaFailureEvent('microphone', reason);
+            failureEvent = mediaFailureEvent('microphone', reason, locale);
             throw reason;
           }
           streams.push(stream);
@@ -679,7 +710,7 @@ export function useRecorder(): RecorderController {
             if (reason instanceof DOMException && reason.name === 'NotAllowedError') {
               setPermission('denied');
             }
-            failureEvent = mediaFailureEvent('system', reason);
+            failureEvent = mediaFailureEvent('system', reason, locale);
             throw reason;
           }
           streams.push(stream);
@@ -768,7 +799,12 @@ export function useRecorder(): RecorderController {
       } catch (reason: unknown) {
         const event =
           failureEvent ??
-          makeEvent('device-open-failed', 'unknown', 'error', recordingErrorText(reason));
+          makeEvent(
+            'device-open-failed',
+            'unknown',
+            'error',
+            recordingErrorText(reason, locale),
+          );
 
         if (graph) {
           graphRef.current = null;
@@ -835,17 +871,19 @@ export function useRecorder(): RecorderController {
     [
       detectDeviceLoss,
       handleWorkletMessage,
+      locale,
       micDeviceId,
       refreshDevices,
       reportInputLoss,
       systemDeviceId,
+      t,
     ],
   );
 
   const stopCapture = useCallback(async () => {
     const graph = graphRef.current;
     if (!graph) {
-      const message = '録音が開始されていません。';
+      const message = t('録音が開始されていません。');
       try {
         await window.kataribe.reportRecordingError(message);
       } catch {
@@ -867,7 +905,10 @@ export function useRecorder(): RecorderController {
       stats = await waitForWorkletStop(graph);
     } catch (reason: unknown) {
       setWarning(
-        `録音処理の停止に失敗しました。保存済みのチャンクで停止します: ${errorText(reason)}`,
+        t(
+          '録音処理の停止に失敗しました。保存済みのチャンクで停止します: {error}',
+          { error: errorText(reason) },
+        ),
       );
     }
 
@@ -876,7 +917,7 @@ export function useRecorder(): RecorderController {
     try {
       await window.kataribe.stopRecording(stats);
     } catch (reason: unknown) {
-      const message = recordingErrorText(reason);
+      const message = recordingErrorText(reason, locale);
       try {
         await window.kataribe.reportRecordingError(message);
       } catch {
@@ -890,7 +931,7 @@ export function useRecorder(): RecorderController {
       deviceLossReportedRef.current = { microphone: false, system: false };
       await refreshRecoverable();
     }
-  }, [refreshRecoverable, waitForWorkletStop]);
+  }, [locale, refreshRecoverable, t, waitForWorkletStop]);
 
   const startCaptureRef = useRef(startCapture);
   const stopCaptureRef = useRef(stopCapture);
@@ -922,7 +963,9 @@ export function useRecorder(): RecorderController {
       }
       if (graph.context.state === 'suspended') {
         void graph.context.resume().catch((reason: unknown) => {
-          setWarning(`録音の再開に失敗しました: ${errorText(reason)}`);
+          setWarning(
+            t('録音の再開に失敗しました: {error}', { error: errorText(reason) }),
+          );
         });
       }
       for (const input of graph.inputs) {
@@ -939,7 +982,7 @@ export function useRecorder(): RecorderController {
       }
     });
     return unsubscribe;
-  }, [detectDeviceLoss, reportInputLoss]);
+  }, [detectDeviceLoss, reportInputLoss, t]);
 
   useEffect(() => {
     const handleDeviceChange = () => {
@@ -947,14 +990,18 @@ export function useRecorder(): RecorderController {
         return;
       }
       void refreshDevices().catch((reason: unknown) => {
-        setWarning(`入力デバイスの変更を確認できませんでした: ${errorText(reason)}`);
+        setWarning(
+          t('入力デバイスの変更を確認できませんでした: {error}', {
+            error: errorText(reason),
+          }),
+        );
       });
     };
     navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
     return () => {
       navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
     };
-  }, [refreshDevices]);
+  }, [refreshDevices, t]);
 
   useEffect(() => {
     clippingConfigRef.current = appState.clippingConfig;
@@ -980,7 +1027,9 @@ export function useRecorder(): RecorderController {
         }
       } catch (reason: unknown) {
         if (!cancelled) {
-          setUiError(`録音状態の取得に失敗しました: ${errorText(reason)}`);
+          setUiError(
+            t('録音状態の取得に失敗しました: {error}', { error: errorText(reason) }),
+          );
         }
       }
 
@@ -991,7 +1040,9 @@ export function useRecorder(): RecorderController {
         }
       } catch (reason: unknown) {
         if (!cancelled) {
-          setWarning(`マイク権限の確認に失敗しました: ${errorText(reason)}`);
+          setWarning(
+            t('マイク権限の確認に失敗しました: {error}', { error: errorText(reason) }),
+          );
         }
       }
 
@@ -999,7 +1050,11 @@ export function useRecorder(): RecorderController {
         await refreshDevices();
       } catch (reason: unknown) {
         if (!cancelled) {
-          setWarning(`入力デバイスの取得に失敗しました: ${errorText(reason)}`);
+          setWarning(
+            t('入力デバイスの取得に失敗しました: {error}', {
+              error: errorText(reason),
+            }),
+          );
         }
       }
 
@@ -1016,7 +1071,7 @@ export function useRecorder(): RecorderController {
       cancelled = true;
       unsubscribe();
     };
-  }, [refreshDevices, refreshRecoverable]);
+  }, [refreshDevices, refreshRecoverable, t]);
 
   useEffect(() => {
     return () => {
@@ -1038,56 +1093,76 @@ export function useRecorder(): RecorderController {
         await refreshDevices();
       } else {
         setWarning(
-          'マイク権限が拒否されています。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
+          t(
+            'マイク権限が拒否されています。システム設定の「プライバシーとセキュリティ」>「マイク」で Kataribe を許可してください。',
+          ),
         );
       }
     } catch (reason: unknown) {
       setPermission('unknown');
-      setUiError(`マイク権限の確認に失敗しました: ${errorText(reason)}`);
+      setUiError(
+        t('マイク権限の確認に失敗しました: {error}', { error: errorText(reason) }),
+      );
     }
-  }, [refreshDevices]);
+  }, [refreshDevices, t]);
 
   const requestStart = useCallback(async () => {
     setUiError(null);
     try {
       const result = await window.kataribe.requestStartRecording();
       if (!result.accepted) {
-        setUiError(`録音を開始できませんでした: ${result.reason ?? '状態を確認してください。'}`);
+        const reason = result.reason ?? t('状態を確認してください。');
+        setUiError(
+          t('録音を開始できませんでした: {error}', { error: reason }),
+        );
       }
     } catch (reason: unknown) {
-      setUiError(`録音を開始できませんでした: ${errorText(reason)}`);
+      setUiError(
+        t('録音を開始できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const requestStop = useCallback(async () => {
     setUiError(null);
     try {
       const result = await window.kataribe.requestStopRecording();
       if (!result.accepted) {
-        setUiError(`録音を停止できませんでした: ${result.reason ?? '状態を確認してください。'}`);
+        const reason = result.reason ?? t('状態を確認してください。');
+        setUiError(
+          t('録音を停止できませんでした: {error}', { error: reason }),
+        );
       }
     } catch (reason: unknown) {
-      setUiError(`録音を停止できませんでした: ${errorText(reason)}`);
+      setUiError(
+        t('録音を停止できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const setInputSource = useCallback(async (source: InputSource) => {
     try {
       await window.kataribe.setInputSource(source);
     } catch (reason: unknown) {
-      setUiError(`入力ソースを変更できませんでした: ${errorText(reason)}`);
+      setUiError(
+        t('入力ソースを変更できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const setClippingConfig = useCallback(
     async (config: Partial<ClippingConfig>) => {
       try {
         await window.kataribe.setClippingConfig(config);
       } catch (reason: unknown) {
-        setUiError(`クリッピング設定を変更できませんでした: ${errorText(reason)}`);
+        setUiError(
+          t('クリッピング設定を変更できませんでした: {error}', {
+            error: errorText(reason),
+          }),
+        );
       }
     },
-    [],
+    [t],
   );
 
   const setSilenceConfig = useCallback(
@@ -1095,10 +1170,14 @@ export function useRecorder(): RecorderController {
       try {
         await window.kataribe.setSilenceConfig(config);
       } catch (reason: unknown) {
-        setUiError(`無音検出の設定を変更できませんでした: ${errorText(reason)}`);
+        setUiError(
+          t('無音検出の設定を変更できませんでした: {error}', {
+            error: errorText(reason),
+          }),
+        );
       }
     },
-    [],
+    [t],
   );
 
   const recover = useCallback(
@@ -1109,29 +1188,35 @@ export function useRecorder(): RecorderController {
         await window.kataribe.recoverRecording(recording.meetingId);
         await refreshRecoverable();
       } catch (reason: unknown) {
-        setUiError(`録音の復旧に失敗しました: ${recordingErrorText(reason)}`);
+        setUiError(
+          t('録音の復旧に失敗しました: {error}', {
+            error: recordingErrorText(reason, locale),
+          }),
+        );
       } finally {
         setRecoveringId(null);
       }
     },
-    [refreshRecoverable],
+    [locale, refreshRecoverable, t],
   );
 
   const openFolder = useCallback(async () => {
     try {
       await window.kataribe.openRecordingFolder();
     } catch (reason: unknown) {
-      setUiError(`保存先を開けませんでした: ${errorText(reason)}`);
+      setUiError(t('保存先を開けませんでした: {error}', { error: errorText(reason) }));
     }
-  }, []);
+  }, [t]);
 
   const openMicrophoneSettings = useCallback(async () => {
     try {
       await window.kataribe.openMicrophoneSettings();
     } catch (reason: unknown) {
-      setUiError(`システム設定を開けませんでした: ${errorText(reason)}`);
+      setUiError(
+        t('システム設定を開けませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   return {
     appState,

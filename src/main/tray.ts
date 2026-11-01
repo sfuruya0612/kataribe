@@ -1,5 +1,6 @@
 import { Menu, Tray, nativeImage } from 'electron';
 import type { RecordingAppState } from '../shared/types';
+import { t } from './i18n';
 import {
   buildTrayMenuTemplate,
   formatElapsed,
@@ -36,7 +37,7 @@ export class TrayController {
 
   update(state: RecordingAppState): void {
     this.menu = Menu.buildFromTemplate(buildTrayMenuTemplate(state, this.handlers));
-    this.tray.setToolTip(`Kataribe: ${statusLabel(state.status)}`);
+    this.tray.setToolTip(t('Kataribe: {status}', { status: statusLabel(state.status) }));
     if (process.platform === 'darwin') {
       const showElapsed = state.status === 'recording' || state.status === 'stopping';
       this.tray.setTitle(showElapsed ? formatElapsed(state.elapsedSeconds) : '');

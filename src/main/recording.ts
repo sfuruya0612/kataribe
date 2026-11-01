@@ -39,6 +39,8 @@ import {
   WAV_CHANNELS,
   WAV_BITS_PER_SAMPLE,
 } from './wav';
+import { DEFAULT_MEETING_TITLE } from '../shared/title';
+import { t } from './i18n';
 
 type SessionFile = {
   meeting_id: string;
@@ -246,7 +248,7 @@ export class RecordingManager {
       schema_version: 1,
       id: meetingId,
       status: 'recording',
-      title: 'タイトル未入力',
+      title: DEFAULT_MEETING_TITLE,
       started_at: now.toISOString(),
       duration: 0,
       source: {
@@ -368,7 +370,9 @@ export class RecordingManager {
       console.error(`failed to append chunk: ${errorMessage(error)}`);
       await this.persistRecordingError(
         active,
-        `録音データの保存に失敗しました。${errorMessage(error)}`,
+        t('録音データの保存に失敗しました。{detail}', {
+          detail: errorMessage(error),
+        }),
       );
       throw error;
     }
@@ -410,7 +414,9 @@ export class RecordingManager {
       console.error(`failed to append silence gap: ${errorMessage(error)}`);
       await this.persistRecordingError(
         active,
-        `無音区間の保存に失敗しました。${errorMessage(error)}`,
+        t('無音区間の保存に失敗しました。{detail}', {
+          detail: errorMessage(error),
+        }),
       );
       throw error;
     }
@@ -447,7 +453,9 @@ export class RecordingManager {
       active.meta.recording_error =
         active.meta.recording_error ??
         createRecordingError(
-          '録音データが 1 つも保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。',
+          t(
+            '録音データが 1 つも保存されなかったため、音声ファイルを作成できませんでした。入力デバイスと権限を確認して、もう一度録音してください。',
+          ),
           endedAt,
         );
       await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
@@ -483,7 +491,9 @@ export class RecordingManager {
       active.meta.recording_error =
         active.meta.recording_error ??
         createRecordingError(
-          `録音した音声の結合に失敗しました。${errorMessage(error)}`,
+          t('録音した音声の結合に失敗しました。{detail}', {
+            detail: errorMessage(error),
+          }),
           endedAt,
         );
       await writeMeetingMeta(active.metaPath, active.meta).catch(() => undefined);
@@ -590,7 +600,9 @@ export class RecordingManager {
       meta.recording_error =
         meta.recording_error ??
         createRecordingError(
-          `録音の復旧に失敗しました。${errorMessage(error)}`,
+          t('録音の復旧に失敗しました。{detail}', {
+            detail: errorMessage(error),
+          }),
           this.now(),
         );
       await writeMeetingMeta(session.meta_path, meta).catch(() => undefined);
@@ -705,7 +717,7 @@ export class RecordingManager {
       schema_version: 1,
       id: meetingId,
       status: 'error',
-      title: 'タイトル未入力',
+      title: DEFAULT_MEETING_TITLE,
       started_at: now.toISOString(),
       ended_at: now.toISOString(),
       duration: 0,
@@ -744,7 +756,7 @@ export class RecordingManager {
     const year = String(now.getFullYear());
     const date = `${year}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
     const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const base = `${date}_${time}_タイトル未入力`;
+    const base = `${date}_${time}_${DEFAULT_MEETING_TITLE}`;
     const yearRoot = join(this.saveRoot, year);
     await ensurePrivateDirectory(yearRoot);
 

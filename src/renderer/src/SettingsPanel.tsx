@@ -4,6 +4,11 @@ import {
   LLM_PROVIDER_PRESETS,
   validateEndpointUrl,
 } from '../../shared/llm';
+import {
+  INPUT_SOURCES,
+  INPUT_SOURCE_MESSAGE_KEYS,
+  type MessageKey,
+} from '../../shared/i18n';
 import type {
   AppSettings,
   InputSource,
@@ -14,10 +19,12 @@ import type {
   SaveLlmProfileRequest,
   SummaryLanguage,
   ThemeMode,
+  UiLanguage,
   WhisperModel,
   WhisperModelList,
 } from '../../shared/types';
 import { DiarizationSettings } from './DiarizationSettings';
+import { useI18n } from './i18n';
 import { errorText, formatBytes, type InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
 
@@ -41,18 +48,18 @@ type SettingsPanelProps = {
   onShowAbout: () => void;
 };
 
-const tabs: Array<{ value: SettingsTab; label: string; color: string }> = [
+const tabs: Array<{ value: SettingsTab; label: MessageKey; color: string }> = [
   { value: 'general', label: '一般', color: '#8E8E93' },
   { value: 'recording', label: '録音', color: '#FF3B30' },
   { value: 'transcription', label: '文字起こし', color: '#5856D6' },
   { value: 'summary', label: '要約', color: '#34C759' },
 ];
 
-const sourceOptions: Array<{ value: InputSource; label: string }> = [
-  { value: 'microphone', label: 'マイク' },
-  { value: 'system', label: 'システム' },
-  { value: 'both', label: '両方' },
-];
+const sourceOptions: Array<{ value: InputSource; label: MessageKey }> =
+  INPUT_SOURCES.map((value) => ({
+    value,
+    label: INPUT_SOURCE_MESSAGE_KEYS[value],
+  }));
 
 const whisperModels: Array<{ value: WhisperModel; label: string; size: string }> = [
   { value: 'large-v3-turbo', label: 'large-v3-turbo', size: '1.6 GB' },
@@ -60,10 +67,15 @@ const whisperModels: Array<{ value: WhisperModel; label: string; size: string }>
   { value: 'small', label: 'small', size: '488 MB' },
 ];
 
-const themeOptions: Array<{ value: ThemeMode; label: string }> = [
+const themeOptions: Array<{ value: ThemeMode; label: MessageKey }> = [
   { value: 'system', label: 'システム' },
   { value: 'light', label: 'ライト' },
   { value: 'dark', label: 'ダーク' },
+];
+
+const uiLanguageOptions: Array<{ value: UiLanguage; label: MessageKey }> = [
+  { value: 'ja', label: '日本語' },
+  { value: 'en', label: 'English' },
 ];
 
 export function SettingsPanel({
@@ -83,6 +95,7 @@ export function SettingsPanel({
   onOpenBlackHoleSite,
   onShowAbout,
 }: SettingsPanelProps) {
+  const { locale, t } = useI18n();
   const [tab, setTab] = useState<SettingsTab>('general');
   const [models, setModels] = useState<WhisperModelList | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -129,9 +142,11 @@ export function SettingsPanel({
       setModels(await window.kataribe.listWhisperModels());
       setModelsError(null);
     } catch (reason: unknown) {
-      setModelsError(`モデル一覧を取得できませんでした: ${errorText(reason)}`);
+      setModelsError(
+        t('モデル一覧を取得できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
-  }, []);
+  }, [t]);
 
   const fillProfileForm = useCallback((profile: LlmProfileStatus | null) => {
     if (profile) {
@@ -170,11 +185,13 @@ export function SettingsPanel({
       return state;
     } catch (reason: unknown) {
       setLlmProfilesError(
-        `LLM プロファイルを読み込めませんでした: ${errorText(reason)}`,
+        t('LLM プロファイルを読み込めませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
       return null;
     }
-  }, []);
+  }, [t]);
 
   const refreshMultiOutput = useCallback(async () => {
     try {
@@ -201,10 +218,12 @@ export function SettingsPanel({
       setMultiOutputError(null);
     } catch (reason: unknown) {
       setMultiOutputError(
-        `Multi-Output Device の状態を取得できませんでした: ${errorText(reason)}`,
+        t('Multi-Output Device の状態を取得できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void refreshModels();
@@ -290,11 +309,11 @@ export function SettingsPanel({
   const saveProfile = async () => {
     const id = profileIdDraft.trim();
     if (!id) {
-      setProfileError('ID を入力してください。');
+      setProfileError(t('ID を入力してください。'));
       return;
     }
     if (id.length > 64) {
-      setProfileError('ID は 64 文字以内で入力してください。');
+      setProfileError(t('ID は 64 文字以内で入力してください。'));
       return;
     }
     if (
@@ -302,17 +321,17 @@ export function SettingsPanel({
         (profile) => profile.id === id && profile.id !== editingProfileId,
       )
     ) {
-      setProfileError('その ID は既に使われています。別の ID を入力してください。');
+      setProfileError(t('その ID は既に使われています。別の ID を入力してください。'));
       return;
     }
-    const endpoint = validateEndpointUrl(profileEndpointDraft);
+    const endpoint = validateEndpointUrl(profileEndpointDraft, locale);
     if (!endpoint.ok) {
       setProfileError(endpoint.error);
       return;
     }
     const model = profileModelDraft.trim();
     if (!model) {
-      setProfileError('モデルを入力してください。');
+      setProfileError(t('モデルを入力してください。'));
       return;
     }
     setProfileBusy(true);
@@ -336,12 +355,14 @@ export function SettingsPanel({
       syncProfileForm(state, id);
       setProfileNotice(
         editingProfileId
-          ? 'LLM プロファイルを更新しました。'
-          : 'LLM プロファイルを追加しました。',
+          ? t('LLM プロファイルを更新しました。')
+          : t('LLM プロファイルを追加しました。'),
       );
     } catch (reason: unknown) {
       setProfileError(
-        `LLM プロファイルを保存できませんでした: ${errorText(reason)}`,
+        t('LLM プロファイルを保存できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     } finally {
       setProfileBusy(false);
@@ -351,7 +372,10 @@ export function SettingsPanel({
   const removeProfile = async (profile: LlmProfileStatus) => {
     if (
       !window.confirm(
-        `LLM プロファイル「${profile.id}」を削除します。保存済みの API キーも削除されます。よろしいですか？`,
+        t(
+          'LLM プロファイル「{id}」を削除します。保存済みの API キーも削除されます。よろしいですか？',
+          { id: profile.id },
+        ),
       )
     ) {
       return;
@@ -365,10 +389,12 @@ export function SettingsPanel({
       if (profileFormOpen && editingProfileId === profile.id) {
         closeProfileForm();
       }
-      setProfileNotice('LLM プロファイルを削除しました。');
+      setProfileNotice(t('LLM プロファイルを削除しました。'));
     } catch (reason: unknown) {
       setProfileError(
-        `LLM プロファイルを削除できませんでした: ${errorText(reason)}`,
+        t('LLM プロファイルを削除できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     } finally {
       setProfileBusy(false);
@@ -383,9 +409,15 @@ export function SettingsPanel({
       const state = await window.kataribe.setDefaultLlmProfile(profile.id);
       setLlmProfiles(state);
       setProfileMakeDefault(editingProfileId === profile.id);
-      setProfileNotice(`「${profile.id}」を既定の LLM プロファイルにしました。`);
+      setProfileNotice(
+        t('「{id}」を既定の LLM プロファイルにしました。', { id: profile.id }),
+      );
     } catch (reason: unknown) {
-      setProfileError(`既定の LLM プロファイルを変更できませんでした: ${errorText(reason)}`);
+      setProfileError(
+        t('既定の LLM プロファイルを変更できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
     } finally {
       setProfileBusy(false);
     }
@@ -397,7 +429,9 @@ export function SettingsPanel({
     }
     if (
       !window.confirm(
-        `「${editingProfileId}」の API キーを削除します。よろしいですか？`,
+        t('「{id}」の API キーを削除します。よろしいですか？', {
+          id: editingProfileId,
+        }),
       )
     ) {
       return;
@@ -409,9 +443,11 @@ export function SettingsPanel({
       const state = await window.kataribe.clearLlmApiKey(editingProfileId);
       setLlmProfiles(state);
       syncProfileForm(state, editingProfileId);
-      setProfileNotice('API キーを削除しました。');
+      setProfileNotice(t('API キーを削除しました。'));
     } catch (reason: unknown) {
-      setProfileError(`API キーを削除できませんでした: ${errorText(reason)}`);
+      setProfileError(
+        t('API キーを削除できませんでした: {error}', { error: errorText(reason) }),
+      );
     } finally {
       setProfileBusy(false);
     }
@@ -437,7 +473,11 @@ export function SettingsPanel({
     try {
       setModels(await window.kataribe.downloadWhisperModel(model));
     } catch (reason: unknown) {
-      setModelsError(`モデルのダウンロードを開始できませんでした: ${errorText(reason)}`);
+      setModelsError(
+        t('モデルのダウンロードを開始できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
     } finally {
       setModelBusy(null);
     }
@@ -446,22 +486,32 @@ export function SettingsPanel({
   const cancelModel = async (model: WhisperModel) => {
     try {
       setModels(await window.kataribe.cancelWhisperModelDownload(model));
-      setModelNotice('ダウンロードを中断しました。次回は続きから再開します。');
+      setModelNotice(t('ダウンロードを中断しました。次回は続きから再開します。'));
     } catch (reason: unknown) {
-      setModelsError(`ダウンロードを中断できませんでした: ${errorText(reason)}`);
+      setModelsError(
+        t('ダウンロードを中断できませんでした: {error}', { error: errorText(reason) }),
+      );
     }
   };
 
   const deleteModel = async (model: WhisperModel) => {
-    if (!window.confirm(`${model} のモデルファイルを削除します。よろしいですか？`)) {
+    if (
+      !window.confirm(
+        t('{model} のモデルファイルを削除します。よろしいですか？', {
+          model,
+        }),
+      )
+    ) {
       return;
     }
     setModelBusy(model);
     try {
       setModels(await window.kataribe.deleteWhisperModel(model));
-      setModelNotice(`${model} を削除しました。`);
+      setModelNotice(t('{model} を削除しました。', { model }));
     } catch (reason: unknown) {
-      setModelsError(`モデルを削除できませんでした: ${errorText(reason)}`);
+      setModelsError(
+        t('モデルを削除できませんでした: {error}', { error: errorText(reason) }),
+      );
     } finally {
       setModelBusy(null);
     }
@@ -469,7 +519,7 @@ export function SettingsPanel({
 
   const createMultiOutput = async () => {
     if (!outputUid) {
-      setMultiOutputError('出力デバイスを選択してください。');
+      setMultiOutputError(t('出力デバイスを選択してください。'));
       return;
     }
     setMultiOutputBusy(true);
@@ -480,12 +530,16 @@ export function SettingsPanel({
       if (status) {
         setMultiOutput(status);
         setMultiOutputNotice(
-          'Kataribe Multi-Output を作成し、macOS の出力に設定しました。システム音声の入力に BlackHole 2ch を選んでください。',
+          t(
+            'Kataribe Multi-Output を作成し、macOS の出力に設定しました。システム音声の入力に BlackHole 2ch を選んでください。',
+          ),
         );
       }
     } catch (reason: unknown) {
       setMultiOutputError(
-        `Multi-Output Device を作成できませんでした: ${errorText(reason)}`,
+        t('Multi-Output Device を作成できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     } finally {
       setMultiOutputBusy(false);
@@ -500,11 +554,13 @@ export function SettingsPanel({
       const status = await window.kataribe.removeMultiOutput();
       if (status) {
         setMultiOutput(status);
-        setMultiOutputNotice('Kataribe Multi-Output を削除しました。');
+        setMultiOutputNotice(t('Kataribe Multi-Output を削除しました。'));
       }
     } catch (reason: unknown) {
       setMultiOutputError(
-        `Multi-Output Device を削除できませんでした: ${errorText(reason)}`,
+        t('Multi-Output Device を削除できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     } finally {
       setMultiOutputBusy(false);
@@ -516,17 +572,23 @@ export function SettingsPanel({
     setIndexNotice(null);
     try {
       const list = await window.kataribe.rebuildMeetingIndex();
-      setIndexNotice(`索引を再構築しました（${list.length} 件）。`);
+      setIndexNotice(
+        t('索引を再構築しました（{count} 件）。', { count: list.length }),
+      );
     } catch (reason: unknown) {
-      setIndexNotice(`索引を再構築できませんでした: ${errorText(reason)}`);
+      setIndexNotice(
+        t('索引を再構築できませんでした: {error}', { error: errorText(reason) }),
+      );
     } finally {
       setIndexBusy(false);
     }
   };
 
+  const activeTab = tabs.find((entry) => entry.value === tab) ?? tabs[0];
+
   return (
     <section className="settings-panel" aria-labelledby="settings-title">
-      <div className="settings-tabs" role="tablist" aria-label="設定">
+      <div className="settings-tabs" role="tablist" aria-label={t('設定')}>
         {tabs.map((entry) => (
           <button
             type="button"
@@ -537,7 +599,7 @@ export function SettingsPanel({
             onClick={() => setTab(entry.value)}
           >
             <span className="settings-tab-icon" style={{ background: entry.color }} />
-            {entry.label}
+            {t(entry.label)}
           </button>
         ))}
       </div>
@@ -545,18 +607,18 @@ export function SettingsPanel({
       <div className="settings-content">
         <div className="settings-content-head">
           <div>
-            <p className="section-label">Settings</p>
+            <p className="section-label">{t('設定')}</p>
             <h1 id="settings-title" className="page-title">
-              {tabs.find((entry) => entry.value === tab)?.label}
+              {t(activeTab.label)}
             </h1>
           </div>
-          <span className="panel-note">設定はローカルに保存されます</span>
+          <span className="panel-note">{t('設定はローカルに保存されます')}</span>
         </div>
 
         {tab === 'general' ? (
           <>
             <section className="settings-section">
-              <p className="settings-label">保存先</p>
+              <p className="settings-label">{t('保存先')}</p>
               <div className="setting-card setting-row">
                 <span className="mono setting-path">{saveRoot}</span>
                 <button
@@ -564,16 +626,18 @@ export function SettingsPanel({
                   className="button button-secondary"
                   onClick={onChangeSaveRoot}
                 >
-                  変更
+                  {t('変更')}
                 </button>
               </div>
               <p className="muted">
-                変更後、既存の会議は新しい保存先の一覧に表示されません。会議フォルダは移動しません。
+                {t(
+                  '変更後、既存の会議は新しい保存先の一覧に表示されません。会議フォルダは移動しません。',
+                )}
               </p>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">外観</p>
+              <p className="settings-label">{t('外観')}</p>
               <div className="setting-card">
                 <div className="seg settings-source-seg">
                   {themeOptions.map((option) => (
@@ -583,34 +647,65 @@ export function SettingsPanel({
                       aria-pressed={settings.theme === option.value}
                       onClick={() => void onUpdateSettings({ theme: option.value })}
                     >
-                      {option.label}
+                      {t(option.label)}
                     </button>
                   ))}
                 </div>
                 <p className="muted">
-                  システムを選ぶと macOS のライト / ダーク設定に追従します。既定はシステムです。
+                  {t(
+                    'システムを選ぶと macOS のライト / ダーク設定に追従します。既定はシステムです。',
+                  )}
                 </p>
               </div>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">このアプリについて</p>
+              <p className="settings-label">{t('UI の言語')}</p>
+              <div className="setting-card">
+                <div className="seg settings-source-seg">
+                  {uiLanguageOptions.map((option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      aria-pressed={settings.uiLanguage === option.value}
+                      onClick={() =>
+                        void onUpdateSettings({ uiLanguage: option.value })
+                      }
+                    >
+                      {t(option.label)}
+                    </button>
+                  ))}
+                </div>
+                <p className="muted">
+                  {t(
+                    'アプリの表示に使う言語です。変更するとすぐに反映されます。',
+                  )}
+                </p>
+              </div>
+            </section>
+
+            <section className="settings-section">
+              <p className="settings-label">{t('このアプリについて')}</p>
               <div className="setting-card setting-row">
                 <div>
-                  <strong>Kataribe 会議録</strong>
-                  <p className="muted">v{version} · ローカルビルド</p>
+                  <strong>{t('Kataribe 会議録')}</strong>
+                  <p className="muted">
+                    v{version} · {t('ローカルビルド')}
+                  </p>
                 </div>
                 <button type="button" className="button button-secondary" onClick={onShowAbout}>
-                  About を開く
+                  {t('About を開く')}
                 </button>
               </div>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">会議索引</p>
+              <p className="settings-label">{t('会議索引')}</p>
               <div className="setting-card">
                 <p className="muted">
-                  会議一覧と全文検索の索引を、会議フォルダから作り直します。索引が壊れた場合や、外部で会議フォルダを編集した場合に使います。
+                  {t(
+                    '会議一覧と全文検索の索引を、会議フォルダから作り直します。索引が壊れた場合や、外部で会議フォルダを編集した場合に使います。',
+                  )}
                 </p>
                 <div className="setting-actions">
                   <button
@@ -619,7 +714,7 @@ export function SettingsPanel({
                     disabled={indexBusy}
                     onClick={() => void rebuildIndex()}
                   >
-                    {indexBusy ? '再構築中...' : '索引を再構築'}
+                    {indexBusy ? t('再構築中...') : t('索引を再構築')}
                   </button>
                 </div>
                 {indexNotice ? <p className="notice-text">{indexNotice}</p> : null}
@@ -627,21 +722,23 @@ export function SettingsPanel({
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">セットアップ</p>
+              <p className="settings-label">{t('セットアップ')}</p>
               <div className="setting-card">
                 <p className="muted">
-                  システム音声を録音するには BlackHole 2ch と Multi-Output Device の設定が必要です。
+                  {t(
+                    'システム音声を録音するには BlackHole 2ch と Multi-Output Device の設定が必要です。',
+                  )}
                 </p>
                 <div className="setting-actions">
                   <button type="button" className="button button-secondary" onClick={onOpenReadme}>
-                    セットアップ手順を開く
+                    {t('セットアップ手順を開く')}
                   </button>
                   <button
                     type="button"
                     className="button button-secondary"
                     onClick={onOpenBlackHoleSite}
                   >
-                    BlackHole 2ch の配布元
+                    {t('BlackHole 2ch の配布元')}
                   </button>
                 </div>
               </div>
@@ -652,7 +749,7 @@ export function SettingsPanel({
         {tab === 'recording' ? (
           <>
             <section className="settings-section">
-              <p className="settings-label">入力ソース</p>
+              <p className="settings-label">{t('入力ソース')}</p>
               <div className="seg settings-source-seg">
                 {sourceOptions.map((option) => {
                   const unavailable =
@@ -668,28 +765,30 @@ export function SettingsPanel({
                       disabled={unavailable}
                       onClick={() => onSetInputSource(option.value)}
                     >
-                      {option.label}
+                      {t(option.label)}
                     </button>
                   );
                 })}
               </div>
               <p className="muted">
-                入力ソースはトレイと録音パネルに同期します。録音中の変更は次の録音から適用されます。
+                {t(
+                  '入力ソースはトレイと録音パネルに同期します。録音中の変更は次の録音から適用されます。',
+                )}
               </p>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">入力デバイス</p>
+              <p className="settings-label">{t('入力デバイス')}</p>
               <div className="settings-grid">
                 <div className="setting-card">
                   <div className="setting-row">
-                    <strong>マイク</strong>
+                    <strong>{t('マイク')}</strong>
                     <span className={microphoneAvailable ? 'ok-text' : 'error-text'}>
-                      {microphoneAvailable ? '検出済み' : '見つかりません'}
+                      {microphoneAvailable ? t('検出済み') : t('見つかりません')}
                     </span>
                   </div>
                   <p className="muted">
-                    {microphones[0]?.label || 'マイクを接続してください。'}
+                    {microphones[0]?.label || t('マイクを接続してください。')}
                   </p>
                   <div className="setting-actions">
                     <button
@@ -698,7 +797,7 @@ export function SettingsPanel({
                       onClick={onRequestPermission}
                       disabled={permission === 'requesting' || permission === 'granted'}
                     >
-                      マイク権限を確認
+                      {t('マイク権限を確認')}
                     </button>
                     {permissionDenied ? (
                       <button
@@ -706,30 +805,30 @@ export function SettingsPanel({
                         className="button button-secondary"
                         onClick={onOpenMicrophoneSettings}
                       >
-                        システム設定を開く
+                        {t('システム設定を開く')}
                       </button>
                     ) : null}
                   </div>
                 </div>
                 <div className="setting-card">
                   <div className="setting-row">
-                    <strong>システム音声</strong>
+                    <strong>{t('システム音声')}</strong>
                     <span className={systemAvailable ? 'ok-text' : 'error-text'}>
-                      {systemAvailable ? '検出済み' : '見つかりません'}
+                      {systemAvailable ? t('検出済み') : t('見つかりません')}
                     </span>
                   </div>
                   <p className="muted mono">
                     {systemDevices[0]?.label || 'BlackHole 2ch'}
                   </p>
                   <button type="button" className="link-button" onClick={onOpenReadme}>
-                    セットアップ手順
+                    {t('セットアップ手順')}
                   </button>
                 </div>
               </div>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">mp3 のビットレート</p>
+              <p className="settings-label">{t('mp3 のビットレート')}</p>
               <div className="setting-card">
                 <div className="seg settings-source-seg">
                   {([64, 128] as const).map((bitrate) => (
@@ -746,8 +845,9 @@ export function SettingsPanel({
                   ))}
                 </div>
                 <p className="muted">
-                  新しく録音する会議に適用します。64 kbps は 1 時間で約 29 MB、128 kbps は約 58 MB です。
-                  既存の mp3 は変更しません。
+                  {t(
+                    '新しく録音する会議に適用します。64 kbps は 1 時間で約 29 MB、128 kbps は約 58 MB です。既存の mp3 は変更しません。',
+                  )}
                 </p>
               </div>
             </section>
@@ -761,24 +861,27 @@ export function SettingsPanel({
               <p className="settings-label">Multi-Output Device</p>
               <div className="setting-card">
                 <p className="muted">
-                  macOS の出力デバイスと BlackHole 2ch を含む「Kataribe Multi-Output」を自動作成し、
-                  システム出力に設定します。作成には BlackHole 2ch が必要です。
+                  {t(
+                    'macOS の出力デバイスと BlackHole 2ch を含む「Kataribe Multi-Output」を自動作成し、システム出力に設定します。作成には BlackHole 2ch が必要です。',
+                  )}
                 </p>
                 {multiOutput?.supported === false ? (
                   <p className="alert alert-error">
-                    Multi-Output Device の自動作成は macOS でのみ利用できます。
+                    {t(
+                      'Multi-Output Device の自動作成は macOS でのみ利用できます。',
+                    )}
                   </p>
                 ) : (
                   <>
                     <div className="settings-grid">
                       <label className="field">
-                        <span>出力デバイス</span>
+                        <span>{t('出力デバイス')}</span>
                         <select
                           value={outputUid}
                           disabled={multiOutputBusy || !multiOutput?.helperAvailable}
                           onChange={(event) => setOutputUid(event.target.value)}
                         >
-                          <option value="">選択してください</option>
+                          <option value="">{t('選択してください')}</option>
                           {(multiOutput?.outputDevices ?? [])
                             .filter(
                               (device) =>
@@ -788,15 +891,18 @@ export function SettingsPanel({
                             )
                             .map((device) => (
                               <option value={device.uid} key={device.uid}>
-                                {device.name}（{device.channels} ch）
+                                {t('{name}（{channels} ch）', {
+                                  name: device.name,
+                                  channels: device.channels,
+                                })}
                               </option>
                             ))}
                         </select>
                       </label>
                       <div className="field">
-                        <span>現在の出力</span>
+                        <span>{t('現在の出力')}</span>
                         <p className="setting-input setting-readonly mono">
-                          {multiOutput?.currentOutput?.name ?? '取得できません'}
+                          {multiOutput?.currentOutput?.name ?? t('取得できません')}
                         </p>
                       </div>
                     </div>
@@ -811,7 +917,7 @@ export function SettingsPanel({
                         }
                         onClick={() => void createMultiOutput()}
                       >
-                        {multiOutputBusy ? '処理中...' : '自動作成して出力に設定'}
+                        {multiOutputBusy ? t('処理中...') : t('自動作成して出力に設定')}
                       </button>
                       <button
                         type="button"
@@ -819,7 +925,7 @@ export function SettingsPanel({
                         disabled={multiOutputBusy || !multiOutput?.multiOutput}
                         onClick={() => void removeMultiOutput()}
                       >
-                        Kataribe Multi-Output を削除
+                        {t('Kataribe Multi-Output を削除')}
                       </button>
                       <button
                         type="button"
@@ -827,17 +933,22 @@ export function SettingsPanel({
                         disabled={multiOutputBusy}
                         onClick={() => void refreshMultiOutput()}
                       >
-                        再検出
+                        {t('再検出')}
                       </button>
                     </div>
                     {multiOutput?.multiOutput ? (
                       <p className="ok-text">
-                        作成済み: {multiOutput.multiOutput.name}（{multiOutput.multiOutput.channels} ch）
+                        {t('作成済み: {name}（{channels} ch）', {
+                          name: multiOutput.multiOutput.name,
+                          channels: multiOutput.multiOutput.channels,
+                        })}
                       </p>
                     ) : null}
                     {multiOutput?.helperAvailable === false ? (
                       <p className="alert alert-error">
-                        Multi-Output ヘルパーが見つかりません。`npm run binaries` で再ビルドしてください。
+                        {t(
+                          'Multi-Output ヘルパーが見つかりません。`npm run binaries` で再ビルドしてください。',
+                        )}
                       </p>
                     ) : null}
                     {multiOutput?.error ? (
@@ -855,15 +966,16 @@ export function SettingsPanel({
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">クリッピング警告</p>
+              <p className="settings-label">{t('クリッピング警告')}</p>
               <div className="setting-card">
                 <p className="muted">
-                  マイク入力のピークがしきい値を超えた状態が続くと警告します。値は 100 ms
-                  単位の連続回数で指定します。
+                  {t(
+                    'マイク入力のピークがしきい値を超えた状態が続くと警告します。値は 100 ms 単位の連続回数で指定します。',
+                  )}
                 </p>
                 <div className="settings-grid settings-grid-3">
                   <label className="field">
-                    <span>ピークしきい値（0.5〜1.0）</span>
+                    <span>{t('ピークしきい値（0.5〜1.0）')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -882,7 +994,7 @@ export function SettingsPanel({
                     />
                   </label>
                   <label className="field">
-                    <span>警告までの連続回数</span>
+                    <span>{t('警告までの連続回数')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -900,7 +1012,7 @@ export function SettingsPanel({
                     />
                   </label>
                   <label className="field">
-                    <span>解除までの連続回数</span>
+                    <span>{t('解除までの連続回数')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -922,14 +1034,16 @@ export function SettingsPanel({
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">システム音声の無音検出</p>
+              <p className="settings-label">{t('システム音声の無音検出')}</p>
               <div className="setting-card">
                 <p className="muted">
-                  システム音声の RMS がしきい値を下回る状態が続くと警告します。猶予時間は会議前の無音で警告しないために使います。
+                  {t(
+                    'システム音声の RMS がしきい値を下回る状態が続くと警告します。猶予時間は会議前の無音で警告しないために使います。',
+                  )}
                 </p>
                 <div className="settings-grid settings-grid-3">
                   <label className="field">
-                    <span>監視ウィンドウ（秒）</span>
+                    <span>{t('監視ウィンドウ（秒）')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -947,7 +1061,7 @@ export function SettingsPanel({
                     />
                   </label>
                   <label className="field">
-                    <span>RMS しきい値</span>
+                    <span>{t('RMS しきい値')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -966,7 +1080,7 @@ export function SettingsPanel({
                     />
                   </label>
                   <label className="field">
-                    <span>猶予時間（秒）</span>
+                    <span>{t('猶予時間（秒）')}</span>
                     <input
                       className="setting-input"
                       type="number"
@@ -991,7 +1105,7 @@ export function SettingsPanel({
 
         {tab === 'transcription' ? (
           <section className="settings-section">
-            <p className="settings-label">whisper.cpp モデル</p>
+            <p className="settings-label">{t('whisper.cpp モデル')}</p>
             <div className="setting-card model-list">
               {whisperModels.map((entry) => {
                 const info = models?.models.find((item) => item.model === entry.value);
@@ -1011,9 +1125,13 @@ export function SettingsPanel({
                       <span className="muted">
                         {entry.size}
                         {info?.installed
-                          ? ` · インストール済み ${formatBytes(info.installedBytes)}`
+                          ? t(' · インストール済み {size}', {
+                              size: formatBytes(info.installedBytes),
+                            })
                           : info?.downloadedBytes
-                            ? ` · 取得済み ${formatBytes(info.downloadedBytes)}`
+                            ? t(' · 取得済み {size}', {
+                                size: formatBytes(info.downloadedBytes),
+                              })
                             : ''}
                       </span>
                     </span>
@@ -1030,7 +1148,7 @@ export function SettingsPanel({
                           </span>
                           <span className="mono">
                             {info?.state === 'verifying'
-                              ? '検証中'
+                              ? t('検証中')
                               : `${Math.round((info?.progress ?? 0) * 100)}%`}
                           </span>
                           <button
@@ -1038,13 +1156,15 @@ export function SettingsPanel({
                             className="link-button"
                             onClick={() => void cancelModel(entry.value)}
                           >
-                            中止
+                            {t('中止')}
                           </button>
                         </span>
                       ) : info?.installed ? (
                         <span className="model-installed">
                           {settings.whisperModel === entry.value ? (
-                            <span className="status-chip status-summarized">選択中</span>
+                            <span className="status-chip status-summarized">
+                              {t('選択中')}
+                            </span>
                           ) : null}
                           <button
                             type="button"
@@ -1052,7 +1172,7 @@ export function SettingsPanel({
                             disabled={modelBusy !== null}
                             onClick={() => void deleteModel(entry.value)}
                           >
-                            削除
+                            {t('削除')}
                           </button>
                         </span>
                       ) : (
@@ -1062,7 +1182,9 @@ export function SettingsPanel({
                           disabled={modelBusy !== null}
                           onClick={() => void downloadModel(entry.value)}
                         >
-                          {modelBusy === entry.value ? '開始中...' : 'ダウンロード'}
+                          {modelBusy === entry.value
+                            ? t('開始中...')
+                            : t('ダウンロード')}
                         </button>
                       )}
                     </span>
@@ -1081,26 +1203,33 @@ export function SettingsPanel({
             {modelsError ? <p className="alert alert-error">{modelsError}</p> : null}
             {modelNotice ? <p className="notice-text">{modelNotice}</p> : null}
             <p className="muted">
-              モデルは HTTPS でダウンロードし、SHA-256 を照合してから保存します。中断しても次回は続きから再開します。
-              {models?.modelsDir ? ` 保存先: ${models.modelsDir}` : ''}
+              {t(
+                'モデルは HTTPS でダウンロードし、SHA-256 を照合してから保存します。中断しても次回は続きから再開します。',
+              )}
+              {models?.modelsDir
+                ? t(' 保存先: {path}', { path: models.modelsDir })
+                : ''}
             </p>
             <p className="muted">
-              文字起こしは端末内の whisper.cpp で行います。録音停止後、選択中のモデルで自動的に開始します。
+              {t(
+                '文字起こしは端末内の whisper.cpp で行います。録音停止後、選択中のモデルで自動的に開始します。',
+              )}
             </p>
             <div className="setting-card prompt-card">
               <label className="field">
-                <span>用語集（initial prompt）</span>
+                <span>{t('用語集（initial prompt）')}</span>
                 <textarea
                   className="setting-input prompt-textarea"
                   value={initialPromptDraft}
-                  placeholder="例: Kataribe, BlackHole, リリース, スプリント"
+                  placeholder={t('例: Kataribe, BlackHole, リリース, スプリント')}
                   onChange={(event) => setInitialPromptDraft(event.target.value)}
                   onBlur={() => void saveInitialPrompt()}
                 />
               </label>
               <p className="muted">
-                専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。
-                用語集が多いと関係のない単語を誘導することがあります。
+                {t(
+                  '専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。用語集が多いと関係のない単語を誘導することがあります。',
+                )}
               </p>
             </div>
           </section>
@@ -1109,14 +1238,17 @@ export function SettingsPanel({
         {tab === 'summary' ? (
           <>
             <section className="settings-section">
-              <p className="settings-label">LLM プロファイル</p>
+              <p className="settings-label">{t('LLM プロファイル')}</p>
               <div className="setting-card">
                 <p className="muted">
-                  ID ごとに Provider、エンドポイント URL、モデル、API キーを保存します。
-                  要約と翻訳では、既定のプロファイルまたは任意のプロファイルを選んで使用します。
+                  {t(
+                    'ID ごとに Provider、エンドポイント URL、モデル、API キーを保存します。要約と翻訳では、既定のプロファイルまたは任意のプロファイルを選んで使用します。',
+                  )}
                 </p>
                 {llmProfiles === null ? (
-                  <p className="muted">LLM プロファイルを読み込んでいます...</p>
+                  <p className="muted">
+                    {t('LLM プロファイルを読み込んでいます...')}
+                  </p>
                 ) : llmProfiles.profiles.length > 0 ? (
                   <div className="llm-profile-list">
                     {llmProfiles.profiles.map((profile) => (
@@ -1129,7 +1261,7 @@ export function SettingsPanel({
                         <input
                           type="radio"
                           name="llm-default-profile"
-                          aria-label={`${profile.id} を既定にする`}
+                          aria-label={t('{id} を既定にする', { id: profile.id })}
                           checked={profile.isDefault}
                           disabled={profileBusy || llmProfiles.profiles.length <= 1}
                           onChange={() => void setDefaultProfile(profile)}
@@ -1138,14 +1270,16 @@ export function SettingsPanel({
                           <div className="llm-profile-title">
                             <strong className="mono">{profile.id}</strong>
                             {profile.isDefault ? (
-                              <span className="status-chip status-summarized">既定</span>
+                              <span className="status-chip status-summarized">
+                                {t('既定')}
+                              </span>
                             ) : null}
                           </div>
                           <span className="muted">
                             {profile.providerLabel} · {profile.model}
                           </span>
                           <span className="muted mono llm-profile-endpoint">
-                            {profile.endpoint || 'エンドポイント未設定'}
+                            {profile.endpoint || t('エンドポイント未設定')}
                           </span>
                           <span
                             className={
@@ -1153,10 +1287,10 @@ export function SettingsPanel({
                             }
                           >
                             {profile.apiKeyConfigured
-                              ? 'API キー設定済み'
+                              ? t('API キー設定済み')
                               : profile.apiKeyStored
-                                ? '設定変更のため API キーの再入力が必要'
-                                : 'API キー未設定'}
+                                ? t('設定変更のため API キーの再入力が必要')
+                                : t('API キー未設定')}
                           </span>
                         </div>
                         <div className="llm-profile-actions">
@@ -1166,7 +1300,7 @@ export function SettingsPanel({
                             disabled={profileBusy}
                             onClick={() => startEditProfile(profile)}
                           >
-                            編集
+                            {t('編集')}
                           </button>
                           <button
                             type="button"
@@ -1174,7 +1308,7 @@ export function SettingsPanel({
                             disabled={profileBusy}
                             onClick={() => void removeProfile(profile)}
                           >
-                            削除
+                            {t('削除')}
                           </button>
                         </div>
                       </div>
@@ -1182,12 +1316,16 @@ export function SettingsPanel({
                   </div>
                 ) : (
                   <p className="alert alert-warning">
-                    LLM プロファイルがありません。下のフォームから追加してください。
+                    {t(
+                      'LLM プロファイルがありません。下のフォームから追加してください。',
+                    )}
                   </p>
                 )}
                 {llmProfiles && llmProfiles.profiles.length === 1 ? (
                   <p className="muted">
-                    プロファイルが 1 つだけのため、自動的に既定として使用します。
+                    {t(
+                      'プロファイルが 1 つだけのため、自動的に既定として使用します。',
+                    )}
                   </p>
                 ) : null}
                 <div className="setting-actions">
@@ -1197,7 +1335,7 @@ export function SettingsPanel({
                     disabled={profileBusy}
                     onClick={startCreateProfile}
                   >
-                    新規プロファイル
+                    {t('新規プロファイル')}
                   </button>
                 </div>
                 {llmProfilesError ? (
@@ -1216,8 +1354,8 @@ export function SettingsPanel({
               <section className="settings-section" ref={profileFormRef}>
                 <p className="settings-label">
                   {editingProfileId
-                    ? `プロファイルを編集: ${editingProfileId}`
-                    : 'プロファイルを追加'}
+                    ? t('プロファイルを編集: {id}', { id: editingProfileId })
+                    : t('プロファイルを追加')}
                 </p>
                 <div className="setting-card">
                   <div className="provider-chips">
@@ -1230,23 +1368,23 @@ export function SettingsPanel({
                         key={provider.provider}
                         onClick={() => chooseProfileProvider(provider.provider)}
                       >
-                        {provider.label}
+                        {provider.provider === 'custom' ? t('カスタム') : provider.label}
                       </button>
                     ))}
                   </div>
                   <div className="settings-grid api-grid">
                     <label className="field field-span-2">
-                      <span>ID（一意の名前）</span>
+                      <span>{t('ID（一意の名前）')}</span>
                       <input
                         className="setting-input mono"
                         value={profileIdDraft}
                         maxLength={64}
-                        placeholder="例: work-claude"
+                        placeholder={t('例: work-claude')}
                         onChange={(event) => setProfileIdDraft(event.target.value)}
                       />
                     </label>
                     <label className="field field-span-2">
-                      <span>エンドポイント URL</span>
+                      <span>{t('エンドポイント URL')}</span>
                       <input
                         className="setting-input mono"
                         value={profileEndpointDraft}
@@ -1255,7 +1393,7 @@ export function SettingsPanel({
                       />
                     </label>
                     <label className="field">
-                      <span>モデル</span>
+                      <span>{t('モデル')}</span>
                       <input
                         className="setting-input mono"
                         value={profileModelDraft}
@@ -1264,15 +1402,15 @@ export function SettingsPanel({
                       />
                     </label>
                     <label className="field">
-                      <span>API キー</span>
+                      <span>{t('API キー')}</span>
                       <input
                         className="setting-input"
                         type="password"
                         value={profileApiKeyDraft}
                         placeholder={
                           selectedProfile?.apiKeyConfigured
-                            ? '設定済み（変更する場合だけ入力）'
-                            : 'API キーを入力'
+                            ? t('設定済み（変更する場合だけ入力）')
+                            : t('API キーを入力')
                         }
                         disabled={!profileKeychainAvailable || profileBusy}
                         onChange={(event) => setProfileApiKeyDraft(event.target.value)}
@@ -1286,10 +1424,11 @@ export function SettingsPanel({
                   </div>
                   <label className="setting-row">
                     <span>
-                      <strong>このプロファイルを既定にする</strong>
+                      <strong>{t('このプロファイルを既定にする')}</strong>
                       <span className="muted">
-                        要約と翻訳で最初に選ばれるプロファイルです。プロファイルが 1
-                        つだけの場合は自動的に既定になります。
+                        {t(
+                          '要約と翻訳で最初に選ばれるプロファイルです。プロファイルが 1 つだけの場合は自動的に既定になります。',
+                        )}
                       </span>
                     </span>
                     <input
@@ -1314,10 +1453,10 @@ export function SettingsPanel({
                       onClick={() => void saveProfile()}
                     >
                       {profileBusy
-                        ? '保存中...'
+                        ? t('保存中...')
                         : editingProfileId
-                          ? '変更を保存'
-                          : 'プロファイルを追加'}
+                          ? t('変更を保存')
+                          : t('プロファイルを追加')}
                     </button>
                     <button
                       type="button"
@@ -1325,7 +1464,7 @@ export function SettingsPanel({
                       disabled={profileBusy}
                       onClick={closeProfileForm}
                     >
-                      キャンセル
+                      {t('キャンセル')}
                     </button>
                     {editingProfileId && selectedProfile?.apiKeyStored ? (
                       <button
@@ -1334,7 +1473,7 @@ export function SettingsPanel({
                         disabled={profileBusy}
                         onClick={() => void clearProfileApiKey()}
                       >
-                        API キーを削除
+                        {t('API キーを削除')}
                       </button>
                     ) : null}
                   </div>
@@ -1345,10 +1484,10 @@ export function SettingsPanel({
                       }
                     >
                       {selectedProfile?.apiKeyConfigured
-                        ? 'API キー設定済み'
+                        ? t('API キー設定済み')
                         : selectedProfile?.apiKeyStored
-                          ? '設定変更のため API キーの再入力が必要'
-                          : 'API キー未設定'}
+                          ? t('設定変更のため API キーの再入力が必要')
+                          : t('API キー未設定')}
                     </span>
                     <span
                       className={
@@ -1356,18 +1495,22 @@ export function SettingsPanel({
                       }
                     >
                       {profileKeychainAvailable
-                        ? 'macOS Keychain 利用可能'
-                        : 'macOS Keychain を利用できません'}
+                        ? t('macOS Keychain 利用可能')
+                        : t('macOS Keychain を利用できません')}
                     </span>
                   </div>
                   {selectedProfile?.apiKeyStored &&
                   !selectedProfile.hostMatchesKey ? (
                     <p className="alert alert-warning">
-                      保存済みの API キーは現在のプロファイル設定と一致しません。
+                      {t(
+                        '保存済みの API キーは現在のプロファイル設定と一致しません。',
+                      )}
                       {selectedProfile.storedHost
-                        ? ` 保存時のホストは ${selectedProfile.storedHost} です。`
+                        ? t(' 保存時のホストは {host} です。', {
+                            host: selectedProfile.storedHost,
+                          })
                         : ''}
-                      API キーを再入力してください。
+                      {t('API キーを再入力してください。')}
                     </p>
                   ) : null}
                   {selectedProfile?.keychainError ? (
@@ -1380,52 +1523,61 @@ export function SettingsPanel({
                     <p className="notice-text">{profileNotice}</p>
                   ) : null}
                   <p className="muted">
-                    API キーは Electron の safeStorage で暗号化し、macOS Keychain
-                    に保護された鍵で保存します。設定ファイルに平文は残しません。
-                    別の Mac にコピーした場合は再入力が必要です。
+                    {t(
+                      'API キーは Electron の safeStorage で暗号化し、macOS Keychain に保護された鍵で保存します。設定ファイルに平文は残しません。別の Mac にコピーした場合は再入力が必要です。',
+                    )}
                   </p>
                   <p className="muted">
-                    音声ファイルは送信しません。送信するのは文字起こしの本文だけで、要約の生成を実行したときだけ送ります。
+                    {t(
+                      '音声ファイルは送信しません。送信するのは文字起こしの本文だけで、要約の生成を実行したときだけ送ります。',
+                    )}
                   </p>
                 </div>
               </section>
             ) : null}
 
             <section className="settings-section">
-              <p className="settings-label">要約の出力言語</p>
+              <p className="settings-label">{t('要約の出力言語')}</p>
               <div className="seg settings-source-seg">
                 {([
                   { value: 'ja', label: '日本語' },
                   { value: 'en', label: 'English' },
-                ] as Array<{ value: SummaryLanguage; label: string }>).map((option) => (
-                  <button
-                    type="button"
-                    key={option.value}
-                    aria-pressed={settings.summaryLanguage === option.value}
-                    onClick={() => void onUpdateSettings({ summaryLanguage: option.value })}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+                ] as Array<{ value: SummaryLanguage; label: MessageKey }>).map(
+                  (option) => (
+                    <button
+                      type="button"
+                      key={option.value}
+                      aria-pressed={settings.summaryLanguage === option.value}
+                      onClick={() =>
+                        void onUpdateSettings({ summaryLanguage: option.value })
+                      }
+                    >
+                      {t(option.label)}
+                    </button>
+                  ),
+                )}
               </div>
             </section>
 
             <section className="settings-section">
-              <p className="settings-label">要約プロンプト</p>
+              <p className="settings-label">{t('要約プロンプト')}</p>
               <div className="setting-card">
                 <label className="field">
-                  <span>システムプロンプト（空欄で既定）</span>
+                  <span>{t('システムプロンプト（空欄で既定）')}</span>
                   <textarea
                     className="setting-input prompt-textarea"
                     value={summaryPromptDraft}
-                    placeholder="空欄の場合は、要約・決定事項・ToDo・未決事項の 4 セクションを指定する既定のプロンプトを使います。"
+                    placeholder={t(
+                      '空欄の場合は、要約・決定事項・ToDo・未決事項の 4 セクションを指定する既定のプロンプトを使います。',
+                    )}
                     onChange={(event) => setSummaryPromptDraft(event.target.value)}
                     onBlur={() => void saveSummaryPrompt()}
                   />
                 </label>
                 <p className="muted">
-                  4 セクションの見出しが欠けても、保存時に不足する見出しを補います。
-                  プロンプトを変更すると出力の品質や形式が変わる場合があります。
+                  {t(
+                    '4 セクションの見出しが欠けても、保存時に不足する見出しを補います。プロンプトを変更すると出力の品質や形式が変わる場合があります。',
+                  )}
                 </p>
               </div>
             </section>

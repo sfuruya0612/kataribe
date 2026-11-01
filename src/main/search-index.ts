@@ -16,14 +16,6 @@ import type {
 } from '../shared/types';
 import type { MeetingStore } from './meetings';
 
-const KIND_LABELS: Record<MeetingSearchHit['kind'], string> = {
-  title: 'タイトル',
-  transcript: '文字起こし',
-  'translation-ja': '文字起こし（日本語訳）',
-  'translation-en': '文字起こし（English）',
-  summary: '要約',
-};
-
 function indexFileName(saveRoot: string): string {
   const digest = createHash('sha256').update(saveRoot).digest('hex').slice(0, 24);
   return `${digest}.sqlite`;
@@ -273,7 +265,6 @@ export class MeetingSearchIndex {
         title: row.title,
         startedAt: row.started_at,
         kind: row.kind,
-        kindLabel: KIND_LABELS[row.kind] ?? row.kind,
         lineNumber: row.line_number,
         timestamp: row.timestamp,
         text: row.body,

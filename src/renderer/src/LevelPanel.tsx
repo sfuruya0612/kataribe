@@ -7,6 +7,7 @@ import type {
   RecordingLevelUpdate,
   RecordingSilenceReport,
 } from '../../shared/types';
+import { useI18n } from './i18n';
 import {
   formatLevel,
   frameClockDeltaSeconds,
@@ -26,6 +27,7 @@ export function LevelPanel({
   clipping,
   silence,
 }: LevelPanelProps) {
+  const { locale, t } = useI18n();
   const [level, setLevel] = useState<RecordingLevel | null>(null);
   const [stats, setStats] = useState<RecordingCaptureStats | null>(null);
 
@@ -71,17 +73,17 @@ export function LevelPanel({
     <section className="panel level-panel" aria-labelledby="level-title">
       <div className="panel-head">
         <div>
-          <p className="section-label">Levels</p>
-          <h2 id="level-title">入力レベル</h2>
+          <p className="section-label">{t('レベル')}</p>
+          <h2 id="level-title">{t('入力レベル')}</h2>
         </div>
         <span className="panel-note">
-          {isActive ? '100 ms 間隔' : '録音停止中'}
+          {isActive ? t('100 ms 間隔') : t('録音停止中')}
         </span>
       </div>
 
       <div className="meters">
         <div className="meter-row">
-          <span className="meter-label">ピーク</span>
+          <span className="meter-label">{t('ピーク')}</span>
           <div className="meter" aria-hidden="true">
             <div
               className="meter-fill meter-peak"
@@ -104,47 +106,65 @@ export function LevelPanel({
 
       {clipping?.active ? (
         <p className="alert alert-warning">
-          マイク入力がクリップしています。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。
+          {t(
+            'マイク入力がクリップしています。macOS の入力音量、マイクのゲイン、マイクとの距離を調整してください。',
+          )}
         </p>
       ) : null}
 
       {silence?.active ? (
         <p className="alert alert-warning">
-          システム音声が届いていません。Multi-Output Device と macOS
-          の出力設定を確認してください。
+          {t(
+            'システム音声が届いていません。Multi-Output Device と macOS の出力設定を確認してください。',
+          )}
         </p>
       ) : null}
 
       <dl className="stats-grid">
         <div>
-          <dt>実フレーム</dt>
-          <dd>{stats ? stats.frames.toLocaleString('ja-JP') : '0'}</dd>
+          <dt>{t('実フレーム')}</dt>
+          <dd>{stats ? stats.frames.toLocaleString(locale) : '0'}</dd>
         </div>
         <div>
-          <dt>期待フレーム</dt>
-          <dd>{stats ? stats.expectedFrames.toLocaleString('ja-JP') : '0'}</dd>
+          <dt>{t('期待フレーム')}</dt>
+          <dd>{stats ? stats.expectedFrames.toLocaleString(locale) : '0'}</dd>
         </div>
         <div>
-          <dt>欠落フレーム</dt>
-          <dd>{stats ? stats.missedFrames.toLocaleString('ja-JP') : '0'}</dd>
+          <dt>{t('欠落フレーム')}</dt>
+          <dd>{stats ? stats.missedFrames.toLocaleString(locale) : '0'}</dd>
         </div>
         <div>
-          <dt>gap</dt>
-          <dd>{stats ? `${stats.gaps} 回 / 最大 ${stats.maxGapFrames}` : '0 回'}</dd>
+          <dt>{t('ギャップ')}</dt>
+          <dd>
+            {stats
+              ? t('{gaps} 回 / 最大 {max}', {
+                  gaps: stats.gaps,
+                  max: stats.maxGapFrames,
+                })
+              : t('0 回')}
+          </dd>
         </div>
         <div>
-          <dt>コンテキスト差</dt>
-          <dd>{stats ? `${frameClockDeltaSeconds(stats).toFixed(3)} 秒` : '0.000 秒'}</dd>
+          <dt>{t('コンテキスト差')}</dt>
+          <dd>
+            {stats
+              ? t('{seconds} 秒', {
+                  seconds: frameClockDeltaSeconds(stats).toFixed(3),
+                })
+              : t('0.000 秒')}
+          </dd>
         </div>
         <div>
-          <dt>保存済みチャンク</dt>
+          <dt>{t('保存済みチャンク')}</dt>
           <dd>{chunkCount}</dd>
         </div>
       </dl>
 
       {!stats ? (
         <p className="muted">
-          録音を開始すると、AudioWorklet が数えた実フレーム数と入力レベルを表示します。
+          {t(
+            '録音を開始すると、AudioWorklet が数えた実フレーム数と入力レベルを表示します。',
+          )}
         </p>
       ) : null}
     </section>

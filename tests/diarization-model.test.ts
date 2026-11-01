@@ -51,7 +51,8 @@ type Fixture = {
 async function createFixture(root: string, options: { wrongChecksum?: boolean } = {}): Promise<Fixture> {
   const packageDir = join(root, 'package', 'sherpa-test-1.0');
   await mkdir(packageDir, { recursive: true });
-  const segmentation = Buffer.alloc(1024 * 1024, 3);
+  // 実 I/O の経路を保ちながら CI の実行時間を抑えるため、64 KiB にする。
+  const segmentation = Buffer.alloc(64 * 1024, 3);
   const embedding = Buffer.from('embedding model bytes');
   await writeFile(join(packageDir, 'model.onnx'), segmentation);
   const archivePath = join(root, 'segmentation.tar.bz2');
