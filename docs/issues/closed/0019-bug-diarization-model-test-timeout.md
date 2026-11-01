@@ -3,6 +3,7 @@
 - Requirements: なし (テスト基盤の修正であり、PRD の要求ではない)
 - Priority: High
 - Created: 2026-11-01
+- Completed: 2026-11-01
 - Model: DeepSeek V4.1 Flash 1017
 - Branch: feature/bug-diarization-model-test-timeout
 
@@ -32,15 +33,23 @@ CI の実測では、最初のテストが 5083 ms でタイムアウトした�
 
 ## 完了条件
 
-- [ ] `tests/diarization-model.test.ts` の最初のテストが、フィクスチャ削減後もダウンロード、展開、SHA-256 照合、状態を検証する。
-- [ ] `tests/diarization-model.test.ts` を連続 10 回実行し、すべて通過する。
-- [ ] `npx tsc -p tsconfig.node.json --noEmit` と `npx tsc -p tsconfig.web.json --noEmit` が通る。
-- [ ] `npm test` が通る。
-- [ ] `npm run build` が通る。
-- [ ] CHANGES.md の `### misc` にテスト基盤の修正を記録する。
+- [x] `tests/diarization-model.test.ts` の最初のテストが、フィクスチャ削減後もダウンロード、展開、SHA-256 照合、状態を検証する。
+- [x] `tests/diarization-model.test.ts` を連続 10 回実行し、すべて通過する。
+- [x] `npx tsc -p tsconfig.node.json --noEmit` と `npx tsc -p tsconfig.web.json --noEmit` が通る。
+- [x] `npm test` が通る。
+- [x] `npm run build` が通る。
+- [x] CHANGES.md の `### misc` にテスト基盤の修正を記録する。
 
 ## 解決方法
 
 - `tests/diarization-model.test.ts` のセグメンテーションモデルのバッファを 64 KiB にする。テストの目的と実 I/O の性質をコメントに書く。
 - `vitest.config.mts` に `testTimeout: 15_000` を追加し、実 I/O テストのための余裕であることをコメントに書く。
 - `CHANGES.md` の `### misc` に `[FIX]` エントリを追加する。
+
+## 実施結果
+
+セグメンテーションモデルのフィクスチャを 64 KiB に減らし、`vitest.config.mts` の `testTimeout` を 15 秒にした。
+64 KiB のフィクスチャで `tests/diarization-model.test.ts` を 10 回連続実行し、すべて通過した。
+各回のテストファイル全体の所要時間は約 340 ms だった。
+CI の並列実行で 5 秒を超える余地を減らし、15 秒のタイムアウトでハングを検知する。
+ダウンロード、Range 再開、展開、SHA-256、状態、重複排除、キャンセル、ファイル消失の検証は変更していない。

@@ -139,3 +139,5 @@
   - @shoichi.furuya
 - [ADD] README とリリースチェックリストに UI の言語の確認手順を追加する
   - @shoichi.furuya
+- [FIX] 話者分離モデルの実 I/O テストが CI の並列実行でタイムアウトする問題を修正する
+  - @shoichi.furuya
