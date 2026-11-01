@@ -209,7 +209,7 @@ describe('req_todo_001_parse_todo_items', () => {
     ]);
   });
 
-  it('closes a code fence only with the same marker and length', () => {
+  it('closes a code fence with the same marker and at least the opening length', () => {
     const body = [
       '## ToDo',
       '````',
@@ -222,6 +222,20 @@ describe('req_todo_001_parse_todo_items', () => {
 
     expect(parseTodoItems(body)).toEqual([
       { lineNumber: 6, checked: false, text: 'real' },
+    ]);
+  });
+
+  it('closes a code fence longer than the opening fence', () => {
+    const body = [
+      '## ToDo',
+      '```',
+      '- [ ] fenced',
+      '````',
+      '- [ ] real',
+    ].join('\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 4, checked: false, text: 'real' },
     ]);
   });
 });

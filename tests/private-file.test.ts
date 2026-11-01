@@ -2,7 +2,7 @@
  * 機密ファイルの一時ファイル経由の書き込みを検証する。
  * 対応する要求: なし (内部のファイル書き込みの不変条件)
  */
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -28,6 +28,17 @@ describe('writePrivateText', () => {
     ]);
 
     expect(['A', 'B']).toContain(await readFile(path, 'utf8'));
+    expect(await readdir(root)).toEqual(['summary.md']);
+  });
+
+  it('removes the temporary file when the final rename fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kataribe-private-file-'));
+    roots.push(root);
+    const path = join(root, 'summary.md');
+    await mkdir(path);
+
+    await expect(writePrivateText(path, 'text')).rejects.toThrow();
+
     expect(await readdir(root)).toEqual(['summary.md']);
   });
 });

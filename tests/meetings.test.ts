@@ -1041,6 +1041,26 @@ describe('req_todo_001_meeting_todos', () => {
     ]);
   });
 
+  it('continues the write queue after a rejected operation', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000039';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'summarized',
+    });
+    await writeSummaryTodo(meetingDir, '週次定例', ['- [ ] 資料をまとめる']);
+
+    await expect(
+      setMeetingTodoChecked(store, id, 3, '別の項目', true),
+    ).rejects.toThrow(
+      '要約の ToDo が変更されました。一覧を再読み込みしてください。',
+    );
+    await setMeetingTodoChecked(store, id, 3, '資料をまとめる', true);
+
+    expect(await readFile(join(meetingDir, 'summary.md'), 'utf8')).toContain(
+      '- [x] 資料をまとめる',
+    );
+  });
+
   it('rejects a text or line mismatch without writing the summary', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000036';

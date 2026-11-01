@@ -82,7 +82,7 @@
 - `src/main/todos.ts` を追加する。
   - `listMeetingTodos(store: MeetingStore): Promise<MeetingTodo[]>` は会議一覧を順に読み、`summary.md` の本文から ToDo を集める。
   - `setMeetingTodoChecked(store: MeetingStore, meetingId: string, lineNumber: number, expectedText: string, checked: boolean): Promise<void>` は `summary.md` を読み直し、`setTodoChecked` が成功したときだけ `writePrivateText` で保存する。失敗時は再読み込みを促すエラーを返す。
-  - `setMeetingTodoChecked` は会議 ID ごとの write queue を持ち、read-modify-write 全体を直列化する。既存の `PrivateKeyStore.enqueue` と同じ形で、前の操作の成否に関係なく次の操作を実行し、queue の tail が現在の tail のときだけ Map から削除する。
+  - `setMeetingTodoChecked` は会議 ID ごとの write queue を持ち、read-modify-write 全体を直列化する。`Map<string, Promise<void>>` に会議 ID ごとの tail を持ち、前段の成否に関係なく次の操作を実行する。tail が現在の tail のときだけ Map から削除する。
 - `src/main/index.ts` に IPC を追加する。
   - `meetings:list-todos` は `listMeetingTodos` を呼ぶ。
   - `meetings:set-todo-checked` は処理中なら拒否し、保存後に `refreshMeetingIndex` と `meetings:updated` の broadcast を行う。

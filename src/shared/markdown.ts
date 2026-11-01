@@ -433,7 +433,7 @@ function closesCodeFence(line: string, fence: CodeFence): boolean {
   return (
     match !== null &&
     match[1][0] === fence.marker &&
-    match[1].length === fence.length
+    match[1].length >= fence.length
   );
 }
 
