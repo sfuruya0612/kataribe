@@ -444,6 +444,45 @@ describe('MeetingStore', () => {
     );
   });
 
+  it('req_diar_001_recovers_speaker_names_when_meta_is_stale', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000029';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'transcribed',
+      speakers: ['話者A', '話者B'],
+    });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '佐藤', text: '二つ目です。' },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+    expect(detail?.speakers).toEqual(['田中', '佐藤']);
+
+    const updated = await store.renameSpeakers(id, ['鈴木', '高橋']);
+
+    expect(updated.speakers).toEqual(['鈴木', '高橋']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:01] 鈴木: 一つ目です。',
+    );
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 高橋: 二つ目です。',
+    );
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.speakers).toEqual(['鈴木', '高橋']);
+  });
+
   it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000023';

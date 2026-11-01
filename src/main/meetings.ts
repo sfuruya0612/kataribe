@@ -11,6 +11,7 @@ import {
 import { sanitizeMeetingTitle } from '../shared/title';
 import {
   extractTranscriptSpeakers,
+  recoverTranscriptSpeakers,
   renameTranscriptSpeakers,
   validateSpeakerNames,
 } from '../shared/speakers';
@@ -299,10 +300,16 @@ export class MeetingStore {
     const storedSpeakers = Array.isArray(meta?.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
-    const extractedSpeakers = transcript
-      ? extractTranscriptSpeakers(transcript.body, storedSpeakers)
-      : [];
-    const speakers = transcript === null ? storedSpeakers : extractedSpeakers;
+    let speakers: string[];
+    if (transcript === null) {
+      speakers = storedSpeakers;
+    } else {
+      const extracted = extractTranscriptSpeakers(transcript.body, storedSpeakers);
+      speakers =
+        extracted.length > 0
+          ? extracted
+          : recoverTranscriptSpeakers(transcript.body, storedSpeakers.length);
+    }
     return {
       meeting,
       recordingError,
@@ -666,7 +673,11 @@ export class MeetingStore {
     const stored = Array.isArray(meta.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
-    const currentNames = extractTranscriptSpeakers(transcript.body, stored);
+    const known = extractTranscriptSpeakers(transcript.body, stored);
+    const currentNames =
+      known.length > 0
+        ? known
+        : recoverTranscriptSpeakers(transcript.body, stored.length);
     if (currentNames.length !== names.length) {
       throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
     }

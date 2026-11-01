@@ -164,9 +164,10 @@ ONNX Runtime の dylib を同梱し、2 つのモデルは初回利用時に `Ap
 - 2〜10 人の自動推定と人数指定、10 人を超えた場合の再実行、`話者A` から `話者J` のラベル付けを実装した。
 - 会議詳細の「話者名を編集」から、文字起こしと、話者名を保持している翻訳の話者名を変更できる。
 - 話者分離に失敗しても文字起こしを保存し、会議詳細に理由を表示する。
-- `npm run typecheck`、`npm test` (317 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB だった。
+- `npm run typecheck`、`npm test` (322 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB だった。
 - 実モデルの URL と SHA-256 を取得して照合し、同梱バイナリを 4 話者のサンプル音声で実行して 4 話者を検出した。実 CLI の既定 (`compute_confidence=false`) は confidence なしのターン行を出す。パーサは confidence 付きの行も受け付ける。
 - レビューで、長い話者ターン出力の取得、話者ラベルの順序、10 人超の再実行失敗時の復帰、実行ファイル欠落時のモデル取得順、モデル状態の復元、confidence 付きターン行の解析、ラベルなし本文の誤抽出、再実行キャンセル時の復帰を修正した。
+- meta が古い場合でも、本文のラベル数が meta の話者数と一致するときは、本文から話者名を復旧する。
 
 計画との差分:
 

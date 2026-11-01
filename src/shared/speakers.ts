@@ -13,7 +13,7 @@ const SPEAKER_LABELS = [
 
 const MAX_SPEAKER_NAME_LENGTH = 40;
 const TRANSCRIPT_LINE = /^\[\d{2}:\d{2}:\d{2}\]\s?(.*)$/u;
-const AUTO_SPEAKER_NAME = /^話者[A-J]$/u;
+const AUTO_SPEAKER_NAME = /^話者(?:[A-J]|\d+)$/u;
 
 /**
  * 話者の並び順から表示ラベルを作る。
@@ -24,10 +24,7 @@ export function speakerLabel(index: number): string {
   return `話者${letter ?? String(normalized + 1)}`;
 }
 
-function speakerNameFromLine(
-  line: string,
-  knownNames: ReadonlySet<string>,
-): string | null {
+function parseSpeakerName(line: string): string | null {
   const content = line.match(TRANSCRIPT_LINE)?.[1] ?? null;
   if (content === null) {
     return null;
@@ -44,12 +41,28 @@ function speakerNameFromLine(
     name.includes('[') ||
     name.includes(']') ||
     name.includes('\n') ||
-    name.includes('\r') ||
-    (!AUTO_SPEAKER_NAME.test(name) && !knownNames.has(name))
+    name.includes('\r')
   ) {
     return null;
   }
   return name;
+}
+
+function collectSpeakerNames(
+  body: string,
+  accept: (name: string) => boolean,
+): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const line of body.split('\n')) {
+    const name = parseSpeakerName(line.replace(/\r$/u, ''));
+    if (name === null || !accept(name) || seen.has(name)) {
+      continue;
+    }
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 /**
@@ -62,17 +75,24 @@ export function extractTranscriptSpeakers(
   const known = new Set(
     knownNames.map((name) => name.trim()).filter((name) => name.length > 0),
   );
-  const names: string[] = [];
-  const seen = new Set<string>();
-  for (const line of body.split('\n')) {
-    const name = speakerNameFromLine(line.replace(/\r$/u, ''), known);
-    if (name === null || seen.has(name)) {
-      continue;
-    }
-    seen.add(name);
-    names.push(name);
+  return collectSpeakerNames(
+    body,
+    (name) => AUTO_SPEAKER_NAME.test(name) || known.has(name),
+  );
+}
+
+/**
+ * 既知の話者名が古いときに、本文のラベル数が期待値と一致する場合だけ復旧する。
+ */
+export function recoverTranscriptSpeakers(
+  body: string,
+  expectedCount: number,
+): string[] {
+  if (expectedCount < 2) {
+    return [];
   }
-  return names;
+  const names = collectSpeakerNames(body, () => true);
+  return names.length === expectedCount ? names : [];
 }
 
 /**

@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   extractTranscriptSpeakers,
+  recoverTranscriptSpeakers,
   renameTranscriptSpeakers,
   speakerLabel,
   validateSpeakerNames,
@@ -46,6 +47,12 @@ describe('extractTranscriptSpeakers', () => {
     expect(extractTranscriptSpeakers(body)).toEqual([]);
   });
 
+  it('recognizes numeric auto labels after J', () => {
+    const body = '[00:00:01] 話者11: はい。';
+
+    expect(extractTranscriptSpeakers(body)).toEqual(['話者11']);
+  });
+
   it('ignores an unlabeled sentence with a colon', () => {
     const body = [
       '[00:00:01] We will start with the agenda: budget, hiring.',
@@ -59,6 +66,26 @@ describe('extractTranscriptSpeakers', () => {
     const body = `[00:00:01] ${'あ'.repeat(41)}: 長すぎるラベルです。`;
 
     expect(extractTranscriptSpeakers(body)).toEqual([]);
+  });
+});
+
+describe('recoverTranscriptSpeakers', () => {
+  it('recovers renamed labels when the count matches', () => {
+    const body = [
+      '[00:00:01] 田中: 一つ目です。',
+      '[00:00:02] 佐藤: 二つ目です。',
+    ].join('\n');
+
+    expect(recoverTranscriptSpeakers(body, 2)).toEqual(['田中', '佐藤']);
+    expect(recoverTranscriptSpeakers(body, 1)).toEqual([]);
+    expect(recoverTranscriptSpeakers(body, 3)).toEqual([]);
+  });
+
+  it('does not recover an unlabeled sentence with a colon', () => {
+    const body =
+      '[00:00:01] We will start with the agenda: budget, hiring.';
+
+    expect(recoverTranscriptSpeakers(body, 2)).toEqual([]);
   });
 });
 

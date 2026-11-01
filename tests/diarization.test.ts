@@ -296,6 +296,24 @@ describe('DiarizationService', () => {
     expect(await readFile(argsFile, 'utf8')).toContain('--clustering.num-clusters=3');
   });
 
+  it('labels segments from confidence-suffixed turn lines', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    process.env.KATARIBE_DIARIZATION_MODE = 'confidence';
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+
+    const result = await service.diarize(
+      wavPath,
+      [segment(0, 1, 'one'), segment(1, 2, 'two')],
+      { numSpeakers: 'auto' },
+    );
+
+    expect(result?.map((item) => item.speaker)).toEqual(['話者A', '話者B']);
+  });
+
   it('reruns with ten clusters when automatic detection finds more than ten', async () => {
     const root = await createRoot();
     const wavPath = await createWav(root);
