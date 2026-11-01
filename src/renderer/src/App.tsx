@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
+import { formatSaveLocationSyncWarning } from '../../shared/i18n';
 import type {
   AppInfo,
   AppSettings,
@@ -40,7 +41,7 @@ export default function App({
 }: {
   initialUiLanguage?: UiLanguage;
 }) {
-  const { t, setLocale } = useI18n();
+  const { locale, t, setLocale } = useI18n();
   const recorder = useRecorder();
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<AppSettings>(() => ({
@@ -95,12 +96,7 @@ export default function App({
           setInfo(value);
           const service = cloudSyncService(value.saveRoot);
           if (service) {
-            setToast(
-              t(
-                '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
-                { service },
-              ),
-            );
+            setToast(formatSaveLocationSyncWarning(service, locale));
           }
         }
       })

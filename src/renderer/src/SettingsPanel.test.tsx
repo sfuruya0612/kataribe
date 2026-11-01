@@ -65,12 +65,6 @@ describe('req_ui_001_settings_panel_language', () => {
     expect(html).toContain('>General</button>');
     expect(html).not.toContain('>UI の言語</p>');
     expect(html).toMatch(/aria-pressed="true"[^>]*>English<\/button>/);
-  });
-
-  it('req_ui_001_shows_the_stored_language_as_selected', () => {
-    const html = renderSettings('en', { uiLanguage: 'en' });
-
-    expect(html).toMatch(/aria-pressed="true"[^>]*>English<\/button>/);
     expect(html).toMatch(/aria-pressed="false"[^>]*>Japanese<\/button>/);
   });
 });

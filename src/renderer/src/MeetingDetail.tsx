@@ -263,6 +263,8 @@ export function MeetingDetail({
     ...(sourceLanguage.startsWith('ja') ? [] : (['ja'] as SummaryLanguage[])),
     ...(sourceLanguage.startsWith('en') ? [] : (['en'] as SummaryLanguage[])),
   ];
+  const defaultSummaryLanguageLabel =
+    defaultSummaryLanguage === 'ja' ? t('日本語') : t('English');
 
   const copyCurrent = async () => {
     const text =
@@ -342,10 +344,16 @@ export function MeetingDetail({
       const language =
         value === 'ja' || value === 'en' ? value : null;
       await window.kataribe.setMeetingSummaryLanguage(meeting.id, language);
+      const languageLabel =
+        language === null
+          ? null
+          : language === 'ja'
+            ? t('日本語')
+            : t('English');
       setNotice(
-        language
+        languageLabel !== null
           ? t('この会議の要約言語を{language}に変更しました。', {
-              language: language === 'ja' ? t('日本語') : t('English'),
+              language: languageLabel,
             })
           : t('要約言語をアプリの既定に戻しました。'),
       );
@@ -1053,8 +1061,7 @@ export function MeetingDetail({
             >
               <option value="">
                 {t('既定（{language}）', {
-                  language:
-                    defaultSummaryLanguage === 'ja' ? t('日本語') : t('English'),
+                  language: defaultSummaryLanguageLabel,
                 })}
               </option>
               <option value="ja">{t('日本語')}</option>

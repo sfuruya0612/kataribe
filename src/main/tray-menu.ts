@@ -1,5 +1,5 @@
 import type { MenuItemConstructorOptions } from 'electron';
-import { INPUT_SOURCE_MESSAGE_KEYS } from '../shared/i18n';
+import { INPUT_SOURCES, INPUT_SOURCE_MESSAGE_KEYS } from '../shared/i18n';
 import type {
   InputSource,
   RecordingAppState,
@@ -81,7 +81,7 @@ export function buildTrayMenuTemplate(
       label: t('入力ソース: {source}', {
         source: inputSourceLabel(state.inputSource),
       }),
-      submenu: (['microphone', 'system', 'both'] as InputSource[]).map((source) => ({
+      submenu: INPUT_SOURCES.map((source) => ({
         label: inputSourceLabel(source),
         type: 'radio',
         checked: state.inputSource === source,

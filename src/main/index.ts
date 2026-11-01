@@ -22,6 +22,7 @@ import {
 } from 'electron';
 import type { MenuItemConstructorOptions, MessageBoxOptions, OpenDialogOptions } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
+import { formatSelectedFolderSyncWarning } from '../shared/i18n';
 import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
@@ -670,10 +671,7 @@ function registerIpc(
     await access(selected, fsConstants.W_OK);
     const syncService = cloudSyncService(selected);
     const syncWarning = syncService
-      ? `${t(
-          '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
-          { service: syncService },
-        )}\n\n`
+      ? `${formatSelectedFolderSyncWarning(syncService, getUiLanguage())}\n\n`
       : '';
     const confirmation = await showMessageDialog({
       type: 'warning',

@@ -11,6 +11,8 @@ import { EN_MESSAGES } from '../src/shared/i18n';
 
 const SOURCE_ROOT = fileURLToPath(new URL('../src', import.meta.url));
 
+// これらは画面ではなく、保存データ、Markdown、LLM プロンプトの文言を持つ。
+// UI の固定文言はコンポーネントと main のメッセージ層で検査する。
 const SKIPPED_FILES = new Set([
   'shared/i18n.ts',
   'shared/markdown.ts',
@@ -103,7 +105,10 @@ function literalValues(node: ts.Node): string[] {
     return [node.text];
   }
   if (ts.isTemplateExpression(node)) {
-    return [node.head.text];
+    return [
+      node.head.text,
+      ...node.templateSpans.map((span) => span.literal.text),
+    ];
   }
   if (ts.isJsxText(node)) {
     return [node.text];
@@ -111,22 +116,62 @@ function literalValues(node: ts.Node): string[] {
   return [];
 }
 
-function violationsInFile(path: string): Violation[] {
-  const relativePath = relative(SOURCE_ROOT, path).replaceAll('\\', '/');
-  if (SKIPPED_FILES.has(relativePath)) {
-    return [];
+/**
+ * 翻訳呼び出しの中に別の翻訳呼び出しがあると、内側の訳文が外側の文へ
+ * 埋め込まれて日本語と英語の両方が壊れるため、入れ子を検出する。
+ */
+function nestedTranslationCall(
+  outer: ts.CallExpression,
+): ts.CallExpression | null {
+  let found: ts.CallExpression | null = null;
+  const visit = (node: ts.Node): void => {
+    if (found !== null) {
+      return;
+    }
+    if (
+      node !== outer &&
+      ts.isCallExpression(node) &&
+      isTranslationCall(node.expression)
+    ) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  for (const argument of outer.arguments) {
+    visit(argument);
   }
-  const text = readFileSync(path, 'utf8');
+  return found;
+}
+
+function violationsInSource(
+  relativePath: string,
+  text: string,
+): Violation[] {
   const sourceFile = ts.createSourceFile(
-    path,
+    relativePath,
     text,
     ts.ScriptTarget.Latest,
     true,
-    path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    relativePath.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
   );
   const violations: Violation[] = [];
 
   const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node) && isTranslationCall(node.expression)) {
+      const nested = nestedTranslationCall(node);
+      if (nested !== null) {
+        const position = sourceFile.getLineAndCharacterOfPosition(
+          nested.getStart(sourceFile),
+        );
+        violations.push({
+          file: relativePath,
+          line: position.line + 1,
+          text: 'nested translation call',
+        });
+      }
+    }
+
     if (
       (ts.isStringLiteral(node) ||
         ts.isNoSubstitutionTemplateLiteral(node) ||
@@ -161,10 +206,43 @@ function violationsInFile(path: string): Violation[] {
   return violations;
 }
 
+function violationsInFile(path: string): Violation[] {
+  const relativePath = relative(SOURCE_ROOT, path).replaceAll('\\', '/');
+  if (SKIPPED_FILES.has(relativePath)) {
+    return [];
+  }
+  return violationsInSource(relativePath, readFileSync(path, 'utf8'));
+}
+
 describe('req_ui_001_ui_literals_use_the_dictionary', () => {
   it('finds no Japanese UI literal outside the dictionary', () => {
     const violations = sourceFiles(SOURCE_ROOT).flatMap(violationsInFile);
 
     expect(violations).toEqual([]);
+  });
+
+  it('reports a nested translation call and a Japanese template tail', () => {
+    const source = [
+      "const nested = t('outer', { value: t('inner') });",
+      'const tail = `prefix ${value} 日本語`;',
+      'const jsx = <span>日本語</span>;',
+    ].join('\n');
+
+    const violations = violationsInSource('renderer/src/bad.tsx', source);
+
+    expect(violations.map((violation) => violation.text).sort()).toEqual(
+      ['nested translation call', '日本語', '日本語'].sort(),
+    );
+  });
+
+  it('accepts translation calls, label keys, and non-Japanese templates', () => {
+    const source = [
+      "const a = t('日本語');",
+      "const b = { label: '一般' };",
+      'const c = `prefix ${value} suffix`;',
+      "const d = tc(1, '1 件', '{count} 件');",
+    ].join('\n');
+
+    expect(violationsInSource('renderer/src/good.tsx', source)).toEqual([]);
   });
 });

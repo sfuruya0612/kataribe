@@ -4,7 +4,11 @@ import {
   LLM_PROVIDER_PRESETS,
   validateEndpointUrl,
 } from '../../shared/llm';
-import { INPUT_SOURCE_MESSAGE_KEYS, type MessageKey } from '../../shared/i18n';
+import {
+  INPUT_SOURCES,
+  INPUT_SOURCE_MESSAGE_KEYS,
+  type MessageKey,
+} from '../../shared/i18n';
 import type {
   AppSettings,
   InputSource,
@@ -51,9 +55,11 @@ const tabs: Array<{ value: SettingsTab; label: MessageKey; color: string }> = [
   { value: 'summary', label: '要約', color: '#34C759' },
 ];
 
-const sourceOptions: Array<{ value: InputSource; label: MessageKey }> = (
-  ['microphone', 'system', 'both'] as const
-).map((value) => ({ value, label: INPUT_SOURCE_MESSAGE_KEYS[value] }));
+const sourceOptions: Array<{ value: InputSource; label: MessageKey }> =
+  INPUT_SOURCES.map((value) => ({
+    value,
+    label: INPUT_SOURCE_MESSAGE_KEYS[value],
+  }));
 
 const whisperModels: Array<{ value: WhisperModel; label: string; size: string }> = [
   { value: 'large-v3-turbo', label: 'large-v3-turbo', size: '1.6 GB' },

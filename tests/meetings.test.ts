@@ -194,11 +194,33 @@ describe('MeetingStore', () => {
         ],
       }),
     );
+    await writeFile(
+      join(meetingDir, 'transcript.en.md'),
+      formatTranslationMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        sourceLanguage: 'ja',
+        targetLanguage: 'en',
+        provider: 'claude',
+        generatedAt: '2026-10-29T05:01:00.000Z',
+        segments: [{ startSeconds: 1, text: 'Keep this translation' }],
+      }),
+    );
+    await writeFile(
+      join(meetingDir, 'summary.md'),
+      stringifyFrontMatter({ title: '週次定例' }, '## 要約\n\nKeep this summary'),
+    );
     setUiLanguage('en');
 
     const detail = await store.detail(id);
     expect(detail?.meeting.title).toBe('週次定例');
+    expect(detail?.meeting.meetingDir).toBe(meetingDir);
     expect(detail?.transcript?.body).toContain('話者A: こんにちは');
+    expect(detail?.translations.en?.body).toContain('Keep this translation');
+    expect(detail?.summary?.body).toContain('Keep this summary');
     expect(detail?.speakers).toEqual(['話者A']);
   });
 

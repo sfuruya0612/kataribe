@@ -5,6 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   EN_MESSAGES,
+  formatSaveLocationSyncWarning,
+  formatSelectedFolderSyncWarning,
   interpolate,
   isUiLanguage,
   placeholders,
@@ -39,15 +41,18 @@ describe('req_ui_001_translate', () => {
     }
   });
 
-  it('req_ui_001_composes_the_sync_warning_with_the_service_name', () => {
-    const key =
-      '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。';
-
-    expect(translate('ja', key, { service: 'iCloud Drive' })).toBe(
+  it('req_ui_001_builds_sync_warnings_without_nested_translations', () => {
+    expect(formatSaveLocationSyncWarning('iCloud Drive', 'ja')).toBe(
       '保存先が iCloud Drive の同期対象です。音声と文字起こしが端末外に同期されます。',
     );
-    expect(translate('en', key, { service: 'iCloud Drive' })).toBe(
+    expect(formatSaveLocationSyncWarning('iCloud Drive', 'en')).toBe(
       'The save location is synced by iCloud Drive. Audio and transcripts are synced off this device.',
+    );
+    expect(formatSelectedFolderSyncWarning('iCloud Drive', 'ja')).toBe(
+      '選択したフォルダは iCloud Drive の同期対象です。音声と文字起こしが端末外に同期されます。',
+    );
+    expect(formatSelectedFolderSyncWarning('iCloud Drive', 'en')).toBe(
+      'The selected folder is synced by iCloud Drive. Audio and transcripts are synced off this device.',
     );
   });
 

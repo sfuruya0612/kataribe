@@ -799,6 +799,12 @@ export const EN_MESSAGES = {
 
 export type MessageKey = keyof typeof EN_MESSAGES;
 
+export const INPUT_SOURCES: readonly InputSource[] = [
+  'microphone',
+  'system',
+  'both',
+];
+
 export const INPUT_SOURCE_MESSAGE_KEYS: Record<InputSource, MessageKey> = {
   microphone: 'マイク',
   system: 'システム音声',
@@ -836,6 +842,34 @@ export function translate(
 ): string {
   const template = locale === 'en' ? EN_MESSAGES[key] : key;
   return interpolate(template, params);
+}
+
+/**
+ * 保存先が同期サービスの対象であることを伝える警告を組み立てる。
+ */
+export function formatSaveLocationSyncWarning(
+  service: string,
+  locale: UiLanguage,
+): string {
+  return translate(
+    locale,
+    '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
+    { service },
+  );
+}
+
+/**
+ * 選択したフォルダが同期サービスの対象であることを伝える警告を組み立てる。
+ */
+export function formatSelectedFolderSyncWarning(
+  service: string,
+  locale: UiLanguage,
+): string {
+  return translate(
+    locale,
+    '選択したフォルダは {service} の同期対象です。音声と文字起こしが端末外に同期されます。',
+    { service },
+  );
 }
 
 /**

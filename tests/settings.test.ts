@@ -180,6 +180,14 @@ describe('SettingsStore', () => {
     expect(DEFAULT_APP_SETTINGS.uiLanguage).toBe('ja');
     expect(normalizeAppSettings({ uiLanguage: 'en' }).uiLanguage).toBe('en');
     expect(normalizeAppSettings({ uiLanguage: 'en' }).summaryLanguage).toBe('ja');
+    expect(
+      normalizeAppSettings({ uiLanguage: 'en', summaryLanguage: 'en' })
+        .summaryLanguage,
+    ).toBe('en');
+    expect(
+      normalizeAppSettings({ uiLanguage: 'en', summaryLanguage: 'ja' })
+        .summaryLanguage,
+    ).toBe('ja');
     expect(normalizeAppSettings({ uiLanguage: 'ja' }).uiLanguage).toBe('ja');
     expect(normalizeAppSettings({ uiLanguage: 'fr' as never }).uiLanguage).toBe(
       'ja',

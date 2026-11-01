@@ -1111,10 +1111,9 @@ export function useRecorder(): RecorderController {
     try {
       const result = await window.kataribe.requestStartRecording();
       if (!result.accepted) {
+        const reason = result.reason ?? t('状態を確認してください。');
         setUiError(
-          t('録音を開始できませんでした: {error}', {
-            error: result.reason ?? t('状態を確認してください。'),
-          }),
+          t('録音を開始できませんでした: {error}', { error: reason }),
         );
       }
     } catch (reason: unknown) {
@@ -1129,10 +1128,9 @@ export function useRecorder(): RecorderController {
     try {
       const result = await window.kataribe.requestStopRecording();
       if (!result.accepted) {
+        const reason = result.reason ?? t('状態を確認してください。');
         setUiError(
-          t('録音を停止できませんでした: {error}', {
-            error: result.reason ?? t('状態を確認してください。'),
-          }),
+          t('録音を停止できませんでした: {error}', { error: reason }),
         );
       }
     } catch (reason: unknown) {

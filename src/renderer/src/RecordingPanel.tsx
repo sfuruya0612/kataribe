@@ -5,6 +5,7 @@ import type {
   RecordingSession,
 } from '../../shared/types';
 import { useI18n, type I18nValue } from './i18n';
+import { INPUT_SOURCES } from '../../shared/i18n';
 import {
   deviceLabel,
   formatDuration,
@@ -37,7 +38,7 @@ type RecordingPanelProps = {
   onSetInputSource: (source: InputSource) => void;
 };
 
-const sourceOptions: InputSource[] = ['microphone', 'system', 'both'];
+const sourceOptions = INPUT_SOURCES;
 
 function phaseTitle(status: RecordingAppStatus, t: I18nValue['t']): string {
   switch (status) {

@@ -55,6 +55,7 @@
 - [x] `src/renderer/src/recording-utils.test.ts` が日本語と英語の入力ソース、状態、日付の表記を検証する。
 - [x] `src/renderer/src/SettingsPanel.test.tsx` が設定画面の言語選択を日本語と英語で描画して検証する。
 - [x] `src/renderer/src/SearchResults.test.tsx` が検索結果の種別名と件数を日本語と英語で描画して検証する。
+- [x] `src/renderer/src/App.test.tsx` が起動時の初期画面を日本語と英語で描画して検証する。
 - [x] `npm run typecheck`、`npm test`、`npm run build` が通る。
 - [x] PRD、ADR、CHANGES.md、README を同じ変更で更新する。
 
@@ -72,7 +73,7 @@
 - `src/main/tray-menu.ts`、`tray.ts`、`meetings.ts`、`processing.ts`、`llm-profiles.ts`、`multi-output.ts`、`media.ts`、`recording.ts`、`meeting-meta.ts`、`summary.ts`、`translation.ts`、`transcription.ts` の文言を `t` に置き換える。
 - `src/shared/llm.ts` の `validateEndpointUrl` と `src/shared/speakers.ts` の `validateSpeakerNames` に言語の引数を追加する。
 - `MeetingSearchHit` から `kindLabel` を削除し、`src/main/search-index.ts` と `src/main/meetings.ts` の生成箇所を削除する。表示名は `src/renderer/src/SearchResults.tsx` で選ぶ。
-- `tests/i18n.test.ts`、`tests/i18n-usage.test.ts`、`tests/settings.test.ts`、`src/main/tray-menu.test.ts`、`src/renderer/src/recording-utils.test.ts`、`src/renderer/src/SettingsPanel.test.tsx`、`src/renderer/src/SearchResults.test.tsx` を追加または更新する。
+- `tests/i18n.test.ts`、`tests/i18n-usage.test.ts`、`tests/settings.test.ts`、`src/main/tray-menu.test.ts`、`src/renderer/src/recording-utils.test.ts`、`src/renderer/src/SettingsPanel.test.tsx`、`src/renderer/src/SearchResults.test.tsx`、`src/renderer/src/App.test.tsx` を追加または更新する。
 - `docs/prd/kataribe.md`、`docs/adr/0022-ui-language-switching.md`、`CHANGES.md`、`README.md` を更新する。
 
 ## 実施結果
@@ -81,7 +82,7 @@
 画面、トレイ、アプリケーションメニュー、ダイアログ、進捗、新しく生成するエラーメッセージを辞書経由にした。
 保存済みの会議データと LLM のプロンプトは翻訳の対象外とした。
 `MeetingSearchHit.kindLabel` を削除し、検索種別の表示名を Renderer で選ぶようにした。
-React の描画テストは、`react-dom/server` で設定画面と検索結果を描画して言語切替を確認する形にした。ブラウザの DOM を使うテスト基盤は追加していない。
-受入基準 3 の操作による即時反映は、DOM を使うテスト基盤が無いため自動テストの対象外とし、描画テスト、トレイメニューの言語切替テスト、リリースチェックリストの手動確認で補う。
+React の描画テストは、`react-dom/server` で起動時の初期画面、設定画面、検索結果を描画して言語切替を確認する形にした。ブラウザの DOM を使うテスト基盤は追加していない。
+「言語の変更は再起動なしで画面、メニューバー、アプリケーションメニュー、確認ダイアログ、エラーメッセージに反映される」の操作による即時反映は、DOM を使うテスト基盤が無いため自動テストの対象外とし、描画テスト、トレイメニューの言語切替テスト、リリースチェックリストの手動確認で補う。
 起動時の初回描画は preload の `getUiLanguage` で現在の言語を取得してから行う。
 `SettingsPanel.tsx` と `MeetingDetail.tsx` は 1000 行を超えている。今回の変更は文言の置き換えが中心のため分割せず、構造の分割は issue 0018 として起票した。
