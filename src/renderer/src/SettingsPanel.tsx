@@ -53,8 +53,8 @@ const tabs: Array<{ value: SettingsTab; label: MessageKey; color: string }> = [
 
 const sourceOptions: Array<{ value: InputSource; label: MessageKey }> = [
   { value: 'microphone', label: 'マイク' },
-  { value: 'system', label: 'システム' },
-  { value: 'both', label: '両方' },
+  { value: 'system', label: 'システム音声' },
+  { value: 'both', label: 'マイク + システム音声' },
 ];
 
 const whisperModels: Array<{ value: WhisperModel; label: string; size: string }> = [

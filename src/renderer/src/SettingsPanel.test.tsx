@@ -44,19 +44,20 @@ describe('req_ui_001_settings_panel_language', () => {
   it('renders the language selector in Japanese by default', () => {
     const html = renderSettings('ja');
 
-    expect(html).toContain('UI の言語');
-    expect(html).toContain('日本語');
-    expect(html).toContain('一般');
-    expect(html).not.toContain('>Language<');
+    expect(html).toContain('>UI の言語</p>');
+    expect(html).toContain('>日本語</button>');
+    expect(html).toContain('>English</button>');
+    expect(html).toContain('>一般</button>');
+    expect(html).not.toContain('>Language</p>');
   });
 
   it('renders the language selector in English', () => {
     const html = renderSettings('en');
 
-    expect(html).toContain('Language');
-    expect(html).toContain('Japanese');
-    expect(html).toContain('English');
-    expect(html).toContain('General');
-    expect(html).not.toContain('UI の言語');
+    expect(html).toContain('>Language</p>');
+    expect(html).toContain('>Japanese</button>');
+    expect(html).toContain('>English</button>');
+    expect(html).toContain('>General</button>');
+    expect(html).not.toContain('>UI の言語</p>');
   });
 });

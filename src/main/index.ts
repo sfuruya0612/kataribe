@@ -301,8 +301,33 @@ function registerAppMenu(): void {
       label: t('ファイル'),
       submenu: [{ role: 'close', label: t('ウインドウを閉じる') }],
     },
-    { role: 'editMenu', label: t('編集') },
-    { role: 'windowMenu', label: t('ウインドウ') },
+    {
+      label: t('編集'),
+      submenu: [
+        { role: 'undo', label: t('元に戻す') },
+        { role: 'redo', label: t('やり直す') },
+        { type: 'separator' },
+        { role: 'cut', label: t('カット') },
+        { role: 'copy', label: t('コピー') },
+        { role: 'paste', label: t('ペースト') },
+        {
+          role: 'pasteAndMatchStyle',
+          label: t('ペーストとスタイルを合わせる'),
+        },
+        { role: 'delete', label: t('削除') },
+        { type: 'separator' },
+        { role: 'selectAll', label: t('すべてを選択') },
+      ],
+    },
+    {
+      label: t('ウインドウ'),
+      submenu: [
+        { role: 'minimize', label: t('しまう') },
+        { role: 'zoom', label: t('拡大/縮小') },
+        { type: 'separator' },
+        { role: 'front', label: t('すべてを手前に移動') },
+      ],
+    },
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }

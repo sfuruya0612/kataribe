@@ -110,6 +110,10 @@
 
 ### misc
 
+- [ADD] ADR-0022 を追加し、UI の表示言語の切り替えを記録する
+  - @shoichi.furuya
+- [ADD] issue 0017 の解決方法を記録し、closed に移動する
+  - @shoichi.furuya
 - [ADD] ADR-0019 を追加し、ADR-0017 の配布と DMG の決定を改訂する
   - @shoichi.furuya
 - [ADD] リリースチェックリストと録音回帰テストに録音エラー表示の確認手順を追加する
