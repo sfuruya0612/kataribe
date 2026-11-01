@@ -48,6 +48,10 @@ const HEADING_ALIASES: Array<{
   },
 ];
 
+const SECTION_HEADING_PATTERN = /^##\s+(.+?)\s*$/u;
+const FENCE_OPEN_PATTERN = /^ {0,3}(`{3,}|~{3,})/u;
+const FENCE_CLOSE_PATTERN = /^ {0,3}(`{3,}|~{3,})\s*$/u;
+
 function unquote(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
@@ -307,7 +311,7 @@ export function normalizeSummaryMarkdown(
   let sawHeading = false;
 
   for (const line of text.split('\n')) {
-    const heading = line.match(/^##\s+(.+?)\s*$/u);
+    const heading = line.match(SECTION_HEADING_PATTERN);
     if (heading) {
       if (currentExtra) {
         extraBlocks.push(currentExtra);
@@ -388,6 +392,155 @@ export function formatSummaryMarkdown(input: {
     },
     normalized.body,
   );
+}
+
+/** 要約の ToDo セクションにあるチェックボックス項目。 */
+export type TodoItem = {
+  lineNumber: number;
+  checked: boolean;
+  text: string;
+};
+
+/** チェックボックスを書き換えられなかった理由。 */
+export type SetTodoCheckedFailure =
+  | 'line-out-of-range'
+  | 'not-checkbox'
+  | 'text-mismatch'
+  | 'not-todo';
+
+/** チェックボックスの書き換え結果。 */
+export type SetTodoCheckedResult =
+  | { ok: true; markdown: string }
+  | { ok: false; reason: SetTodoCheckedFailure };
+
+const TODO_CHECKBOX_PATTERN = /^(\s*[-*]\s+)\[([ xX])\](.*)$/u;
+
+type CodeFence = {
+  marker: string;
+  length: number;
+};
+
+function openingCodeFence(line: string): CodeFence | null {
+  const match = line.match(FENCE_OPEN_PATTERN);
+  if (!match) {
+    return null;
+  }
+  return { marker: match[1][0], length: match[1].length };
+}
+
+function closesCodeFence(line: string, fence: CodeFence): boolean {
+  const match = line.match(FENCE_CLOSE_PATTERN);
+  return (
+    match !== null &&
+    match[1][0] === fence.marker &&
+    match[1].length >= fence.length
+  );
+}
+
+function isTodoHeading(title: string): boolean {
+  const todo = HEADING_ALIASES.find((entry) => entry.key === 'todo');
+  return todo !== undefined && todo.pattern.test(title);
+}
+
+function parseTodoLine(line: string, lineNumber: number): TodoItem | null {
+  const match = line.match(TODO_CHECKBOX_PATTERN);
+  if (!match) {
+    return null;
+  }
+  const text = match[3].trim();
+  if (text.length === 0) {
+    return null;
+  }
+  return { lineNumber, checked: match[2] !== ' ', text };
+}
+
+/**
+ * 要約本文の ToDo セクションにあるチェックボックス行を返す。
+ *
+ * 行番号は front matter を除いた本文の先頭を 0 とする。
+ */
+export function parseTodoItems(body: string): TodoItem[] {
+  const items: TodoItem[] = [];
+  let inTodoSection = false;
+  let fence: CodeFence | null = null;
+  const lines = body.replaceAll('\r\n', '\n').split('\n');
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (fence) {
+      if (closesCodeFence(line, fence)) {
+        fence = null;
+      }
+      continue;
+    }
+    const opening = openingCodeFence(line);
+    if (opening) {
+      fence = opening;
+      continue;
+    }
+    const heading = line.match(SECTION_HEADING_PATTERN);
+    if (heading) {
+      inTodoSection = isTodoHeading(heading[1].trim());
+      continue;
+    }
+    if (!inTodoSection) {
+      continue;
+    }
+    const item = parseTodoLine(line, index);
+    if (item) {
+      items.push(item);
+    }
+  }
+  return items;
+}
+
+/**
+ * 要約 Markdown の指定行が一覧の項目と一致するときだけ、チェックボックスを書き換える。
+ *
+ * front matter と内容はそのまま残し、改行コードは LF に正規化する。行番号、行の形式、
+ * 本文が ToDo セクションの項目と一致しないときは書き換えず、理由を返す。
+ */
+export function setTodoChecked(
+  markdown: string,
+  lineNumber: number,
+  expectedText: string,
+  checked: boolean,
+): SetTodoCheckedResult {
+  const normalized = markdown.replaceAll('\r\n', '\n');
+  const parsed = parseFrontMatter(markdown);
+  const frontMatterEnd = parsed.hasFrontMatter
+    ? normalized.indexOf('\n---\n', 4)
+    : -1;
+  const prefix =
+    frontMatterEnd === -1 ? '' : normalized.slice(0, frontMatterEnd + 5);
+  const body =
+    frontMatterEnd === -1 ? normalized : normalized.slice(frontMatterEnd + 5);
+  const lines = body.split('\n');
+  if (
+    !Number.isInteger(lineNumber) ||
+    lineNumber < 0 ||
+    lineNumber >= lines.length
+  ) {
+    return { ok: false, reason: 'line-out-of-range' };
+  }
+  const line = lines[lineNumber];
+  const match = line.match(TODO_CHECKBOX_PATTERN);
+  if (!match) {
+    return { ok: false, reason: 'not-checkbox' };
+  }
+  if (match[3].trim() !== expectedText) {
+    return { ok: false, reason: 'text-mismatch' };
+  }
+  const isTodoItem = parseTodoItems(body).some(
+    (item) => item.lineNumber === lineNumber && item.text === expectedText,
+  );
+  if (!isTodoItem) {
+    return { ok: false, reason: 'not-todo' };
+  }
+  const checkboxIndex = match[1].length + 1;
+  lines[lineNumber] = `${line.slice(0, checkboxIndex)}${
+    checked ? 'x' : ' '
+  }${line.slice(checkboxIndex + 1)}`;
+  return { ok: true, markdown: `${prefix}${lines.join('\n')}` };
 }
 
 export function detectSummaryLanguage(markdown: string): SummaryLanguage {

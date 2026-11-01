@@ -14,6 +14,7 @@ import type {
   MeetingDetail,
   MeetingSearchResult,
   MeetingSummary,
+  MeetingTodo,
   MeetingWaveform,
   MicrophonePermissionStatus,
   ModelDownloadProgress,
@@ -97,6 +98,13 @@ declare global {
       recoverRecording: (meetingId: string) => Promise<RecordingStopResult>;
       openRecordingFolder: () => Promise<void>;
       listMeetings: () => Promise<MeetingSummary[]>;
+      listMeetingTodos: () => Promise<MeetingTodo[]>;
+      setMeetingTodoChecked: (
+        meetingId: string,
+        lineNumber: number,
+        expectedText: string,
+        checked: boolean,
+      ) => Promise<void>;
       getMeetingDetail: (meetingId: string) => Promise<MeetingDetail | null>;
       updateMeetingTitle: (
         meetingId: string,

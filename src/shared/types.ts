@@ -34,6 +34,16 @@ export type MeetingSummary = {
   pinned: boolean;
 };
 
+/** 全会議の ToDo 一覧に表示する項目。 */
+export type MeetingTodo = {
+  meetingId: string;
+  meetingTitle: string;
+  startedAt: string;
+  lineNumber: number;
+  checked: boolean;
+  text: string;
+};
+
 export type MeetingWaveform = {
   peaks: number[];
   duration: number;
