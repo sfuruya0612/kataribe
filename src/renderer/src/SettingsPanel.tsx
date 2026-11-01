@@ -17,7 +17,8 @@ import type {
   WhisperModel,
   WhisperModelList,
 } from '../../shared/types';
-import { errorText, type InputDevice } from './recording-utils';
+import { DiarizationSettings } from './DiarizationSettings';
+import { errorText, formatBytes, type InputDevice } from './recording-utils';
 import type { PermissionState } from './use-recorder';
 
 type SettingsTab = 'general' | 'recording' | 'transcription' | 'summary';
@@ -64,17 +65,6 @@ const themeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: 'light', label: 'ライト' },
   { value: 'dark', label: 'ダーク' },
 ];
-
-function formatBytes(value: number | null): string {
-  if (value === null || !Number.isFinite(value) || value <= 0) {
-    return '-';
-  }
-  const gb = value / (1024 * 1024 * 1024);
-  if (gb >= 1) {
-    return `${gb.toFixed(2)} GB`;
-  }
-  return `${Math.round(value / (1024 * 1024))} MB`;
-}
 
 export function SettingsPanel({
   saveRoot,
@@ -248,6 +238,7 @@ export function SettingsPanel({
       unsubscribeProgress();
     };
   }, [refreshLlmProfiles, refreshModels, refreshMultiOutput]);
+
   useEffect(() => {
     setInitialPromptDraft(settings.whisperInitialPrompt);
     setSummaryPromptDraft(settings.summaryPromptTemplate);
@@ -761,29 +752,10 @@ export function SettingsPanel({
               </div>
             </section>
 
-            <section className="settings-section">
-              <p className="settings-label">話者分離</p>
-              <div className="setting-card">
-                <label className="setting-row">
-                  <span>
-                    <strong>簡易話者分離を使う</strong>
-                    <span className="muted">
-                      音声のピッチと周波数特性から話者 A / B を推定し、文字起こしの行頭に付けます。
-                      話者名は推定であり、会議の内容によっては誤ることがあります。
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={settings.speakerDiarization}
-                    onChange={(event) =>
-                      void onUpdateSettings({
-                        speakerDiarization: event.target.checked,
-                      })
-                    }
-                  />
-                </label>
-              </div>
-            </section>
+            <DiarizationSettings
+              settings={settings}
+              onUpdateSettings={onUpdateSettings}
+            />
 
             <section className="settings-section">
               <p className="settings-label">Multi-Output Device</p>

@@ -34,7 +34,8 @@ import type {
 } from '../shared/types';
 import { sanitizeMeetingTitle } from '../shared/title';
 import type { ApiKeyStore } from './api-keys';
-import { diarizeSegments } from './diarization';
+import type { DiarizationService } from './diarization';
+import { runDiarization } from './diarization-run';
 import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
@@ -42,6 +43,7 @@ import {
   readMeetingMeta,
   updateMeetingMeta,
   type MeetingMeta,
+  type MeetingMetaDiarization,
 } from './meeting-meta';
 import type { MeetingStore } from './meetings';
 import type { ModelManager } from './models';
@@ -58,6 +60,7 @@ export type ProcessingCoordinatorOptions = {
   apiKeyStore: ApiKeyStore;
   mediaEncoder: MediaEncoder;
   transcriptionService: TranscriptionService;
+  diarizationService: DiarizationService;
   llmClient: LlmClient;
   settings: () => AppSettings;
   now?: () => Date;
@@ -136,6 +139,11 @@ async function writePrivateText(path: string, text: string): Promise<void> {
   await rename(temporary, path);
 }
 
+function clearDiarization(meta: MeetingMeta): void {
+  delete meta.diarization;
+  delete meta.speakers;
+}
+
 function sourceLabel(meta: MeetingMeta): string {
   switch (meta.source.input) {
     case 'microphone':
@@ -195,6 +203,7 @@ export class ProcessingCoordinator {
   private readonly apiKeyStore: ApiKeyStore;
   private readonly mediaEncoder: MediaEncoder;
   private readonly transcriptionService: TranscriptionService;
+  private readonly diarizationService: DiarizationService;
   private readonly llmClient: LlmClient;
   private readonly settings: () => AppSettings;
   private readonly now: () => Date;
@@ -224,6 +233,7 @@ export class ProcessingCoordinator {
     this.apiKeyStore = options.apiKeyStore;
     this.mediaEncoder = options.mediaEncoder;
     this.transcriptionService = options.transcriptionService;
+    this.diarizationService = options.diarizationService;
     this.llmClient = options.llmClient;
     this.settings = options.settings;
     this.now = options.now ?? (() => new Date());
@@ -1147,6 +1157,7 @@ export class ProcessingCoordinator {
       await updateMeetingMeta(metaPath, (value) => {
         value.status = 'error';
         value.error = message;
+        clearDiarization(value);
         value.transcription = {
           ...(value.transcription ?? {}),
           state: 'failed',
@@ -1198,6 +1209,7 @@ export class ProcessingCoordinator {
       });
       await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
       await updateMeetingMeta(metaPath, (value) => {
+        clearDiarization(value);
         value.transcription = {
           ...(value.transcription ?? {}),
           state: partial ? 'partial' : 'running',
@@ -1275,6 +1287,7 @@ export class ProcessingCoordinator {
       await updateMeetingMeta(metaPath, (value) => {
         value.status = 'error';
         value.error = message;
+        clearDiarization(value);
         value.transcription = {
           ...(value.transcription ?? {}),
           state: 'failed',
@@ -1302,18 +1315,44 @@ export class ProcessingCoordinator {
         }
       }
       let finalSegments = outcome.segments;
-      if (this.settings().speakerDiarization) {
-        try {
-          const diarized = await diarizeSegments(transcriptionWav, outcome.segments);
-          if (diarized) {
-            finalSegments = diarized;
-          }
-        } catch (error) {
-          console.error(
-            `speaker diarization failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
+      let diarizationMeta: MeetingMetaDiarization | undefined;
+      const currentSettings = this.settings();
+      if (currentSettings.speakerDiarization) {
+        const diarization = await runDiarization({
+          service: this.diarizationService,
+          wavPath: transcriptionWav,
+          segments: outcome.segments,
+          numSpeakers: currentSettings.speakerCount,
+          signal: controller.signal,
+          onProgress: (progress) => {
+            const percent =
+              progress.progress === null
+                ? ''
+                : ` (${Math.round(progress.progress * 100)}%)`;
+            this.setState({
+              ...this.state,
+              progress: 1,
+              etaSeconds: null,
+              message:
+                progress.phase === 'models'
+                  ? `話者分離モデルを準備しています${percent}`
+                  : `話者を分離しています${percent}`,
+            });
+          },
+        });
+        finalSegments = diarization.segments;
+        diarizationMeta = diarization.meta;
       }
+      const speakerNames = [
+        ...new Set(
+          finalSegments
+            .map((segment) => segment.speaker)
+            .filter(
+              (speaker): speaker is string =>
+                typeof speaker === 'string' && speaker.length > 0,
+            ),
+        ),
+      ];
       const markdown = formatTranscriptMarkdown({
         title: meeting.title,
         startedAt: meta.started_at,
@@ -1336,6 +1375,16 @@ export class ProcessingCoordinator {
           resume_count: outcome.resumed ? 1 : 0,
           partial: false,
         };
+        if (diarizationMeta) {
+          value.diarization = diarizationMeta;
+        } else {
+          delete value.diarization;
+        }
+        if (speakerNames.length > 0) {
+          value.speakers = speakerNames;
+        } else {
+          delete value.speakers;
+        }
         delete value.error;
       });
       await rm(dirname(transcriptionWav), { recursive: true, force: true }).catch(
@@ -1367,6 +1416,7 @@ export class ProcessingCoordinator {
     await updateMeetingMeta(metaPath, (value) => {
       value.status = 'error';
       value.error = message;
+      clearDiarization(value);
       value.transcription = {
         ...(value.transcription ?? {}),
         state,

@@ -81,6 +81,8 @@ export type MeetingDetail = {
   transcript: TranscriptDocument | null;
   summary: SummaryDocument | null;
   translations: Partial<Record<SummaryLanguage, TranscriptTranslation>>;
+  speakers: string[];
+  diarizationError: string | null;
 };
 export type MeetingSearchKind =
   | 'title'
@@ -124,6 +126,32 @@ export type ProcessingState = {
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
 
+export type SpeakerCount = 'auto' | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+
+export type DiarizationModelState =
+  | 'missing'
+  | 'downloading'
+  | 'verifying'
+  | 'installed'
+  | 'error';
+
+export type DiarizationModelStatus = {
+  installed: boolean;
+  state: DiarizationModelState;
+  downloadedBytes: number;
+  totalBytes: number;
+  progress: number | null;
+  error: string | null;
+  modelsDir: string;
+};
+
+export type DiarizationModelProgress = {
+  state: 'downloading' | 'verifying';
+  downloadedBytes: number;
+  totalBytes: number;
+  progress: number;
+};
+
 export type LlmProvider =
   | 'claude'
   | 'chatgpt'
@@ -149,6 +177,7 @@ export type AppSettings = {
   theme: ThemeMode;
   whisperModel: WhisperModel;
   speakerDiarization: boolean;
+  speakerCount: SpeakerCount;
   whisperInitialPrompt: string;
   whisperSpeedRatios: Partial<Record<WhisperModel, number>>;
   mp3BitrateKbps: 64 | 128;

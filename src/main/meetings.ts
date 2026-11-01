@@ -9,6 +9,11 @@ import {
   type FrontMatterValue,
 } from '../shared/markdown';
 import { sanitizeMeetingTitle } from '../shared/title';
+import {
+  extractTranscriptSpeakers,
+  renameTranscriptSpeakers,
+  validateSpeakerNames,
+} from '../shared/speakers';
 import type {
   MeetingDetail,
   MeetingSearchHit,
@@ -276,10 +281,10 @@ export class MeetingStore {
       return null;
     }
     let recordingError: RecordingErrorInfo | null = null;
+    let meta: MeetingMeta | null = null;
     try {
-      recordingError = recordingErrorFromMeta(
-        await readMeetingMeta(join(meeting.meetingDir, 'meta.json')),
-      );
+      meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
+      recordingError = recordingErrorFromMeta(meta);
     } catch {
       // The meta file can disappear while the detail is being read.
     }
@@ -290,12 +295,32 @@ export class MeetingStore {
         translations[entry.language] = translation;
       }
     }
+    const transcript = await this.readTranscript(meeting);
+    const extractedSpeakers = transcript
+      ? extractTranscriptSpeakers(transcript.body)
+      : [];
+    const storedSpeakers = Array.isArray(meta?.speakers)
+      ? meta.speakers.filter((value): value is string => typeof value === 'string')
+      : [];
+    const speakers =
+      transcript === null
+        ? storedSpeakers
+        : storedSpeakers.length > 0 &&
+            extractedSpeakers.length === storedSpeakers.length &&
+            storedSpeakers.every((name) => extractedSpeakers.includes(name))
+          ? storedSpeakers
+          : extractedSpeakers;
     return {
       meeting,
       recordingError,
-      transcript: await this.readTranscript(meeting),
+      transcript,
       summary: await this.readSummary(meeting),
       translations,
+      speakers,
+      diarizationError:
+        meta?.diarization?.state === 'failed'
+          ? meta.diarization.error ?? '話者分離に失敗しました。'
+          : null,
     };
   }
 
@@ -627,6 +652,77 @@ export class MeetingStore {
     const updated = await this.find(meetingId);
     if (!updated) {
       throw new Error('会議の更新後に会議が見つかりません。');
+    }
+    return updated;
+  }
+
+  async renameSpeakers(
+    meetingId: string,
+    rawNames: readonly string[],
+  ): Promise<MeetingDetail> {
+    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      throw new Error('会議が見つかりません。');
+    }
+    const names = validateSpeakerNames(rawNames);
+    const transcript = await this.readTranscript(meeting);
+    if (!transcript) {
+      throw new Error('文字起こしがありません。');
+    }
+    const extracted = extractTranscriptSpeakers(transcript.body);
+    const meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
+    const stored = Array.isArray(meta.speakers)
+      ? meta.speakers.filter((value): value is string => typeof value === 'string')
+      : [];
+    const currentNames =
+      stored.length > 0 &&
+      extracted.length === stored.length &&
+      stored.every((name) => extracted.includes(name))
+        ? stored
+        : extracted;
+    if (currentNames.length !== names.length) {
+      throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
+    }
+    if (new Set(currentNames).size !== currentNames.length) {
+      throw new Error('文字起こしの話者名が重複しています。');
+    }
+    if (currentNames.every((name, index) => name === names[index])) {
+      const unchanged = await this.detail(meetingId);
+      if (!unchanged) {
+        throw new Error('会議が見つかりません。');
+      }
+      return unchanged;
+    }
+
+    const mapping = new Map(
+      currentNames.map((name, index) => [name, names[index]] as const),
+    );
+    const transcriptPath = join(meeting.meetingDir, 'transcript.md');
+    const renamedTranscript = renameTranscriptSpeakers(transcript.markdown, mapping);
+    if (renamedTranscript === transcript.markdown) {
+      throw new Error('文字起こしに話者名が見つかりません。');
+    }
+    for (const entry of TRANSLATION_FILES) {
+      const path = join(meeting.meetingDir, entry.file);
+      let markdown: string;
+      try {
+        markdown = await readFile(path, 'utf8');
+      } catch {
+        continue;
+      }
+      const renamed = renameTranscriptSpeakers(markdown, mapping);
+      if (renamed !== markdown) {
+        await writePrivateMarkdown(path, renamed);
+      }
+    }
+
+    await writePrivateMarkdown(transcriptPath, renamedTranscript);
+    await updateMeetingMeta(join(meeting.meetingDir, 'meta.json'), (value) => {
+      value.speakers = names;
+    });
+    const updated = await this.detail(meetingId);
+    if (!updated) {
+      throw new Error('会議が見つかりません。');
     }
     return updated;
   }

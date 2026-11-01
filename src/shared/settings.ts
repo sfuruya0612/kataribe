@@ -21,6 +21,7 @@ import type {
   InputSource,
   LlmProfile,
   LlmProvider,
+  SpeakerCount,
   SummaryLanguage,
   ThemeMode,
   WhisperModel,
@@ -30,6 +31,7 @@ const INPUT_SOURCES: InputSource[] = ['microphone', 'system', 'both'];
 const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark'];
 const WHISPER_MODELS: WhisperModel[] = ['large-v3-turbo', 'medium', 'small'];
 const SUMMARY_LANGUAGES: SummaryLanguage[] = ['ja', 'en'];
+const SPEAKER_COUNTS: SpeakerCount[] = ['auto', 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 const DEFAULT_LLM_PROVIDER: LlmProvider = 'claude';
 const DEFAULT_LLM_PRESET = getLlmProviderPreset(DEFAULT_LLM_PROVIDER);
@@ -47,6 +49,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   theme: 'system',
   whisperModel: 'large-v3-turbo',
   speakerDiarization: true,
+  speakerCount: 'auto',
   whisperInitialPrompt: '',
   whisperSpeedRatios: {},
   mp3BitrateKbps: 64,
@@ -128,6 +131,9 @@ export function normalizeAppSettings(
     typeof input?.speakerDiarization === 'boolean'
       ? input.speakerDiarization
       : DEFAULT_APP_SETTINGS.speakerDiarization;
+  const speakerCount = SPEAKER_COUNTS.includes(input?.speakerCount as SpeakerCount)
+    ? (input?.speakerCount as SpeakerCount)
+    : DEFAULT_APP_SETTINGS.speakerCount;
   const whisperInitialPrompt =
     typeof input?.whisperInitialPrompt === 'string'
       ? input.whisperInitialPrompt.trim().slice(0, 1000)
@@ -154,6 +160,7 @@ export function normalizeAppSettings(
     theme,
     whisperModel,
     speakerDiarization,
+    speakerCount,
     whisperInitialPrompt,
     whisperSpeedRatios,
     mp3BitrateKbps,

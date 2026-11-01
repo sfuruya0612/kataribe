@@ -1,14 +1,6 @@
-import { createHash } from 'node:crypto';
-import {
-  chmod,
-  mkdir,
-  open,
-  rename,
-  rm,
-  stat,
-  statfs,
-} from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { downloadAsset, fileSize } from './asset-download';
 import type {
   ModelDownloadProgress,
   WhisperModel,
@@ -79,43 +71,11 @@ export type ModelManagerOptions = {
   definitions?: WhisperModelDefinition[];
 };
 
-async function defaultFreeBytes(path: string): Promise<number> {
-  const info = await statfs(path);
-  return info.bavail * info.bsize;
-}
-
-async function fileSize(path: string): Promise<number | null> {
-  try {
-    const info = await stat(path);
-    return info.isFile() ? info.size : null;
-  } catch {
-    return null;
-  }
-}
-
-async function hashFile(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  const handle = await open(path, 'r');
-  try {
-    const buffer = Buffer.alloc(1024 * 1024);
-    while (true) {
-      const result = await handle.read(buffer, 0, buffer.length, null);
-      if (result.bytesRead <= 0) {
-        break;
-      }
-      hash.update(buffer.subarray(0, result.bytesRead));
-    }
-  } finally {
-    await handle.close();
-  }
-  return hash.digest('hex');
-}
-
 export class ModelManager {
   private readonly modelsDir: string;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => number;
-  private readonly freeBytes: (path: string) => Promise<number>;
+  private readonly freeBytes: ((path: string) => Promise<number>) | undefined;
   private readonly onProgress: (progress: ModelDownloadProgress) => void;
   private readonly definitions: WhisperModelDefinition[];
   private readonly downloads = new Map<WhisperModel, DownloadState>();
@@ -125,7 +85,7 @@ export class ModelManager {
     this.modelsDir = options.modelsDir;
     this.fetchImpl = options.fetch ?? fetch;
     this.now = options.now ?? (() => Date.now());
-    this.freeBytes = options.freeBytes ?? defaultFreeBytes;
+    this.freeBytes = options.freeBytes;
     this.onProgress = options.onProgress ?? (() => undefined);
     this.definitions = options.definitions ?? WHISPER_MODEL_DEFINITIONS;
   }
@@ -193,31 +153,16 @@ export class ModelManager {
       return;
     }
 
-    await mkdir(this.modelsDir, { recursive: true, mode: 0o700 });
     const finalPath = join(this.modelsDir, definition.fileName);
-    const partPath = `${finalPath}.part`;
-    const partBytes = (await fileSize(partPath)) ?? 0;
-    if (partBytes > definition.sizeBytes) {
-      await rm(partPath, { force: true });
-    }
-    const startBytes = Math.min(partBytes, definition.sizeBytes);
-    const required = Math.max(0, definition.sizeBytes - startBytes) + 64 * 1024 * 1024;
-    const available = await this.freeBytes(this.modelsDir);
-    if (available < required) {
-      throw new Error(
-        `not enough disk space for ${definition.fileName}: need ${required} bytes, have ${available}`,
-      );
-    }
-
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal?.addEventListener('abort', onAbort, { once: true });
     this.errors.delete(model);
     const state: DownloadState = {
       controller,
-      downloadedBytes: startBytes,
+      downloadedBytes: 0,
       totalBytes: definition.sizeBytes,
-      progress: definition.sizeBytes > 0 ? startBytes / definition.sizeBytes : 0,
+      progress: 0,
       state: 'downloading',
       error: null,
       lastReportAt: 0,
@@ -226,86 +171,27 @@ export class ModelManager {
     this.report(model, state, true);
 
     try {
-      const headers: Record<string, string> = {};
-      if (startBytes > 0) {
-        headers.Range = `bytes=${startBytes}-`;
-      }
-      const response = await this.fetchImpl(definition.url, {
-        headers,
+      await downloadAsset({
+        url: definition.url,
+        destinationPath: finalPath,
+        sizeBytes: definition.sizeBytes,
+        sha256: definition.sha256,
         signal: controller.signal,
-        redirect: 'follow',
+        fetchImpl: this.fetchImpl,
+        freeBytes: this.freeBytes,
+        now: this.now,
+        reportIntervalMs: 0,
+        onProgress: (progress) => {
+          state.downloadedBytes = progress.downloadedBytes;
+          state.totalBytes = progress.totalBytes;
+          state.progress = progress.progress;
+          this.report(model, state, false);
+        },
+        onState: (next) => {
+          state.state = next;
+          this.report(model, state, true);
+        },
       });
-      if (response.status === 416 && startBytes === definition.sizeBytes) {
-        // The file is already complete; verify below.
-      } else if (!response.ok) {
-        throw new Error(
-          `model download failed: HTTP ${response.status} ${response.statusText}`,
-        );
-      }
-
-      const append = response.status === 206 && startBytes > 0;
-      if (response.status === 200 && startBytes > 0) {
-        state.downloadedBytes = 0;
-      }
-      const contentLength = Number(response.headers.get('content-length') ?? '');
-      if (Number.isFinite(contentLength) && contentLength > 0) {
-        state.totalBytes = append ? startBytes + contentLength : contentLength;
-      }
-      if (state.totalBytes !== definition.sizeBytes) {
-        state.totalBytes = definition.sizeBytes;
-      }
-
-      if (response.status !== 416) {
-        const handle = await open(partPath, append ? 'a' : 'w', 0o600);
-        try {
-          if (!response.body) {
-            throw new Error('model download returned an empty body');
-          }
-          const reader = response.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-              break;
-            }
-            if (controller.signal.aborted) {
-              throw new DOMException('download was cancelled', 'AbortError');
-            }
-            if (value && value.byteLength > 0) {
-              await handle.write(Buffer.from(value));
-              state.downloadedBytes += value.byteLength;
-              state.progress =
-                definition.sizeBytes > 0
-                  ? Math.min(1, state.downloadedBytes / definition.sizeBytes)
-                  : null;
-              this.report(model, state, false);
-            }
-          }
-          await handle.sync();
-        } finally {
-          await handle.close();
-        }
-      }
-
-      state.state = 'verifying';
-      state.progress = 1;
-      this.report(model, state, true);
-
-      const size = await fileSize(partPath);
-      if (size !== definition.sizeBytes) {
-        throw new Error(
-          `model download is incomplete: expected ${definition.sizeBytes} bytes, got ${size ?? 0}`,
-        );
-      }
-      const digest = await hashFile(partPath);
-      if (digest !== definition.sha256) {
-        await rm(partPath, { force: true });
-        throw new Error(
-          `model checksum mismatch: expected ${definition.sha256}, got ${digest}`,
-        );
-      }
-      await chmod(partPath, 0o600);
-      await rename(partPath, finalPath);
-      this.errors.delete(model);
       state.state = 'downloading';
       state.progress = 1;
       state.downloadedBytes = definition.sizeBytes;

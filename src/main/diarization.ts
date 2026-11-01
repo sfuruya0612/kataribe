@@ -1,310 +1,402 @@
-import { open } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
+import type { DiarizationModelProgress, SpeakerCount } from '../shared/types';
 import type { TranscriptSegment } from '../shared/markdown';
+import { speakerLabel } from '../shared/speakers';
+import type {
+  DiarizationModelManager,
+  DiarizationModelPaths,
+} from './diarization-models';
+import type { BinaryLocator } from './media';
+import { runProcess, type RunProcessResult } from './process';
 import { readWavInfo } from './wav';
 
-type WindowFeatures = {
-  rms: number;
-  zcr: number;
-  pitchHz: number;
+export type DiarizationTurn = {
+  startSeconds: number;
+  endSeconds: number;
+  speaker: string;
 };
 
-type SegmentFeatures = {
-  rms: number;
-  zcr: number;
-  pitchHz: number;
+export type DiarizationProgressPhase = 'models' | 'diarization';
+
+export type DiarizationProgress = {
+  phase: DiarizationProgressPhase;
+  progress: number | null;
 };
 
 export type DiarizationOptions = {
-  windowSamples?: number;
-  windowsPerSegment?: number;
-  maxSegments?: number;
+  numSpeakers: SpeakerCount;
+  signal?: AbortSignal;
+  onProgress?: (progress: DiarizationProgress) => void;
 };
 
-function median(values: number[]): number {
-  if (values.length === 0) {
-    return 0;
+export type DiarizationModels = Pick<DiarizationModelManager, 'ensureInstalled'>;
+
+export type DiarizationBinaryLocator = Pick<BinaryLocator, 'sherpaDiarizationPath'>;
+
+export type DiarizationServiceOptions = {
+  locator: DiarizationBinaryLocator;
+  models: DiarizationModels;
+  threads?: number;
+  inactivityTimeoutMs?: number;
+  maxSpeakers?: number;
+};
+
+const DEFAULT_MAX_SPEAKERS = 10;
+const DEFAULT_INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+const CLUSTER_THRESHOLD = 0.9;
+const NEAREST_TURN_SECONDS = 1;
+
+const TURN_PATTERN =
+  /^\s*(\d+(?:\.\d+)?)\s+--\s+(\d+(?:\.\d+)?)\s+(\S+)\s*$/u;
+const PROGRESS_PATTERN = /^progress\s+(\d+(?:\.\d+)?)%\s*$/u;
+
+/**
+ * sherpa-onnx の進捗行を 0〜1 の値に変換する。
+ */
+export function parseDiarizationProgressLine(line: string): number | null {
+  const match = line.match(PROGRESS_PATTERN);
+  if (!match) {
+    return null;
   }
-  const sorted = [...values].sort((left, right) => left - right);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? (sorted[middle - 1] + sorted[middle]) / 2
-    : sorted[middle];
+  const value = Number(match[1]) / 100;
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : null;
 }
 
-function analyzeWindow(samples: Float32Array, sampleRate: number): WindowFeatures {
-  if (samples.length < 32) {
-    return { rms: 0, zcr: 0, pitchHz: 0 };
-  }
-  let mean = 0;
-  for (const value of samples) {
-    mean += value;
-  }
-  mean /= samples.length;
-
-  let sumSquares = 0;
-  let crossings = 0;
-  let previous = 0;
-  const centered = new Float32Array(samples.length);
-  for (let index = 0; index < samples.length; index += 1) {
-    const value = samples[index] - mean;
-    centered[index] = value;
-    sumSquares += value * value;
-    if (index > 0 && (value >= 0) !== (previous >= 0)) {
-      crossings += 1;
+/**
+ * sherpa-onnx の話者ターン出力を解析する。
+ */
+export function parseDiarizationOutput(output: string): DiarizationTurn[] {
+  const turns: DiarizationTurn[] = [];
+  for (const line of output.split('\n')) {
+    const match = line.match(TURN_PATTERN);
+    if (!match) {
+      continue;
     }
-    previous = value;
+    const startSeconds = Number(match[1]);
+    const endSeconds = Number(match[2]);
+    if (
+      !Number.isFinite(startSeconds) ||
+      !Number.isFinite(endSeconds) ||
+      startSeconds < 0 ||
+      endSeconds <= startSeconds
+    ) {
+      continue;
+    }
+    turns.push({ startSeconds, endSeconds, speaker: match[3] });
   }
-  const rms = Math.sqrt(sumSquares / samples.length);
-  const zcr = crossings / Math.max(1, samples.length - 1);
+  return turns.sort((left, right) => left.startSeconds - right.startSeconds);
+}
 
-  let pitchHz = 0;
-  if (rms > 0.003) {
-    const minLag = Math.max(2, Math.floor(sampleRate / 800));
-    const maxLag = Math.min(centered.length - 2, Math.ceil(sampleRate / 70));
-    let bestScore = 0;
-    const scores: number[] = new Array(maxLag + 1).fill(0);
-    for (let lag = minLag; lag <= maxLag; lag += 1) {
-      let correlation = 0;
-      let energyLeft = 0;
-      let energyRight = 0;
-      for (let index = 0; index + lag < centered.length; index += 1) {
-        const left = centered[index];
-        const right = centered[index + lag];
-        correlation += left * right;
-        energyLeft += left * left;
-        energyRight += right * right;
-      }
-      const denominator = Math.sqrt(energyLeft * energyRight);
-      const score = denominator > 0 ? correlation / denominator : 0;
-      scores[lag] = score;
-      if (score > bestScore) {
-        bestScore = score;
+function uniqueSpeakers(turns: readonly DiarizationTurn[]): number {
+  return new Set(turns.map((turn) => turn.speaker)).size;
+}
+
+function turnDistance(
+  segmentStart: number,
+  segmentEnd: number,
+  turn: DiarizationTurn,
+): number {
+  if (turn.endSeconds <= segmentStart) {
+    return segmentStart - turn.endSeconds;
+  }
+  if (turn.startSeconds >= segmentEnd) {
+    return turn.startSeconds - segmentEnd;
+  }
+  return 0;
+}
+
+function durationsBySpeaker(
+  turns: readonly DiarizationTurn[],
+): Map<string, number> {
+  const durations = new Map<string, number>();
+  for (const turn of turns) {
+    durations.set(
+      turn.speaker,
+      (durations.get(turn.speaker) ?? 0) + (turn.endSeconds - turn.startSeconds),
+    );
+  }
+  return durations;
+}
+
+function firstStartBySpeaker(
+  turns: readonly DiarizationTurn[],
+): Map<string, number> {
+  const starts = new Map<string, number>();
+  for (const turn of turns) {
+    const current = starts.get(turn.speaker);
+    starts.set(
+      turn.speaker,
+      current === undefined ? turn.startSeconds : Math.min(current, turn.startSeconds),
+    );
+  }
+  return starts;
+}
+
+/**
+ * 話者数を上限に抑え、あふれた話者のターンを最も近い残存ターンへ割り当てる。
+ */
+export function limitSpeakerTurns(
+  turns: readonly DiarizationTurn[],
+  maxSpeakers: number,
+): DiarizationTurn[] {
+  const limit = Math.max(1, Math.floor(maxSpeakers));
+  const durations = durationsBySpeaker(turns);
+  if (durations.size <= limit) {
+    return [...turns];
+  }
+  const starts = firstStartBySpeaker(turns);
+  const ranked = [...durations.keys()].sort(
+    (left, right) =>
+      (durations.get(right) ?? 0) - (durations.get(left) ?? 0) ||
+      (starts.get(left) ?? 0) - (starts.get(right) ?? 0),
+  );
+  const kept = new Set(ranked.slice(0, limit));
+  const keptTurns = turns.filter((turn) => kept.has(turn.speaker));
+  if (keptTurns.length === 0) {
+    return [];
+  }
+  return turns.map((turn) => {
+    if (kept.has(turn.speaker)) {
+      return turn;
+    }
+    const midpoint = (turn.startSeconds + turn.endSeconds) / 2;
+    let nearest = keptTurns[0];
+    let nearestDistance = Math.abs(
+      midpoint - (nearest.startSeconds + nearest.endSeconds) / 2,
+    );
+    for (const candidate of keptTurns.slice(1)) {
+      const distance = Math.abs(
+        midpoint - (candidate.startSeconds + candidate.endSeconds) / 2,
+      );
+      if (distance < nearestDistance) {
+        nearest = candidate;
+        nearestDistance = distance;
       }
     }
-    if (bestScore >= 0.28) {
-      for (let lag = minLag; lag <= maxLag; lag += 1) {
-        if (scores[lag] >= bestScore * 0.9) {
-          pitchHz = sampleRate / lag;
-          break;
+    return { ...turn, speaker: nearest.speaker };
+  });
+}
+
+/**
+ * 文字起こしセグメントへ話者ターンを割り当て、話者 A から順にラベルを付ける。
+ */
+export function assignSpeakerTurns(
+  segments: readonly TranscriptSegment[],
+  turns: readonly DiarizationTurn[],
+  maxSpeakers = DEFAULT_MAX_SPEAKERS,
+): TranscriptSegment[] | null {
+  if (turns.length === 0 || uniqueSpeakers(turns) < 2) {
+    return null;
+  }
+  const limited = limitSpeakerTurns(turns, maxSpeakers);
+  const starts = firstStartBySpeaker(limited);
+  const order = [...starts.entries()]
+    .sort((left, right) => left[1] - right[1])
+    .map(([speaker]) => speaker);
+  const labels = new Map(
+    order.map((speaker, index) => [speaker, speakerLabel(index)] as const),
+  );
+  const orderIndex = new Map(order.map((speaker, index) => [speaker, index] as const));
+  let labeled = 0;
+  const result = segments.map((segment) => {
+    const start = Math.max(0, segment.startSeconds);
+    const end = Math.max(start, segment.endSeconds ?? start + 1);
+    const overlaps = new Map<string, number>();
+    for (const turn of limited) {
+      const overlap = Math.min(end, turn.endSeconds) - Math.max(start, turn.startSeconds);
+      if (overlap > 0) {
+        overlaps.set(turn.speaker, (overlaps.get(turn.speaker) ?? 0) + overlap);
+      }
+    }
+    let selected: string | null = null;
+    let bestOverlap = 0;
+    for (const [speaker, overlap] of overlaps) {
+      if (
+        overlap > bestOverlap ||
+        (overlap === bestOverlap &&
+          selected !== null &&
+          (orderIndex.get(speaker) ?? 0) < (orderIndex.get(selected) ?? 0))
+      ) {
+        selected = speaker;
+        bestOverlap = overlap;
+      }
+    }
+    if (selected === null) {
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const turn of limited) {
+        const distance = turnDistance(start, end, turn);
+        if (distance < nearestDistance) {
+          nearestDistance = distance;
+          selected = turn.speaker;
         }
       }
+      if (nearestDistance > NEAREST_TURN_SECONDS) {
+        selected = null;
+      }
     }
-  }
-  return { rms, zcr, pitchHz };
+    if (selected === null) {
+      return { ...segment };
+    }
+    labeled += 1;
+    return { ...segment, speaker: labels.get(selected) ?? selected };
+  });
+  return labeled > 0 ? result : null;
 }
 
-export async function diarizeSegments(
+function buildArgs(
   wavPath: string,
-  segments: TranscriptSegment[],
-  options: DiarizationOptions = {},
-): Promise<TranscriptSegment[] | null> {
-  const usable = segments.filter(
-    (segment) =>
-      segment.text.trim().length > 0 &&
-      (segment.endSeconds ?? segment.startSeconds) > segment.startSeconds,
-  );
-  if (usable.length < 4) {
-    return null;
+  paths: DiarizationModelPaths,
+  threads: number,
+  numSpeakers: SpeakerCount | number,
+): string[] {
+  const args = [
+    `--segmentation.pyannote-model=${paths.segmentation}`,
+    `--embedding.model=${paths.embedding}`,
+    `--segmentation.num-threads=${threads}`,
+    `--embedding.num-threads=${threads}`,
+  ];
+  if (numSpeakers === 'auto') {
+    args.push(`--clustering.cluster-threshold=${CLUSTER_THRESHOLD}`);
+  } else {
+    args.push(`--clustering.num-clusters=${numSpeakers}`);
   }
-  const maxSegments = options.maxSegments ?? 400;
-  if (usable.length > maxSegments) {
-    return null;
+  args.push(wavPath);
+  return args;
+}
+
+/**
+ * sherpa-onnx の子プロセスを起動し、話者分離を実行する。
+ */
+export class DiarizationService {
+  private readonly locator: DiarizationBinaryLocator;
+  private readonly models: DiarizationModels;
+  private readonly threads: number;
+  private readonly inactivityTimeoutMs: number;
+  readonly maxSpeakers: number;
+
+  constructor(options: DiarizationServiceOptions) {
+    this.locator = options.locator;
+    this.models = options.models;
+    this.threads =
+      options.threads ?? Math.max(1, Math.min(4, availableParallelism()));
+    this.inactivityTimeoutMs =
+      options.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS;
+    this.maxSpeakers = options.maxSpeakers ?? DEFAULT_MAX_SPEAKERS;
   }
 
-  const info = await readWavInfo(wavPath);
-  if (info.channels !== 1 || info.bitsPerSample !== 16 || info.sampleRate <= 0) {
-    return null;
-  }
-  const windowSamples = options.windowSamples ?? 1024;
-  const windowsPerSegment = options.windowsPerSegment ?? 8;
-  const handle = await open(wavPath, 'r');
-  const buffer = Buffer.alloc(windowSamples * 2);
-  const features: SegmentFeatures[] = [];
-  try {
-    for (const segment of usable) {
-      const start = Math.max(0, segment.startSeconds);
-      const end = Math.min(
-        info.duration,
-        segment.endSeconds ?? segment.startSeconds + 1,
-      );
-      const duration = Math.max(0, end - start);
-      const frameStart = Math.floor(start * info.sampleRate);
-      const frameEnd = Math.max(frameStart + 1, Math.floor(end * info.sampleRate));
-      const windowList: WindowFeatures[] = [];
-      const span = Math.max(0, frameEnd - frameStart - windowSamples);
-      const positions =
-        span <= 0
-          ? [frameStart]
-          : Array.from({ length: windowsPerSegment }, (_, index) =>
-              frameStart +
-              Math.floor((span * (index + 0.5)) / Math.max(1, windowsPerSegment)),
-            );
-      for (const position of positions) {
-        const bytes = Math.min(
-          windowSamples * 2,
-          Math.max(0, (info.dataOffset + frameEnd * 2) - (info.dataOffset + position * 2)),
-        );
-        if (bytes < 64) {
-          continue;
-        }
-        const result = await handle.read(
-          buffer,
-          0,
-          bytes,
-          info.dataOffset + position * 2,
-        );
-        if (result.bytesRead < 64) {
-          continue;
-        }
-        const samples = new Float32Array(Math.floor(result.bytesRead / 2));
-        for (let index = 0; index < samples.length; index += 1) {
-          samples[index] = buffer.readInt16LE(index * 2) / 32768;
-        }
-        windowList.push(analyzeWindow(samples, info.sampleRate));
-      }
-      if (windowList.length === 0) {
-        features.push({ rms: 0, zcr: 0, pitchHz: 0 });
-        continue;
-      }
-      const voiced = windowList
-        .map((window) => window.pitchHz)
-        .filter((pitch) => pitch > 0);
-      features.push({
-        rms: median(windowList.map((window) => window.rms)),
-        zcr: median(windowList.map((window) => window.zcr)),
-        pitchHz: voiced.length >= 2 ? median(voiced) : 0,
-      });
-      if (duration <= 0) {
-        features[features.length - 1] = { rms: 0, zcr: 0, pitchHz: 0 };
-      }
-    }
-  } finally {
-    await handle.close();
-  }
-
-  const rows = features.map((feature) => [
-    Math.log10(feature.rms + 1e-6),
-    feature.zcr,
-    feature.pitchHz > 0 ? feature.pitchHz / 220 : 0,
-  ]);
-  const means = [0, 0, 0];
-  const stds = [0, 0, 0];
-  for (let column = 0; column < 3; column += 1) {
-    means[column] =
-      rows.reduce((sum, row) => sum + row[column], 0) / rows.length;
-    const variance =
-      rows.reduce(
-        (sum, row) => sum + (row[column] - means[column]) ** 2,
-        0,
-      ) / rows.length;
-    stds[column] = Math.sqrt(variance);
-  }
-  const normalized = rows.map((row) =>
-    row.map((value, column) =>
-      stds[column] > 1e-6 ? (value - means[column]) / stds[column] : 0,
-    ),
-  );
-
-  let centroidA = [...normalized[0]];
-  let farthest = 0;
-  let farthestDistance = -1;
-  for (let index = 1; index < normalized.length; index += 1) {
-    const distance = Math.sqrt(
-      normalized[index].reduce(
-        (sum, value, column) => sum + (value - centroidA[column]) ** 2,
-        0,
-      ),
-    );
-    if (distance > farthestDistance) {
-      farthestDistance = distance;
-      farthest = index;
-    }
-  }
-  if (farthestDistance < 0.5) {
-    return null;
-  }
-  let centroidB = [...normalized[farthest]];
-  let assignments: number[] = [];
-  for (let iteration = 0; iteration < 20; iteration += 1) {
-    assignments = normalized.map((row) => {
-      const distanceAValue = Math.sqrt(
-        row.reduce((sum, value, column) => sum + (value - centroidA[column]) ** 2, 0),
-      );
-      const distanceBValue = Math.sqrt(
-        row.reduce((sum, value, column) => sum + (value - centroidB[column]) ** 2, 0),
-      );
-      return distanceAValue <= distanceBValue ? 0 : 1;
-    });
-    const groups = [0, 1].map((group) =>
-      normalized.filter((_row, index) => assignments[index] === group),
-    );
-    if (groups[0].length === 0 || groups[1].length === 0) {
+  async diarize(
+    wavPath: string,
+    segments: readonly TranscriptSegment[],
+    options: DiarizationOptions,
+  ): Promise<TranscriptSegment[] | null> {
+    if (segments.length === 0) {
       return null;
     }
-    const nextA = [0, 0, 0].map(
-      (_value, column) =>
-        groups[0].reduce((sum, row) => sum + row[column], 0) / groups[0].length,
-    );
-    const nextB = [0, 0, 0].map(
-      (_value, column) =>
-        groups[1].reduce((sum, row) => sum + row[column], 0) / groups[1].length,
-    );
-    const shift = Math.max(
-      Math.sqrt(
-        nextA.reduce((sum, value, column) => sum + (value - centroidA[column]) ** 2, 0),
-      ),
-      Math.sqrt(
-        nextB.reduce((sum, value, column) => sum + (value - centroidB[column]) ** 2, 0),
-      ),
-    );
-    centroidA = nextA;
-    centroidB = nextB;
-    if (shift < 0.001) {
-      break;
+    const info = await readWavInfo(wavPath);
+    if (
+      info.channels !== 1 ||
+      info.bitsPerSample !== 16 ||
+      info.sampleRate !== 16000
+    ) {
+      return null;
     }
+    const paths = await this.models.ensureInstalled(
+      options.signal,
+      (progress: DiarizationModelProgress) => {
+        options.onProgress?.({ phase: 'models', progress: progress.progress });
+      },
+    );
+    const binary = await this.locator.sherpaDiarizationPath();
+    const first = await this.runOnce(
+      binary,
+      wavPath,
+      paths,
+      options,
+      options.numSpeakers,
+    );
+    if (first === null) {
+      return null;
+    }
+    let turns = parseDiarizationOutput(first.stdout);
+    if (
+      options.numSpeakers === 'auto' &&
+      uniqueSpeakers(turns) > this.maxSpeakers
+    ) {
+      const second = await this.runOnce(
+        binary,
+        wavPath,
+        paths,
+        options,
+        this.maxSpeakers,
+      );
+      if (second !== null) {
+        const limitedTurns = parseDiarizationOutput(second.stdout);
+        if (uniqueSpeakers(limitedTurns) >= 2) {
+          turns = limitedTurns;
+        }
+      }
+    }
+    return assignSpeakerTurns(segments, turns, this.maxSpeakers);
   }
 
-  const counts = [0, 0];
-  for (const assignment of assignments) {
-    counts[assignment] += 1;
-  }
-  const separation = Math.sqrt(
-    centroidA.reduce(
-      (sum, value, column) => sum + (value - centroidB[column]) ** 2,
-      0,
-    ),
-  );
-  if (counts[0] < 2 || counts[1] < 2 || separation < 0.75) {
-    return null;
-  }
-
-  const firstOccurrence = new Map<number, number>();
-  for (const assignment of assignments) {
-    if (!firstOccurrence.has(assignment)) {
-      firstOccurrence.set(assignment, firstOccurrence.size);
+  private async runOnce(
+    binary: string,
+    wavPath: string,
+    paths: DiarizationModelPaths,
+    options: DiarizationOptions,
+    numSpeakers: SpeakerCount | number,
+  ): Promise<RunProcessResult | null> {
+    if (options.signal?.aborted) {
+      return null;
     }
-  }
-  if (firstOccurrence.size < 2) {
-    return null;
-  }
-
-  const bySegment = new Map<TranscriptSegment, number>();
-  let usableIndex = 0;
-  for (const segment of segments) {
-    if (usable.includes(segment)) {
-      bySegment.set(segment, assignments[usableIndex]);
-      usableIndex += 1;
-    }
-  }
-  return segments.map((segment) => {
-    const cluster = bySegment.get(segment);
-    if (cluster === undefined) {
-      return segment;
-    }
-    const order = firstOccurrence.get(cluster) ?? 0;
-    return {
-      ...segment,
-      speaker: order === 0 ? '話者A' : '話者B',
+    const controller = new AbortController();
+    let timedOut = false;
+    let timer: NodeJS.Timeout | null = null;
+    const resetTimer = () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, this.inactivityTimeoutMs);
+      timer.unref?.();
     };
-  });
+    const onAbort = () => controller.abort();
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    resetTimer();
+    options.onProgress?.({ phase: 'diarization', progress: 0 });
+    try {
+      const result = await runProcess({
+        command: binary,
+        args: buildArgs(wavPath, paths, this.threads, numSpeakers),
+        signal: controller.signal,
+        onStderrLine: (line) => {
+          const progress = parseDiarizationProgressLine(line);
+          if (progress === null) {
+            return;
+          }
+          resetTimer();
+          options.onProgress?.({ phase: 'diarization', progress });
+        },
+      });
+      if (timedOut) {
+        throw new Error('speaker diarization timed out');
+      }
+      if (options.signal?.aborted || result.aborted) {
+        return null;
+      }
+      if (result.code !== 0) {
+        throw new Error(
+          `speaker diarization failed: ${result.stderr.trim() || `exit code ${result.code ?? 'unknown'}`}`,
+        );
+      }
+      return result;
+    } finally {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+      options.signal?.removeEventListener('abort', onAbort);
+    }
+  }
 }

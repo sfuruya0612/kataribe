@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Kataribe が同梱する whisper-cli と ffmpeg をビルドする。
+# Kataribe が同梱する whisper-cli、ffmpeg、sherpa-onnx の話者分離をビルドする。
 #
 # 依存: Xcode Command Line Tools、cmake、curl、tar
-# 生成物: resources/bin/<arch>/{whisper-cli,ffmpeg}
+# 生成物: resources/bin/<arch>/{whisper-cli,ffmpeg,sherpa-onnx-offline-speaker-diarization}
+#         resources/bin/lib/libonnxruntime.dylib
 #
-# 版は固定する。上げるときは文字起こしの進捗解析と ffmpeg の進捗出力を再検証すること。
+# 版は固定する。上げるときは文字起こしの進捗解析、ffmpeg の進捗出力、
+# 話者分離の出力形式を再検証すること。
 
 set -euo pipefail
 
@@ -16,6 +18,8 @@ WORK_ROOT="${KATARIBE_BINARY_BUILD_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/kataribe-bi
 WHISPER_VERSION="v1.9.5"
 FFMPEG_VERSION="7.1.1"
 LAME_VERSION="3.100"
+SHERPA_ONNX_VERSION="v2.0.1"
+SHERPA_ONNX_ARCHIVE_SHA256="4fcc6c77c8d8d2e2f04cfdc17c6fd224c01469b78529370eb9d8e0e5ec97ac79"
 
 mkdir -p "$OUT_DIR" "$WORK_ROOT"
 
@@ -81,8 +85,31 @@ swiftc -O -parse-as-library -framework CoreAudio \
   -o "$OUT_DIR/kataribe-multi-output"
 chmod +x "$OUT_DIR/kataribe-multi-output"
 
+echo "== sherpa-onnx $SHERPA_ONNX_VERSION =="
+if [ "$ARCH" != "arm64" ]; then
+  echo "sherpa-onnx の同梱バイナリは arm64 のみ対応です。" >&2
+  exit 1
+fi
+SHERPA_ARCHIVE="$WORK_ROOT/sherpa-onnx-$SHERPA_ONNX_VERSION-osx-arm64-shared-no-tts.tar.bz2"
+if [ ! -f "$SHERPA_ARCHIVE" ]; then
+  curl -fsSL -o "$SHERPA_ARCHIVE" \
+    "https://github.com/k2-fsa/sherpa-onnx/releases/download/$SHERPA_ONNX_VERSION/sherpa-onnx-$SHERPA_ONNX_VERSION-osx-arm64-shared-no-tts.tar.bz2"
+fi
+echo "$SHERPA_ONNX_ARCHIVE_SHA256  $SHERPA_ARCHIVE" | shasum -a 256 -c -
+tar xjf "$SHERPA_ARCHIVE" -C "$WORK_ROOT"
+SHERPA_ROOT="$WORK_ROOT/sherpa-onnx-$SHERPA_ONNX_VERSION-osx-arm64-shared-no-tts"
+cp "$SHERPA_ROOT/bin/sherpa-onnx-offline-speaker-diarization" "$OUT_DIR/sherpa-onnx-offline-speaker-diarization"
+mkdir -p "$ROOT/resources/bin/lib"
+cp "$SHERPA_ROOT/lib/libonnxruntime.dylib" "$ROOT/resources/bin/lib/libonnxruntime.dylib"
+strip -x "$ROOT/resources/bin/lib/libonnxruntime.dylib"
+chmod +x "$OUT_DIR/sherpa-onnx-offline-speaker-diarization"
+codesign --force --sign - "$OUT_DIR/sherpa-onnx-offline-speaker-diarization"
+codesign --force --sign - "$ROOT/resources/bin/lib/libonnxruntime.dylib"
+
 echo "generated:"
-ls -lh "$OUT_DIR/whisper-cli" "$OUT_DIR/ffmpeg" "$OUT_DIR/kataribe-multi-output"
+ls -lh "$OUT_DIR/whisper-cli" "$OUT_DIR/ffmpeg" "$OUT_DIR/kataribe-multi-output" \
+  "$OUT_DIR/sherpa-onnx-offline-speaker-diarization" \
+  "$ROOT/resources/bin/lib/libonnxruntime.dylib"
 "$OUT_DIR/ffmpeg" -version | head -1
 "$OUT_DIR/whisper-cli" --help 2>&1 | head -1
 "$OUT_DIR/kataribe-multi-output" list >/dev/null

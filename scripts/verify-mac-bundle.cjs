@@ -115,6 +115,16 @@ if (existsSync(resources)) {
     'Multi-Output helper is bundled for arm64',
   );
   check(
+    existsSync(
+      join(resources, 'bin', 'arm64', 'sherpa-onnx-offline-speaker-diarization'),
+    ),
+    'sherpa-onnx diarization binary is bundled for arm64',
+  );
+  check(
+    existsSync(join(resources, 'bin', 'lib', 'libonnxruntime.dylib')),
+    'ONNX Runtime dylib is bundled',
+  );
+  check(
     existsSync(join(resources, 'licenses', 'whisper.cpp-LICENSE.txt')),
     'whisper.cpp license is bundled',
   );
@@ -125,6 +135,22 @@ if (existsSync(resources)) {
   check(
     existsSync(join(resources, 'licenses', 'lame-LICENSE.txt')),
     'LAME license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'sherpa-onnx-LICENSE.txt')),
+    'sherpa-onnx license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'onnxruntime-LICENSE.txt')),
+    'ONNX Runtime license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', 'pyannote-segmentation-LICENSE.txt')),
+    'pyannote segmentation license is bundled',
+  );
+  check(
+    existsSync(join(resources, 'licenses', '3dspeaker-LICENSE.txt')),
+    '3D-Speaker license is bundled',
   );
 
   const blackholeFiles = [];

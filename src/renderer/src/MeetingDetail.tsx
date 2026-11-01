@@ -36,6 +36,19 @@ type MeetingDetailProps = {
 
 const TIMESTAMP_LINE = /^\[(\d{2}:\d{2}:\d{2})\]\s?(.*)$/u;
 
+function isValidSpeakerName(value: string): boolean {
+  const name = value.trim();
+  return (
+    name.length > 0 &&
+    name.length <= 40 &&
+    !name.includes(':') &&
+    !name.includes('\n') &&
+    !name.includes('\r') &&
+    !name.includes('[') &&
+    !name.includes(']')
+  );
+}
+
 function selectProfileId(
   state: LlmProfilesState | null,
   current: string,
@@ -103,6 +116,10 @@ export function MeetingDetail({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
+  const [speakerEditing, setSpeakerEditing] = useState(false);
+  const [speakerDraft, setSpeakerDraft] = useState<string[]>([]);
+  const [speakerSaving, setSpeakerSaving] = useState(false);
+  const [speakerError, setSpeakerError] = useState<string | null>(null);
   const previewRef = useRef<SummaryPreview | null>(null);
   const translationPreviewRef = useRef<TranslationPreview | null>(null);
 
@@ -153,6 +170,8 @@ export function MeetingDetail({
     setTranslationPreview(null);
     setTranscriptLanguage('source');
     setTitleEditing(false);
+    setSpeakerEditing(false);
+    setSpeakerError(null);
     setError(null);
     setNotice(null);
     setPeaks([]);
@@ -326,6 +345,39 @@ export function MeetingDetail({
     }
     setDraft(transcript.markdown);
     setEditing(true);
+  };
+
+  const startSpeakerEditing = () => {
+    setSpeakerDraft([...(detail?.speakers ?? [])]);
+    setSpeakerError(null);
+    setSpeakerEditing(true);
+  };
+
+  const speakerNamesValid =
+    speakerDraft.length > 0 &&
+    speakerDraft.length === (detail?.speakers.length ?? 0) &&
+    speakerDraft.every(isValidSpeakerName) &&
+    new Set(speakerDraft.map((name) => name.trim())).size ===
+      speakerDraft.length;
+
+  const saveSpeakers = async () => {
+    if (!speakerNamesValid) {
+      return;
+    }
+    setSpeakerSaving(true);
+    try {
+      const value = await window.kataribe.renameMeetingSpeakers(
+        meeting.id,
+        speakerDraft.map((name) => name.trim()),
+      );
+      setDetail(value);
+      setSpeakerEditing(false);
+      setNotice('話者名を変更しました。');
+    } catch (reason: unknown) {
+      setSpeakerError(`話者名を変更できませんでした: ${errorText(reason)}`);
+    } finally {
+      setSpeakerSaving(false);
+    }
   };
 
   const saveTranscript = async () => {
@@ -648,6 +700,12 @@ export function MeetingDetail({
             ) : null}
           </div>
         ) : null}
+        {detail?.diarizationError ? (
+          <p className="alert alert-warning" role="status">
+            話者分離に失敗しました。文字起こしは保存されています。
+            {detail.diarizationError}
+          </p>
+        ) : null}
         <div className="detail-player-row">
           <AudioPlayer
             src={current.audioUrl}
@@ -756,6 +814,19 @@ export function MeetingDetail({
                   </button>
                 ))
               : null}
+            {tab === 'transcript' &&
+            !editing &&
+            transcript !== null &&
+            (detail?.speakers.length ?? 0) >= 2 ? (
+              <button
+                type="button"
+                className="link-button"
+                disabled={processing.stage !== null}
+                onClick={startSpeakerEditing}
+              >
+                話者名を編集
+              </button>
+            ) : null}
             {tab === 'transcript' ? (
               editing ? (
                 <>
@@ -1178,6 +1249,82 @@ export function MeetingDetail({
                 onClick={() => void generateTranslation()}
               >
                 {translationBusy ? '送信中...' : '送信して翻訳'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {speakerEditing ? (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="speaker-rename-title"
+        >
+          <div className="confirm-dialog">
+            <div className="confirm-head">
+              <div>
+                <p className="section-label">Speakers</p>
+                <h2 id="speaker-rename-title">話者名の変更</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="閉じる"
+                disabled={speakerSaving}
+                onClick={() => setSpeakerEditing(false)}
+              >
+                ×
+              </button>
+            </div>
+            <p className="muted">
+              文字起こしと既存の翻訳の話者名を置き換えます。翻訳が話者名を保持していない行は変わりません。
+            </p>
+            <div className="speaker-rename-list">
+              {(detail?.speakers ?? []).map((name, index) => (
+                <label className="field" key={`${name}-${index}`}>
+                  <span>{name}</span>
+                  <input
+                    className="setting-input"
+                    value={speakerDraft[index] ?? ''}
+                    maxLength={40}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setSpeakerDraft((current) =>
+                        current.map((item, itemIndex) =>
+                          itemIndex === index ? value : item,
+                        ),
+                      );
+                    }}
+                  />
+                </label>
+              ))}
+            </div>
+            {!speakerNamesValid ? (
+              <p className="alert alert-warning">
+                話者名を空にせず、重複しない名前にしてください。コロン、改行、角括弧は使えません。
+              </p>
+            ) : null}
+            {speakerError ? (
+              <p className="alert alert-error">{speakerError}</p>
+            ) : null}
+            <div className="confirm-actions">
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={speakerSaving}
+                onClick={() => setSpeakerEditing(false)}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={speakerSaving || !speakerNamesValid}
+                onClick={() => void saveSpeakers()}
+              >
+                {speakerSaving ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

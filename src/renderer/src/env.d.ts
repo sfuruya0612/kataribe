@@ -5,6 +5,8 @@ import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  DiarizationModelProgress,
+  DiarizationModelStatus,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -114,6 +116,10 @@ declare global {
         markdown: string,
       ) => Promise<MeetingDetail>;
       saveSummary: (meetingId: string, markdown: string) => Promise<MeetingDetail>;
+      renameMeetingSpeakers: (
+        meetingId: string,
+        names: string[],
+      ) => Promise<MeetingDetail>;
       retryTranscription: (meetingId: string) => Promise<ProcessingState>;
       getMeetingWaveform: (meetingId: string) => Promise<MeetingWaveform>;
       openMeetingFolder: (meetingId: string) => Promise<void>;
@@ -165,6 +171,9 @@ declare global {
         model: WhisperModel,
       ) => Promise<WhisperModelList>;
       deleteWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
+      getDiarizationModelStatus: () => Promise<DiarizationModelStatus>;
+      downloadDiarizationModels: () => Promise<DiarizationModelStatus>;
+      cancelDiarizationModelDownload: () => Promise<DiarizationModelStatus>;
       copyText: (text: string) => Promise<void>;
       onProcessingState: (
         listener: (state: ProcessingState) => void,
@@ -180,6 +189,10 @@ declare global {
       onModelsChanged: (
         listener: (list: WhisperModelList) => void,
       ) => () => void;
+      onDiarizationModelProgress: (
+        listener: (progress: DiarizationModelProgress) => void,
+      ) => () => void;
+      onDiarizationModelsChanged: (listener: () => void) => () => void;
       onLlmChanged: (
         listener: (state: LlmProfilesState) => void,
       ) => () => void;

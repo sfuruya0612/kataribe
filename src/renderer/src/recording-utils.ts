@@ -216,3 +216,17 @@ export function recordingErrorText(error: unknown): string {
   }
   return errorText(error);
 }
+
+export function formatBytes(value: number | null): string {
+  if (value === null || !Number.isFinite(value) || value < 0) {
+    return '-';
+  }
+  if (value === 0) {
+    return '0 MB';
+  }
+  const gb = value / (1024 * 1024 * 1024);
+  if (gb >= 1) {
+    return `${gb.toFixed(2)} GB`;
+  }
+  return `${Math.round(value / (1024 * 1024))} MB`;
+}

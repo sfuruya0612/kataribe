@@ -83,6 +83,12 @@ export type MeetingMetaTranslation = {
   error?: string;
 };
 
+export type MeetingMetaDiarization = {
+  state: 'completed' | 'failed';
+  speakers?: number;
+  error?: string;
+};
+
 export type MeetingMeta = {
   schema_version: typeof MEETING_META_SCHEMA_VERSION;
   id: string;
@@ -112,6 +118,8 @@ export type MeetingMeta = {
   waveform?: number[];
   encoding?: MeetingMetaEncoding;
   transcription?: MeetingMetaTranscription;
+  diarization?: MeetingMetaDiarization;
+  speakers?: string[];
   summary?: MeetingMetaSummary;
   translations?: Partial<Record<SummaryLanguage, MeetingMetaTranslation>>;
   summary_language?: SummaryLanguage;

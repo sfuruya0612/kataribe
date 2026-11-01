@@ -106,6 +106,23 @@ describe('BinaryLocator', () => {
     expect(await locator.whisperPath()).toBe('/opt/homebrew/bin/whisper-cli');
   });
 
+  it('locates the sherpa-onnx diarization binary', async () => {
+    const locator = new BinaryLocator({
+      isPackaged: false,
+      resourcesPath: '/res',
+      appPath: '/app',
+      platform: 'darwin',
+      arch: 'arm64',
+      env: {},
+      pathEnv: '',
+      accessPath: async (path) =>
+        path === '/app/resources/bin/arm64/sherpa-onnx-offline-speaker-diarization',
+    });
+    expect(await locator.sherpaDiarizationPath()).toBe(
+      '/app/resources/bin/arm64/sherpa-onnx-offline-speaker-diarization',
+    );
+  });
+
   it('reports a missing binary with an actionable message', async () => {
     const locator = new BinaryLocator({
       isPackaged: false,

@@ -3,11 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ApiKeyStore } from '../src/main/api-keys';
+import type { DiarizationService } from '../src/main/diarization';
 import type { LlmClient } from '../src/main/llm';
 import type { MediaEncoder } from '../src/main/media';
 import { writeMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
 import { MeetingStore } from '../src/main/meetings';
 import type { ModelManager } from '../src/main/models';
+import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
 import type { TranscriptionService } from '../src/main/transcription';
 import { formatTranscriptMarkdown } from '../src/shared/markdown';
@@ -86,6 +88,7 @@ function createCoordinator(options: {
     } as unknown as ApiKeyStore,
     mediaEncoder: {} as MediaEncoder,
     transcriptionService: {} as TranscriptionService,
+    diarizationService: {} as DiarizationService,
     llmClient: { complete: options.complete } as unknown as LlmClient,
     settings: () =>
       normalizeAppSettings({
@@ -346,5 +349,92 @@ describe('ProcessingCoordinator interrupted recovery', () => {  it('marks unfini
     expect(updated.status).toBe('transcribed');
     expect(updated.transcription.state).toBe('completed');
     expect(updated.transcription.partial).toBe(false);
+  });
+});
+
+describe('runDiarization', () => {
+  const segments = [
+    { startSeconds: 0, endSeconds: 1, text: 'one' },
+    { startSeconds: 1, endSeconds: 2, text: 'two' },
+  ];
+
+  it('counts the labels returned by the service', async () => {
+    const service = {
+      diarize: async () => [
+        { ...segments[0], speaker: '話者A' },
+        { ...segments[1], speaker: '話者B' },
+      ],
+    } as unknown as DiarizationService;
+
+    const result = await runDiarization({
+      service,
+      wavPath: '/tmp/audio.wav',
+      segments,
+      numSpeakers: 'auto',
+      signal: new AbortController().signal,
+    });
+
+    expect(result.segments).toEqual([
+      { ...segments[0], speaker: '話者A' },
+      { ...segments[1], speaker: '話者B' },
+    ]);
+    expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
+  });
+
+  it('keeps the original segments when the service returns null', async () => {
+    const service = { diarize: async () => null } as unknown as DiarizationService;
+
+    const result = await runDiarization({
+      service,
+      wavPath: '/tmp/audio.wav',
+      segments,
+      numSpeakers: 'auto',
+      signal: new AbortController().signal,
+    });
+
+    expect(result.segments).toEqual(segments);
+    expect(result.meta).toEqual({ state: 'completed', speakers: 0 });
+  });
+
+  it('keeps the original segments and records the error when the service fails', async () => {
+    const service = {
+      diarize: async () => {
+        throw new Error('model download failed');
+      },
+    } as unknown as DiarizationService;
+
+    const result = await runDiarization({
+      service,
+      wavPath: '/tmp/audio.wav',
+      segments,
+      numSpeakers: 'auto',
+      signal: new AbortController().signal,
+    });
+
+    expect(result.segments).toEqual(segments);
+    expect(result.meta).toEqual({
+      state: 'failed',
+      error: 'model download failed',
+    });
+  });
+
+  it('records a cancellation as a failed diarization', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const service = { diarize: async () => null } as unknown as DiarizationService;
+
+    const result = await runDiarization({
+      service,
+      wavPath: '/tmp/audio.wav',
+      segments,
+      numSpeakers: 'auto',
+      signal: controller.signal,
+    });
+
+    expect(result.segments).toEqual(segments);
+    expect(result.meta).toEqual({
+      state: 'failed',
+      error: 'speaker diarization was cancelled',
+    });
   });
 });

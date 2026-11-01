@@ -153,6 +153,13 @@ describe('SettingsStore', () => {
     expect(
       normalizeAppSettings({ mp3BitrateKbps: 96 as never }).mp3BitrateKbps,
     ).toBe(64);
+    expect(normalizeAppSettings({ speakerCount: 5 }).speakerCount).toBe(5);
+    expect(normalizeAppSettings({ speakerCount: 11 as never }).speakerCount).toBe(
+      'auto',
+    );
+    expect(normalizeAppSettings({ speakerCount: 'many' as never }).speakerCount).toBe(
+      'auto',
+    );
     expect(
       normalizeAppSettings({
         whisperSpeedRatios: { small: 0, medium: 99 },
