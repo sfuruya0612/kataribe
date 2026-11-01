@@ -557,6 +557,60 @@ describe('MeetingStore', () => {
     });
   });
 
+  it('req_diar_002_recovers_when_saving_the_cache_fails', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000033';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '話者A', text: '二つ目です。' },
+        ],
+      }),
+    );
+    const cachePath = diarizationCachePath(meetingDir);
+    await writeDiarizationCache(cachePath, {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 1, end: 2, cluster: 'speaker_00' },
+        { start: 2, end: 3, cluster: 'speaker_01' },
+      ],
+      names: { speaker_00: '田中' },
+      labels: { 田中: 'speaker_00', 話者A: 'speaker_01' },
+    });
+    await mkdir(`${cachePath}.tmp`);
+
+    const updated = await store.renameSpeakers(id, ['鈴木', '佐藤']);
+
+    expect(updated.speakers).toEqual(['鈴木', '佐藤']);
+    await expect(stat(cachePath)).rejects.toThrow();
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 佐藤: 二つ目です。',
+    );
+
+    const second = await store.renameSpeakers(id, ['高橋', '伊藤']);
+    expect(second.speakers).toEqual(['高橋', '伊藤']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 伊藤: 二つ目です。',
+    );
+  });
+
   it('req_diar_002_keeps_the_diarization_cache_after_a_partial_transcript', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000031';

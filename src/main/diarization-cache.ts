@@ -56,6 +56,22 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   );
 }
 
+function hasValidSpeakerMaps(
+  names: Record<string, string>,
+  labels: Record<string, string>,
+): boolean {
+  const nameValues = Object.values(names);
+  const labelValues = Object.values(labels);
+  if (
+    new Set(nameValues).size !== nameValues.length ||
+    new Set(labelValues).size !== labelValues.length
+  ) {
+    return false;
+  }
+  const clusters = new Set(labelValues);
+  return Object.keys(names).every((cluster) => clusters.has(cluster));
+}
+
 function parseKey(value: unknown): DiarizationCacheKey | null {
   if (!isRecord(value)) {
     return null;
@@ -128,12 +144,7 @@ function parseCache(value: unknown): DiarizationCache | null {
   ) {
     return null;
   }
-  const nameValues = Object.values(value.names);
-  const labelValues = Object.values(value.labels);
-  if (
-    new Set(nameValues).size !== nameValues.length ||
-    new Set(labelValues).size !== labelValues.length
-  ) {
+  if (!hasValidSpeakerMaps(value.names, value.labels)) {
     return null;
   }
   return {
@@ -191,6 +202,9 @@ export async function writeDiarizationCache(
   path: string,
   cache: DiarizationCache,
 ): Promise<void> {
+  if (!hasValidSpeakerMaps(cache.names, cache.labels)) {
+    throw new Error('invalid speaker diarization cache');
+  }
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   const temporary = `${path}.tmp`;
   const handle = await open(temporary, 'w', 0o600);

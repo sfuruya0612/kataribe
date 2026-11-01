@@ -112,6 +112,7 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
       { ...cache(), turns: [{ start: 0, end: 1, cluster: '' }] },
       { ...cache(), names: { speaker_00: '' } },
       { ...cache(), names: { speaker_00: '田中', speaker_01: '田中' } },
+      { ...cache(), names: { speaker_02: '鈴木' } },
       { ...cache(), labels: { '': 'speaker_00' } },
       { ...cache(), labels: { 田中: 'speaker_00', 佐藤: 'speaker_00' } },
     ];
@@ -130,6 +131,15 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
     await expect(
       writeDiarizationCache(join(blockingFile, 'diarization.json'), cache()),
     ).rejects.toThrow();
+  });
+
+  it('rejects a write with a stale speaker name', async () => {
+    const root = await createRoot();
+    const path = join(root, 'diarization.json');
+
+    await expect(
+      writeDiarizationCache(path, cache({ names: { speaker_02: '鈴木' } })),
+    ).rejects.toThrow('invalid speaker diarization cache');
   });
 });
 

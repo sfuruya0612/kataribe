@@ -1,6 +1,6 @@
 /**
  * 話者分離の出力解析、話者割り当て、子プロセス起動を検証する。
- * 対応する要求: REQ-DIAR-001
+ * 対応する要求: REQ-DIAR-001, REQ-DIAR-002
  */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -311,7 +311,7 @@ describe('DiarizationService', () => {
     expect(args).not.toContain('--clustering.num-clusters');
   });
 
-  it('reuses cached turns and names without starting the CLI', async () => {
+  it('req_diar_002_reuses_cached_turns_and_names_without_starting_the_cli', async () => {
     const root = await createRoot();
     const wavPath = await createWav(root);
     delete process.env.KATARIBE_DIARIZATION_MODE;
@@ -366,7 +366,7 @@ describe('DiarizationService', () => {
     expect(hit?.names).toEqual({ speaker_00: '田中' });
   });
 
-  it('runs the CLI and drops names when the threads cache key changes', async () => {
+  it('req_diar_002_runs_the_cli_and_drops_names_when_the_threads_cache_key_changes', async () => {
     const root = await createRoot();
     const wavPath = await createWav(root);
     delete process.env.KATARIBE_DIARIZATION_MODE;

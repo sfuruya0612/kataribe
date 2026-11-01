@@ -52,10 +52,24 @@ const MEETING_STATUSES: MeetingStatus[] = [
   'error',
 ];
 const INPUT_SOURCES = ['microphone', 'system', 'both'] as const;
-const TRANSLATION_FILES: Array<{ language: SummaryLanguage; file: string }> = [
+export const TRANSLATION_FILES: Array<{ language: SummaryLanguage; file: string }> = [
   { language: 'ja', file: 'transcript.ja.md' },
   { language: 'en', file: 'transcript.en.md' },
 ];
+
+function resolveTranscriptSpeakers(
+  body: string,
+  storedSpeakers: readonly string[],
+  cacheLabels: readonly string[],
+  hasCache: boolean,
+): string[] {
+  const knownNames = [...new Set([...storedSpeakers, ...cacheLabels])];
+  const extracted = extractTranscriptSpeakers(body, knownNames);
+  if (extracted.length > 0) {
+    return extracted;
+  }
+  return hasCache ? [] : recoverTranscriptSpeakers(body, storedSpeakers.length);
+}
 
 function isInside(root: string, target: string): boolean {
   const rel = relative(resolve(root), resolve(target));
@@ -312,19 +326,15 @@ export class MeetingStore {
     const cacheLabels = diarizationCache
       ? Object.keys(diarizationCache.labels)
       : [];
-    const knownNames = [...new Set([...storedSpeakers, ...cacheLabels])];
-    let speakers: string[];
-    if (transcript === null) {
-      speakers = storedSpeakers;
-    } else {
-      const extracted = extractTranscriptSpeakers(transcript.body, knownNames);
-      speakers =
-        extracted.length > 0
-          ? extracted
-          : diarizationCache !== null
-            ? []
-            : recoverTranscriptSpeakers(transcript.body, storedSpeakers.length);
-    }
+    const speakers =
+      transcript === null
+        ? storedSpeakers
+        : resolveTranscriptSpeakers(
+            transcript.body,
+            storedSpeakers,
+            cacheLabels,
+            diarizationCache !== null,
+          );
     return {
       meeting,
       recordingError,
@@ -694,14 +704,12 @@ export class MeetingStore {
     const cacheLabels = diarizationCache
       ? Object.keys(diarizationCache.labels)
       : [];
-    const knownNames = [...new Set([...stored, ...cacheLabels])];
-    const known = extractTranscriptSpeakers(transcript.body, knownNames);
-    const currentNames =
-      known.length > 0
-        ? known
-        : diarizationCache !== null
-          ? []
-          : recoverTranscriptSpeakers(transcript.body, stored.length);
+    const currentNames = resolveTranscriptSpeakers(
+      transcript.body,
+      stored,
+      cacheLabels,
+      diarizationCache !== null,
+    );
     if (currentNames.length !== names.length) {
       throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
     }
@@ -739,9 +747,15 @@ export class MeetingStore {
         nextNames[clusters[index]] = names[index];
         nextLabels[names[index]] = clusters[index];
       }
+      const allowedClusters = new Set(Object.values(nextLabels));
+      const filteredNames = Object.fromEntries(
+        Object.entries(nextNames).filter(([cluster]) =>
+          allowedClusters.has(cluster),
+        ),
+      );
       updatedCache = {
         ...diarizationCache,
-        names: nextNames,
+        names: filteredNames,
         labels: nextLabels,
       };
     }
@@ -774,6 +788,9 @@ export class MeetingStore {
       } catch (error) {
         console.error(
           `failed to save speaker diarization cache: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await rm(diarizationCachePath(meeting.meetingDir), { force: true }).catch(
+          () => undefined,
         );
       }
     }

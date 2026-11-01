@@ -54,7 +54,7 @@ import {
   type MeetingMeta,
   type MeetingMetaDiarization,
 } from './meeting-meta';
-import type { MeetingStore } from './meetings';
+import { TRANSLATION_FILES, type MeetingStore } from './meetings';
 import type { ModelManager } from './models';
 import { generateSummary } from './summary';
 import { generateMeetingTitle } from './summary';
@@ -162,8 +162,8 @@ async function rewriteTranslationSpeakers(
   if (mapping.size === 0) {
     return;
   }
-  for (const fileName of ['transcript.ja.md', 'transcript.en.md']) {
-    const path = join(meetingDir, fileName);
+  for (const entry of TRANSLATION_FILES) {
+    const path = join(meetingDir, entry.file);
     let markdown: string;
     try {
       markdown = await readFile(path, 'utf8');
@@ -1431,6 +1431,7 @@ export class ProcessingCoordinator {
           console.error(
             `failed to save speaker diarization cache: ${error instanceof Error ? error.message : String(error)}`,
           );
+          await rm(cachePath, { force: true }).catch(() => undefined);
         }
       }
       await updateMeetingMeta(metaPath, (value) => {

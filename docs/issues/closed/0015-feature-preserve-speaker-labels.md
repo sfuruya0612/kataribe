@@ -179,7 +179,7 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 
 - `tests/diarization-cache.test.ts`: 読み書き、schema 検証、破損、キー一致、キー不一致、アトミック書き込み。
 - `tests/diarization.test.ts`: キャッシュヒット時に CLI を起動しないこと、再割り当て、クラスタ ID ごとの話者名、自動ラベルの順序変更、キー不一致時の再実行。
-- `tests/processing.test.ts`: 再文字起こしのキャッシュ利用、部分文字起こし、失敗、キャンセルの後のキャッシュ保持、翻訳の置換。
+- `tests/processing.test.ts`: 再文字起こしのキャッシュ利用、翻訳の置換、キャッシュ書き込み失敗時の文字起こし、失敗とキャンセルの後のキャッシュ保持。
 - `tests/meetings.test.ts`: `detail` と `renameSpeakers` が `diarization.json` を更新すること、既存会議のフォールバック。
 - `tests/speakers.test.ts`: 表示名からクラスタ ID への対応と、話者名を保持しない行の扱い。
 - キャッシュキーの比較は、キーの各要素を変えた組み合わせで Example-based test として固定する。キーの値の組み合わせは有限で、PBT の新しい依存を追加しない。
@@ -213,8 +213,14 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 - 部分文字起こし、失敗、キャンセルでは `diarization.json` を削除しない。
 - 会議フォルダの削除で `diarization.json` も削除する。
 - 再文字起こしのキャッシュヒット時は、既存の翻訳の表示名を新しい表示名に置き換える。話者名を保持していない行は変更しない。
-- `npm run typecheck`、`npm test` (338 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB。
+- `npm run typecheck`、`npm test` (344 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB。
 - `smoke` は起動中の Kataribe との single instance lock を避けるため、一時 user data directory で実行した。
+
+レビュー後の追記:
+
+- `ProcessingCoordinator` を通したキャッシュヒット、翻訳の置換、キャッシュ書き込み失敗時の文字起こし、話者分離の失敗とキャンセル後のキャッシュ保持を `tests/processing.test.ts` で固定した。
+- `names` は現在の `labels` が指すクラスタだけに絞る。文字起こしに現れないクラスタの名前を残すと、後の改名で表示名が重複し、`diarization.json` が不正になるため。書き込み時も読み込みと同じ不変条件を検証する。
+- 話者名の変更でキャッシュの書き込みに失敗したときは `diarization.json` を削除し、`meta.speakers` と文字起こしから改名できる状態に戻す。文字起こしの再処理でキャッシュの書き込みに失敗したときも同じ扱いにする。
 
 計画との差分:
 

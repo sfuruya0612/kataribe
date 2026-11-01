@@ -27,11 +27,17 @@ export type RunDiarizationResult = {
 };
 
 function toCache(result: DiarizationResult): DiarizationCache {
+  const allowedClusters = new Set(Object.values(result.labels));
+  const names = Object.fromEntries(
+    Object.entries(result.names).filter(([cluster]) =>
+      allowedClusters.has(cluster),
+    ),
+  );
   return {
     schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
     key: result.cacheKey,
     turns: turnsToCache(result.turns),
-    names: result.names,
+    names,
     labels: result.labels,
   };
 }
