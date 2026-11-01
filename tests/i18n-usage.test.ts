@@ -86,6 +86,8 @@ function isNonDisplayLiteral(node: ts.StringLiteral): boolean {
   return false;
 }
 
+// 選択肢の label は MessageKey として t に渡す設定値だけを許可する。
+// JSX のテキストや属性値に辞書キーを直書きした場合は検出する。
 function isDictionaryKeyUsedAsLabel(node: ts.Node, value: string): boolean {
   if (!Object.hasOwn(EN_MESSAGES, value)) {
     return false;
