@@ -87,6 +87,9 @@
   - @shoichi.furuya
 - [ADD] バージョンと一致するタグの push で、署名なしの DMG を添付した GitHub Release を自動作成する
   - @shoichi.furuya
+- [ADD] 同じ音声と話者分離設定の再文字起こしで、初回の話者分離結果を再利用し、話者名を保持する
+  - 音声や話者分離の設定が変わると再分離する
+  - @shoichi.furuya
 
 ### CHANGE
 

@@ -1,6 +1,6 @@
 /**
  * 話者分離の出力解析、話者割り当て、子プロセス起動を検証する。
- * 対応する要求: REQ-DIAR-001
+ * 対応する要求: REQ-DIAR-001, REQ-DIAR-002
  */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,9 +13,14 @@ import {
   limitSpeakerTurns,
   parseDiarizationOutput,
   parseDiarizationProgressLine,
+  turnsToCache,
   type DiarizationModels,
   type DiarizationTurn,
 } from '../src/main/diarization';
+import {
+  DIARIZATION_CACHE_SCHEMA_VERSION,
+  type DiarizationCache,
+} from '../src/main/diarization-cache';
 import type { DiarizationModelPaths } from '../src/main/diarization-models';
 import { encodeWavMono16 } from '../src/main/wav';
 import type { TranscriptSegment } from '../src/shared/markdown';
@@ -123,7 +128,7 @@ describe('assignSpeakerTurns', () => {
       segment(2, 3, 'three'),
     ];
 
-    expect(assignSpeakerTurns(segments, turns)).toEqual([
+    expect(assignSpeakerTurns(segments, turns)?.segments).toEqual([
       { ...segments[0], speaker: '話者A' },
       { ...segments[1], speaker: '話者B' },
       { ...segments[2], speaker: '話者A' },
@@ -134,7 +139,7 @@ describe('assignSpeakerTurns', () => {
     const turns = [turn(0, 1.5, 'speaker_00'), turn(1.5, 3, 'speaker_01')];
     const segments = [segment(0, 1.6, 'mostly A'), segment(1.4, 3, 'mostly B')];
 
-    expect(assignSpeakerTurns(segments, turns)).toEqual([
+    expect(assignSpeakerTurns(segments, turns)?.segments).toEqual([
       { ...segments[0], speaker: '話者A' },
       { ...segments[1], speaker: '話者B' },
     ]);
@@ -144,7 +149,7 @@ describe('assignSpeakerTurns', () => {
     const turns = [turn(0, 1, 'speaker_00'), turn(2, 3, 'speaker_01')];
     const segments = [segment(3.5, 4, 'near'), segment(10, 11, 'far')];
 
-    expect(assignSpeakerTurns(segments, turns)).toEqual([
+    expect(assignSpeakerTurns(segments, turns)?.segments).toEqual([
       { ...segments[0], speaker: '話者A' },
       { ...segments[1] },
     ]);
@@ -161,7 +166,7 @@ describe('assignSpeakerTurns', () => {
       segment(2, 3, 'second visible'),
     ];
 
-    expect(assignSpeakerTurns(segments, turns)).toEqual([
+    expect(assignSpeakerTurns(segments, turns)?.segments).toEqual([
       { ...segments[0], speaker: '話者A' },
       { ...segments[1], speaker: '話者B' },
     ]);
@@ -174,6 +179,31 @@ describe('assignSpeakerTurns', () => {
     expect(assignSpeakerTurns([segment(0, 1, 'one')], [])).toBeNull();
   });
 
+  it('uses cluster names and skips them when assigning auto labels', () => {
+    const turns = [turn(0, 1, 'speaker_00'), turn(1, 2, 'speaker_01')];
+    const segments = [segment(0, 1, 'one'), segment(1, 2, 'two')];
+
+    const named = assignSpeakerTurns(segments, turns, {
+      speaker_00: '田中',
+    });
+    expect(named?.segments).toEqual([
+      { ...segments[0], speaker: '田中' },
+      { ...segments[1], speaker: '話者A' },
+    ]);
+    expect(named?.labels).toEqual({
+      田中: 'speaker_00',
+      話者A: 'speaker_01',
+    });
+
+    const collision = assignSpeakerTurns(segments, turns, {
+      speaker_00: '話者A',
+    });
+    expect(collision?.segments).toEqual([
+      { ...segments[0], speaker: '話者A' },
+      { ...segments[1], speaker: '話者B' },
+    ]);
+  });
+
   it('caps more than ten speakers at ten labels', () => {
     const turns = Array.from({ length: 11 }, (_, index) =>
       turn(index, index + 1, `speaker_${String(index).padStart(2, '0')}`),
@@ -184,7 +214,7 @@ describe('assignSpeakerTurns', () => {
 
     const result = assignSpeakerTurns(segments, turns);
     expect(result).not.toBeNull();
-    const labels = new Set(result?.map((item) => item.speaker));
+    const labels = new Set(result?.segments.map((item) => item.speaker));
     expect(labels.size).toBe(10);
     expect(labels.has('話者11')).toBe(false);
   });
@@ -232,6 +262,10 @@ function createModels(calls: string[] = []): DiarizationModels {
       calls.push('ensureInstalled');
       return paths;
     },
+    modelHashes: () => ({
+      segmentation: 'a'.repeat(64),
+      embedding: 'b'.repeat(64),
+    }),
   };
 }
 
@@ -263,7 +297,7 @@ describe('DiarizationService', () => {
       },
     );
 
-    expect(result?.map((item) => item.speaker)).toEqual([
+    expect(result?.segments.map((item) => item.speaker)).toEqual([
       '話者A',
       '話者B',
       '話者A',
@@ -275,6 +309,112 @@ describe('DiarizationService', () => {
     expect(args).toContain('--segmentation.num-threads=2');
     expect(args).toContain('--clustering.cluster-threshold=0.9');
     expect(args).not.toContain('--clustering.num-clusters');
+  });
+
+  it('req_diar_002_reuses_cached_turns_and_names_without_starting_the_cli', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    delete process.env.KATARIBE_DIARIZATION_MODE;
+    const firstService = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+    const segments = [segment(0, 1, 'one'), segment(1, 2, 'two')];
+    const first = await firstService.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+    });
+    if (first === null) {
+      throw new Error('the first diarization did not return labels');
+    }
+    const audioSha256 = 'd'.repeat(64);
+    const cache: DiarizationCache = {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: { ...first.cacheKey, audio_sha256: audioSha256 },
+      turns: turnsToCache(first.turns),
+      names: { speaker_00: '田中' },
+      labels: first.labels,
+    };
+    let binaryCalls = 0;
+    const modelCalls: string[] = [];
+    const cachedService = new DiarizationService({
+      locator: {
+        sherpaDiarizationPath: async () => {
+          binaryCalls += 1;
+          return fixturePath;
+        },
+      },
+      models: createModels(modelCalls),
+    });
+
+    const hit = await cachedService.diarize(
+      wavPath,
+      [segment(0.2, 1.2, 'one'), segment(1.4, 1.9, 'two')],
+      {
+        numSpeakers: 'auto',
+        cache,
+        audioSha256,
+      },
+    );
+
+    expect(hit?.cacheHit).toBe(true);
+    expect(binaryCalls).toBe(0);
+    expect(modelCalls).toEqual([]);
+    expect(hit?.segments.map((item) => item.speaker)).toEqual([
+      '田中',
+      '話者A',
+    ]);
+    expect(hit?.names).toEqual({ speaker_00: '田中' });
+  });
+
+  it('req_diar_002_runs_the_cli_and_drops_names_when_the_threads_cache_key_changes', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    delete process.env.KATARIBE_DIARIZATION_MODE;
+    const firstService = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+      threads: 2,
+    });
+    const segments = [segment(0, 1, 'one'), segment(1, 2, 'two')];
+    const first = await firstService.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+    });
+    if (first === null) {
+      throw new Error('the first diarization did not return labels');
+    }
+    const cache: DiarizationCache = {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: first.cacheKey,
+      turns: turnsToCache(first.turns),
+      names: { speaker_00: '田中' },
+      labels: first.labels,
+    };
+    let binaryCalls = 0;
+    const modelCalls: string[] = [];
+    const changedService = new DiarizationService({
+      locator: {
+        sherpaDiarizationPath: async () => {
+          binaryCalls += 1;
+          return fixturePath;
+        },
+      },
+      models: createModels(modelCalls),
+      threads: 3,
+    });
+
+    const result = await changedService.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+      cache,
+    });
+
+    expect(result?.cacheHit).toBe(false);
+    expect(binaryCalls).toBe(1);
+    expect(modelCalls).toEqual(['ensureInstalled']);
+    expect(result?.names).toEqual({});
+    expect(result?.segments.map((item) => item.speaker)).toEqual([
+      '話者A',
+      '話者B',
+    ]);
   });
 
   it('passes a fixed speaker count', async () => {
@@ -311,7 +451,7 @@ describe('DiarizationService', () => {
       { numSpeakers: 'auto' },
     );
 
-    expect(result?.map((item) => item.speaker)).toEqual(['話者A', '話者B']);
+    expect(result?.segments.map((item) => item.speaker)).toEqual(['話者A', '話者B']);
   });
 
   it('reruns with ten clusters when automatic detection finds more than ten', async () => {
@@ -332,8 +472,8 @@ describe('DiarizationService', () => {
     const result = await service.diarize(wavPath, segments, { numSpeakers: 'auto' });
 
     expect(result).not.toBeNull();
-    expect(new Set(result?.map((item) => item.speaker)).size).toBe(10);
-    expect(result?.some((item) => item.speaker === '話者11')).toBe(false);
+    expect(new Set(result?.segments.map((item) => item.speaker)).size).toBe(10);
+    expect(result?.segments.some((item) => item.speaker === '話者11')).toBe(false);
     const args = await readFile(argsFile, 'utf8');
     expect(args.match(/--clustering.num-clusters=10/gu)).toHaveLength(1);
   });
@@ -429,10 +569,10 @@ describe('DiarizationService', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(result).toHaveLength(3000);
-    expect(result?.[0].speaker).toBe('話者A');
-    expect(result?.[1].speaker).toBe('話者B');
-    expect(result?.[2999].speaker).toBe('話者B');
+    expect(result?.segments).toHaveLength(3000);
+    expect(result?.segments[0].speaker).toBe('話者A');
+    expect(result?.segments[1].speaker).toBe('話者B');
+    expect(result?.segments[2999].speaker).toBe('話者B');
   });
 
   it('falls back to the first result when the ten-cluster retry fails', async () => {
@@ -452,8 +592,8 @@ describe('DiarizationService', () => {
     });
 
     expect(result).not.toBeNull();
-    expect(new Set(result?.map((item) => item.speaker)).size).toBe(10);
-    expect(result?.some((item) => item.speaker === '話者11')).toBe(false);
+    expect(new Set(result?.segments.map((item) => item.speaker)).size).toBe(10);
+    expect(result?.segments.some((item) => item.speaker === '話者11')).toBe(false);
   });
 
   it('resolves the binary before downloading the models', async () => {

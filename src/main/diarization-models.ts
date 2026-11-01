@@ -123,6 +123,22 @@ export class DiarizationModelManager {
     };
   }
 
+  modelHashes(): { segmentation: string; embedding: string } {
+    const segmentation = this.definitions.find(
+      (definition) => definition.kind === 'segmentation',
+    );
+    const embedding = this.definitions.find(
+      (definition) => definition.kind === 'embedding',
+    );
+    if (!segmentation || !embedding) {
+      throw new Error('speaker diarization model definitions are incomplete');
+    }
+    return {
+      segmentation: segmentation.finalSha256,
+      embedding: embedding.finalSha256,
+    };
+  }
+
   async ensureInstalled(
     signal?: AbortSignal,
     onProgress?: (progress: DiarizationModelProgress) => void,

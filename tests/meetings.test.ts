@@ -3,6 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { encodeWavMono16 } from '../src/main/wav';
+import {
+  DIARIZATION_CACHE_SCHEMA_VERSION,
+  diarizationCachePath,
+  readDiarizationCache,
+  writeDiarizationCache,
+  type DiarizationCache,
+} from '../src/main/diarization-cache';
 import { MeetingStore } from '../src/main/meetings';
 import {
   formatTranscriptMarkdown,
@@ -481,6 +488,197 @@ describe('MeetingStore', () => {
     );
     const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
     expect(meta.speakers).toEqual(['鈴木', '高橋']);
+  });
+
+  it('req_diar_002_renames_speakers_in_the_diarization_cache', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000030';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '話者A', text: '二つ目です。' },
+        ],
+      }),
+    );
+    const cache: DiarizationCache = {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 1, end: 2, cluster: 'speaker_00' },
+        { start: 2, end: 3, cluster: 'speaker_01' },
+      ],
+      names: { speaker_00: '田中' },
+      labels: { 田中: 'speaker_00', 話者A: 'speaker_01' },
+    };
+    const cachePath = diarizationCachePath(meetingDir);
+    await writeDiarizationCache(cachePath, cache);
+
+    const detail = await store.detail(id);
+    expect(detail?.speakers).toEqual(['田中', '話者A']);
+
+    const updated = await store.renameSpeakers(id, ['鈴木', '佐藤']);
+
+    expect(updated.speakers).toEqual(['鈴木', '佐藤']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:01] 鈴木: 一つ目です。',
+    );
+    const saved = await readDiarizationCache(cachePath);
+    expect(saved?.names).toEqual({ speaker_00: '鈴木', speaker_01: '佐藤' });
+    expect(saved?.labels).toEqual({
+      鈴木: 'speaker_00',
+      佐藤: 'speaker_01',
+    });
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.speakers).toEqual(['鈴木', '佐藤']);
+
+    const swapped = await store.renameSpeakers(id, ['佐藤', '鈴木']);
+    expect(swapped.speakers).toEqual(['佐藤', '鈴木']);
+    const swappedCache = await readDiarizationCache(cachePath);
+    expect(swappedCache?.names).toEqual({ speaker_00: '佐藤', speaker_01: '鈴木' });
+    expect(swappedCache?.labels).toEqual({
+      佐藤: 'speaker_00',
+      鈴木: 'speaker_01',
+    });
+  });
+
+  it('req_diar_002_recovers_when_saving_the_cache_fails', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000033';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '話者A', text: '二つ目です。' },
+        ],
+      }),
+    );
+    const cachePath = diarizationCachePath(meetingDir);
+    await writeDiarizationCache(cachePath, {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 1, end: 2, cluster: 'speaker_00' },
+        { start: 2, end: 3, cluster: 'speaker_01' },
+      ],
+      names: { speaker_00: '田中' },
+      labels: { 田中: 'speaker_00', 話者A: 'speaker_01' },
+    });
+    await mkdir(`${cachePath}.tmp`);
+
+    const updated = await store.renameSpeakers(id, ['鈴木', '佐藤']);
+
+    expect(updated.speakers).toEqual(['鈴木', '佐藤']);
+    await expect(stat(cachePath)).rejects.toThrow();
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 佐藤: 二つ目です。',
+    );
+
+    const second = await store.renameSpeakers(id, ['高橋', '伊藤']);
+    expect(second.speakers).toEqual(['高橋', '伊藤']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 伊藤: 二つ目です。',
+    );
+  });
+
+  it('req_diar_002_keeps_the_diarization_cache_after_a_partial_transcript', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000031';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribing' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, endSeconds: 2, text: '途中です。' }],
+        partial: true,
+      }),
+    );
+    const cachePath = diarizationCachePath(meetingDir);
+    await writeDiarizationCache(cachePath, {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 1, end: 2, cluster: 'speaker_00' },
+        { start: 2, end: 3, cluster: 'speaker_01' },
+      ],
+      names: { speaker_00: '田中' },
+      labels: { 田中: 'speaker_00', 話者A: 'speaker_01' },
+    });
+
+    const detail = await store.detail(id);
+
+    expect(detail?.speakers).toEqual([]);
+    expect(await readDiarizationCache(cachePath)).not.toBeNull();
+  });
+
+  it('req_diar_002_deletes_the_diarization_cache_with_the_meeting', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000032';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    const cachePath = diarizationCachePath(meetingDir);
+    await writeDiarizationCache(cachePath, {
+      schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 1, end: 2, cluster: 'speaker_00' },
+        { start: 2, end: 3, cluster: 'speaker_01' },
+      ],
+      names: {},
+      labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+    });
+
+    await store.delete(id);
+
+    await expect(stat(cachePath)).rejects.toThrow();
   });
 
   it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {

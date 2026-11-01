@@ -33,9 +33,18 @@ import type {
   TranslationResult,
 } from '../shared/types';
 import { sanitizeMeetingTitle } from '../shared/title';
+import { renameTranscriptSpeakers } from '../shared/speakers';
 import type { ApiKeyStore } from './api-keys';
+import { hashFile } from './asset-download';
 import type { DiarizationService } from './diarization';
 import { runDiarization } from './diarization-run';
+import {
+  buildLabelMapping,
+  diarizationCachePath,
+  readDiarizationCache,
+  writeDiarizationCache,
+  type DiarizationCache,
+} from './diarization-cache';
 import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
@@ -45,7 +54,7 @@ import {
   type MeetingMeta,
   type MeetingMetaDiarization,
 } from './meeting-meta';
-import type { MeetingStore } from './meetings';
+import { TRANSLATION_FILES, type MeetingStore } from './meetings';
 import type { ModelManager } from './models';
 import { generateSummary } from './summary';
 import { generateMeetingTitle } from './summary';
@@ -142,6 +151,30 @@ async function writePrivateText(path: string, text: string): Promise<void> {
 function clearDiarization(meta: MeetingMeta): void {
   delete meta.diarization;
   delete meta.speakers;
+}
+
+async function rewriteTranslationSpeakers(
+  meetingDir: string,
+  previous: DiarizationCache,
+  next: DiarizationCache,
+): Promise<void> {
+  const mapping = buildLabelMapping(previous, next);
+  if (mapping.size === 0) {
+    return;
+  }
+  for (const entry of TRANSLATION_FILES) {
+    const path = join(meetingDir, entry.file);
+    let markdown: string;
+    try {
+      markdown = await readFile(path, 'utf8');
+    } catch {
+      continue;
+    }
+    const renamed = renameTranscriptSpeakers(markdown, mapping);
+    if (renamed !== markdown) {
+      await writePrivateText(path, renamed);
+    }
+  }
 }
 
 function sourceLabel(meta: MeetingMeta): string {
@@ -1316,14 +1349,28 @@ export class ProcessingCoordinator {
       }
       let finalSegments = outcome.segments;
       let diarizationMeta: MeetingMetaDiarization | undefined;
+      let diarizationCache: DiarizationCache | null = null;
+      const cachePath = diarizationCachePath(meeting.meetingDir);
       const currentSettings = this.settings();
       if (currentSettings.speakerDiarization) {
+        const audioPath = join(meeting.meetingDir, 'audio.mp3');
+        let audioSha256: string | undefined;
+        try {
+          audioSha256 = await hashFile(audioPath);
+        } catch (error) {
+          console.error(
+            `failed to hash meeting audio: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const previousCache = await readDiarizationCache(cachePath);
         const diarization = await runDiarization({
           service: this.diarizationService,
           wavPath: transcriptionWav,
           segments: outcome.segments,
           numSpeakers: currentSettings.speakerCount,
           signal: controller.signal,
+          cache: previousCache,
+          audioSha256,
           onProgress: (progress) => {
             const percent =
               progress.progress === null
@@ -1342,6 +1389,20 @@ export class ProcessingCoordinator {
         });
         finalSegments = diarization.segments;
         diarizationMeta = diarization.meta;
+        diarizationCache = diarization.cache;
+        if (diarization.cacheHit && previousCache && diarization.cache) {
+          try {
+            await rewriteTranslationSpeakers(
+              meeting.meetingDir,
+              previousCache,
+              diarization.cache,
+            );
+          } catch (error) {
+            console.error(
+              `failed to update translation speaker labels: ${error instanceof Error ? error.message : String(error)}`,
+            );
+          }
+        }
       }
       const speakerNames = [
         ...new Set(
@@ -1363,6 +1424,16 @@ export class ProcessingCoordinator {
         segments: finalSegments,
       });
       await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
+      if (diarizationCache) {
+        try {
+          await writeDiarizationCache(cachePath, diarizationCache);
+        } catch (error) {
+          console.error(
+            `failed to save speaker diarization cache: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          await rm(cachePath, { force: true }).catch(() => undefined);
+        }
+      }
       await updateMeetingMeta(metaPath, (value) => {
         value.status = 'transcribed';
         value.transcription = {

@@ -3,16 +3,37 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ApiKeyStore } from '../src/main/api-keys';
-import type { DiarizationService } from '../src/main/diarization';
+import { hashFile } from '../src/main/asset-download';
+import type {
+  DiarizationOptions,
+  DiarizationResult,
+  DiarizationService,
+} from '../src/main/diarization';
+import {
+  DIARIZATION_CACHE_SCHEMA_VERSION,
+  diarizationCachePath,
+  readDiarizationCache,
+  writeDiarizationCache,
+  type DiarizationCache,
+} from '../src/main/diarization-cache';
 import type { LlmClient } from '../src/main/llm';
-import type { MediaEncoder } from '../src/main/media';
+import type { EncodeOptions, MediaEncoder } from '../src/main/media';
 import { writeMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
 import { MeetingStore } from '../src/main/meetings';
 import type { ModelManager } from '../src/main/models';
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
-import type { TranscriptionService } from '../src/main/transcription';
-import { formatTranscriptMarkdown } from '../src/shared/markdown';
+import type {
+  TranscribeOptions,
+  TranscriptionOutcome,
+  TranscriptionService,
+} from '../src/main/transcription';
+import { encodeWavMono16 } from '../src/main/wav';
+import {
+  formatTranscriptMarkdown,
+  formatTranslationMarkdown,
+  type TranscriptSegment,
+} from '../src/shared/markdown';
 import { normalizeAppSettings } from '../src/shared/settings';
 
 const roots: string[] = [];
@@ -360,10 +381,27 @@ describe('runDiarization', () => {
 
   it('req_diar_001_counts_the_labels_returned_by_the_service', async () => {
     const service = {
-      diarize: async () => [
-        { ...segments[0], speaker: '話者A' },
-        { ...segments[1], speaker: '話者B' },
-      ],
+      diarize: async () => ({
+        segments: [
+          { ...segments[0], speaker: '話者A' },
+          { ...segments[1], speaker: '話者B' },
+        ],
+        turns: [
+          { startSeconds: 0, endSeconds: 1, speaker: 'speaker_00' },
+          { startSeconds: 1, endSeconds: 2, speaker: 'speaker_01' },
+        ],
+        names: {},
+        labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+        cacheHit: true,
+        cacheKey: {
+          audio_sha256: 'a'.repeat(64),
+          segmentation_sha256: 'b'.repeat(64),
+          embedding_sha256: 'c'.repeat(64),
+          speaker_count: 'auto',
+          cluster_threshold: 0.9,
+          threads: 4,
+        },
+      }),
     } as unknown as DiarizationService;
 
     const result = await runDiarization({
@@ -379,6 +417,24 @@ describe('runDiarization', () => {
       { ...segments[1], speaker: '話者B' },
     ]);
     expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
+    expect(result.cacheHit).toBe(true);
+    expect(result.cache).toEqual({
+      schema_version: 1,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 0, end: 1, cluster: 'speaker_00' },
+        { start: 1, end: 2, cluster: 'speaker_01' },
+      ],
+      names: {},
+      labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+    });
   });
 
   it('req_diar_001_keeps_the_original_segments_when_the_service_returns_null', async () => {
@@ -394,6 +450,8 @@ describe('runDiarization', () => {
 
     expect(result.segments).toEqual(segments);
     expect(result.meta).toEqual({ state: 'completed', speakers: 0 });
+    expect(result.cache).toBeNull();
+    expect(result.cacheHit).toBe(false);
   });
 
   it('req_diar_001_keeps_the_original_segments_and_records_the_error_when_the_service_fails', async () => {
@@ -416,6 +474,8 @@ describe('runDiarization', () => {
       state: 'failed',
       error: 'model download failed',
     });
+    expect(result.cache).toBeNull();
+    expect(result.cacheHit).toBe(false);
   });
 
   it('req_diar_001_records_a_cancellation_as_a_failed_diarization', async () => {
@@ -436,5 +496,331 @@ describe('runDiarization', () => {
       state: 'failed',
       error: 'speaker diarization was cancelled',
     });
+  });
+});
+
+const transcriptionOutcome: TranscriptionOutcome = {
+  state: 'completed',
+  segments: [
+    { startSeconds: 1, endSeconds: 2, text: '一つ目です。' },
+    { startSeconds: 2, endSeconds: 3, text: '二つ目です。' },
+  ],
+  language: 'ja',
+  lastEndSeconds: 3,
+  durationSeconds: 4,
+  elapsedSeconds: 2,
+  errorCode: null,
+  error: null,
+  resumed: false,
+};
+
+function diarizationResult(
+  options: DiarizationOptions,
+  cacheHit: boolean,
+  names: Record<string, string> = { speaker_00: '田中', speaker_01: '佐藤' },
+): DiarizationResult {
+  return {
+    segments: [
+      { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+      { startSeconds: 2, endSeconds: 3, speaker: '佐藤', text: '二つ目です。' },
+    ],
+    turns: [
+      { startSeconds: 1, endSeconds: 2, speaker: 'speaker_00' },
+      { startSeconds: 2, endSeconds: 3, speaker: 'speaker_01' },
+    ],
+    names,
+    labels: { 田中: 'speaker_00', 佐藤: 'speaker_01' },
+    cacheHit,
+    cacheKey: {
+      audio_sha256: options.audioSha256 ?? 'a'.repeat(64),
+      segmentation_sha256: 'b'.repeat(64),
+      embedding_sha256: 'c'.repeat(64),
+      speaker_count: options.numSpeakers,
+      cluster_threshold: 0.9,
+      threads: 4,
+    },
+  };
+}
+
+async function createDiarizationMeeting() {
+  const root = await mkdtemp(join(tmpdir(), 'kataribe-processing-diarization-'));
+  roots.push(root);
+  const saveRoot = join(root, 'Kataribe');
+  const meetingId = '00000000-0000-4000-8000-0000000000ab';
+  const meetingDir = join(saveRoot, '2026', '2026-11-01_0900_話者キャッシュ');
+  await mkdir(meetingDir, { recursive: true });
+  const audioPath = join(meetingDir, 'audio.mp3');
+  await writeFile(audioPath, Buffer.from('mp3-data'));
+  const audioHash = await hashFile(audioPath);
+  const meta: MeetingMeta = {
+    schema_version: 1,
+    id: meetingId,
+    status: 'transcribed',
+    title: '話者キャッシュ',
+    started_at: '2026-11-01T00:00:00.000Z',
+    duration: 4,
+    source: { input: 'both' },
+    sample_rate: 16000,
+    channels: 1,
+    bits_per_sample: 16,
+    chunks: [],
+    expected_samples: 64000,
+    actual_samples: 64000,
+    app_version: '0.1.0',
+    audio_path: 'audio.mp3',
+    speakers: ['話者A', '話者B'],
+  };
+  await writeMeetingMeta(join(meetingDir, 'meta.json'), meta);
+  const previousCache: DiarizationCache = {
+    schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
+    key: {
+      audio_sha256: audioHash,
+      segmentation_sha256: 'b'.repeat(64),
+      embedding_sha256: 'c'.repeat(64),
+      speaker_count: 'auto',
+      cluster_threshold: 0.9,
+      threads: 4,
+    },
+    turns: [
+      { start: 1, end: 2, cluster: 'speaker_00' },
+      { start: 2, end: 3, cluster: 'speaker_01' },
+    ],
+    names: { speaker_00: '田中' },
+    labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+  };
+  const cachePath = diarizationCachePath(meetingDir);
+  await writeDiarizationCache(cachePath, previousCache);
+  await writeFile(
+    join(meetingDir, 'transcript.ja.md'),
+    formatTranslationMarkdown({
+      title: meta.title,
+      startedAt: meta.started_at,
+      durationSeconds: meta.duration,
+      source: 'mic+system',
+      model: 'small',
+      sourceLanguage: 'ja',
+      targetLanguage: 'ja',
+      provider: 'chatgpt',
+      generatedAt: '2026-11-01T00:01:00.000Z',
+      segments: [
+        { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: '一つ目です。' },
+        { startSeconds: 2, endSeconds: 3, text: 'ラベルなしの行です。' },
+      ],
+    }),
+  );
+  return { root, saveRoot, meetingId, meetingDir, cachePath, previousCache, audioHash };
+}
+
+function createDiarizationCoordinator(options: {
+  root: string;
+  saveRoot: string;
+  diarize: (
+    wavPath: string,
+    segments: TranscriptSegment[],
+    options: DiarizationOptions,
+  ) => Promise<DiarizationResult | null>;
+}) {
+  const meetingStore = new MeetingStore(options.saveRoot);
+  const calls: Array<{
+    wavPath: string;
+    segments: TranscriptSegment[];
+    options: DiarizationOptions;
+  }> = [];
+  const coordinator = new ProcessingCoordinator({
+    tempRoot: join(options.root, 'tmp'),
+    meetingStore,
+    modelManager: {
+      installedPath: async () => '/tmp/ggml-small.bin',
+    } as unknown as ModelManager,
+    apiKeyStore: {
+      status: async (profileId: string) => ({
+        profileId,
+        configured: true,
+        host: 'api.openai.com',
+        keychainAvailable: true,
+        keychainError: null,
+      }),
+      hostMatches: () => true,
+      getKey: async () => 'sk-test',
+    } as unknown as ApiKeyStore,
+    mediaEncoder: {
+      createTranscriptionWav: async (encode: EncodeOptions) => {
+        await writeFile(
+          encode.outputPath,
+          encodeWavMono16(new Float32Array(16000 * 4), 16000),
+        );
+      },
+    } as unknown as MediaEncoder,
+    transcriptionService: {
+      transcribe: async (_options: TranscribeOptions) => transcriptionOutcome,
+    } as unknown as TranscriptionService,
+    diarizationService: {
+      diarize: async (
+        wavPath: string,
+        segments: TranscriptSegment[],
+        diarizationOptions: DiarizationOptions,
+      ) => {
+        calls.push({ wavPath, segments, options: diarizationOptions });
+        return options.diarize(wavPath, segments, diarizationOptions);
+      },
+    } as unknown as DiarizationService,
+    llmClient: {
+      complete: async () => ({
+        text: '',
+        inputTokens: 0,
+        outputTokens: 0,
+        status: 200,
+      }),
+    } as unknown as LlmClient,
+    settings: () =>
+      normalizeAppSettings({
+        llmProfiles: [
+          {
+            id: 'work',
+            provider: 'chatgpt',
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-5.5',
+          },
+        ],
+        llmDefaultProfileId: 'work',
+        summaryLanguage: 'ja',
+        whisperModel: 'small',
+        speakerDiarization: true,
+        speakerCount: 'auto',
+      }),
+    onStateChange: () => undefined,
+    onMeetingUpdated: () => undefined,
+  });
+  return { coordinator, meetingStore, calls };
+}
+
+describe('ProcessingCoordinator diarization cache', () => {
+  it('req_diar_002_reuses_the_cache_and_keeps_names_in_transcript_and_translation', async () => {
+    const setup = await createDiarizationMeeting();
+    const { coordinator, calls } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, true, {
+          speaker_00: '田中',
+          speaker_01: '佐藤',
+          speaker_02: '鈴木',
+        }),
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].options.cache).toEqual(setup.previousCache);
+    expect(calls[0].options.audioSha256).toBe(setup.audioHash);
+    const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('田中: 一つ目です。');
+    expect(transcript).toContain('佐藤: 二つ目です。');
+    const translation = await readFile(
+      join(setup.meetingDir, 'transcript.ja.md'),
+      'utf8',
+    );
+    expect(translation).toContain('田中: 一つ目です。');
+    expect(translation).not.toContain('話者A');
+    expect(translation).toContain('ラベルなしの行です。');
+    const meta = JSON.parse(
+      await readFile(join(setup.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.status).toBe('transcribed');
+    expect(meta.speakers).toEqual(['田中', '佐藤']);
+    expect(meta.diarization).toEqual({ state: 'completed', speakers: 2 });
+    const cache = await readDiarizationCache(setup.cachePath);
+    expect(cache?.names).toEqual({ speaker_00: '田中', speaker_01: '佐藤' });
+    expect(cache?.labels).toEqual({ 田中: 'speaker_00', 佐藤: 'speaker_01' });
+    expect(cache?.key.audio_sha256).toBe(setup.audioHash);
+  });
+
+  it('req_diar_002_keeps_the_transcript_when_the_cache_cannot_be_written', async () => {
+    const setup = await createDiarizationMeeting();
+    await rm(setup.cachePath, { force: true });
+    await mkdir(setup.cachePath);
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('田中: 一つ目です。');
+    const meta = JSON.parse(
+      await readFile(join(setup.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.status).toBe('transcribed');
+    expect(meta.speakers).toEqual(['田中', '佐藤']);
+    expect(meta.diarization).toEqual({ state: 'completed', speakers: 2 });
+  });
+
+  it('req_diar_002_keeps_the_cache_and_transcript_when_diarization_fails', async () => {
+    const setup = await createDiarizationMeeting();
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async () => {
+        throw new Error('diarization failed');
+      },
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('一つ目です。');
+    expect(transcript).not.toContain('田中');
+    expect(await readDiarizationCache(setup.cachePath)).toEqual(setup.previousCache);
+    const meta = JSON.parse(
+      await readFile(join(setup.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.status).toBe('transcribed');
+    expect(meta.diarization).toEqual({
+      state: 'failed',
+      error: 'diarization failed',
+    });
+    expect(meta.speakers).toBeUndefined();
+  });
+
+  it('req_diar_002_keeps_the_cache_after_a_cancelled_diarization', async () => {
+    const setup = await createDiarizationMeeting();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let notifyStarted: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async () => {
+        notifyStarted();
+        await gate;
+        return null;
+      },
+    });
+
+    const pending = coordinator.requestTranscription(setup.meetingId);
+    await started;
+    coordinator.cancel();
+    release();
+    await pending;
+
+    expect(await readDiarizationCache(setup.cachePath)).toEqual(setup.previousCache);
+    const meta = JSON.parse(
+      await readFile(join(setup.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.diarization).toEqual({
+      state: 'failed',
+      error: 'speaker diarization was cancelled',
+    });
+    const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('一つ目です。');
+    expect(transcript).not.toContain('田中');
   });
 });
