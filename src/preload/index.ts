@@ -14,6 +14,7 @@ import type {
   MeetingDetail,
   MeetingSearchResult,
   MeetingSummary,
+  MeetingTodo,
   MeetingWaveform,
   MicrophonePermissionStatus,
   ModelDownloadProgress,
@@ -117,6 +118,21 @@ const api = {
     ipcRenderer.invoke('recording:open-folder'),
   listMeetings: (): Promise<MeetingSummary[]> =>
     ipcRenderer.invoke('meetings:list'),
+  listMeetingTodos: (): Promise<MeetingTodo[]> =>
+    ipcRenderer.invoke('meetings:list-todos'),
+  setMeetingTodoChecked: (
+    meetingId: string,
+    lineNumber: number,
+    expectedText: string,
+    checked: boolean,
+  ): Promise<void> =>
+    ipcRenderer.invoke(
+      'meetings:set-todo-checked',
+      meetingId,
+      lineNumber,
+      expectedText,
+      checked,
+    ),
   getMeetingDetail: (meetingId: string): Promise<MeetingDetail | null> =>
     ipcRenderer.invoke('meetings:detail', meetingId),
   updateMeetingTitle: (

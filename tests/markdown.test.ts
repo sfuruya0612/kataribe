@@ -1,3 +1,7 @@
+/**
+ * 文字起こしと要約の Markdown の解析と整形を検証する。
+ * 対応する要求: REQ-TODO-001
+ */
 import { describe, expect, it } from 'vitest';
 import {
   detectSummaryLanguage,
@@ -6,6 +10,8 @@ import {
   formatTranscriptMarkdown,
   normalizeSummaryMarkdown,
   parseFrontMatter,
+  parseTodoItems,
+  setTodoChecked,
   stringifyFrontMatter,
 } from '../src/shared/markdown';
 
@@ -137,5 +143,255 @@ describe('summary markdown', () => {
     expect(markdown).toContain('provider: claude');
     expect(markdown).toContain('model: claude-sonnet-5-5');
     expect(detectSummaryLanguage(markdown)).toBe('en');
+  });
+});
+
+describe('req_todo_001_parse_todo_items', () => {
+  it('extracts only checklist items in the ToDo section', () => {
+    const body = [
+      '## 要約',
+      '- [ ] 要約の項目',
+      '## ToDo',
+      '- [ ] 資料をまとめる',
+      '箇条書きの行',
+      '  * [x] レビューする',
+      '- [X] 公開する',
+      '- [ ]',
+      '## 未決事項',
+      '- [ ] 対象外',
+    ].join('\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 3, checked: false, text: '資料をまとめる' },
+      { lineNumber: 5, checked: true, text: 'レビューする' },
+      { lineNumber: 6, checked: true, text: '公開する' },
+    ]);
+  });
+
+  it('recognizes the English heading and returns an empty list without a ToDo section', () => {
+    expect(
+      parseTodoItems(
+        ['## Summary', 'Done', '## ToDo', '- [x] Ship the release'].join('\n'),
+      ),
+    ).toEqual([{ lineNumber: 3, checked: true, text: 'Ship the release' }]);
+    expect(parseTodoItems(['## Summary', '- [ ] Not a task'].join('\n'))).toEqual(
+      [],
+    );
+    expect(parseTodoItems('')).toEqual([]);
+  });
+
+  it('accepts CRLF line endings and reports zero-based body line numbers', () => {
+    const body = ['## ToDo', '- [ ] first', 'second'].join('\r\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 1, checked: false, text: 'first' },
+    ]);
+  });
+
+  it('ignores ToDo headings and checkboxes inside code fences', () => {
+    const body = [
+      '## ToDo',
+      '- [ ] before',
+      '```markdown',
+      '## ToDo',
+      '- [ ] in backtick fence',
+      '```',
+      '~~~~',
+      '## ToDo',
+      '- [ ] in tilde fence',
+      '~~~~',
+      '- [x] after',
+    ].join('\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 1, checked: false, text: 'before' },
+      { lineNumber: 10, checked: true, text: 'after' },
+    ]);
+  });
+
+  it('closes a code fence with the same marker and at least the opening length', () => {
+    const body = [
+      '## ToDo',
+      '````',
+      '~~~~',
+      '```',
+      '- [ ] still fenced',
+      '````',
+      '- [ ] real',
+    ].join('\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 6, checked: false, text: 'real' },
+    ]);
+  });
+
+  it('closes a code fence longer than the opening fence', () => {
+    const body = [
+      '## ToDo',
+      '```',
+      '- [ ] fenced',
+      '````',
+      '- [ ] real',
+    ].join('\n');
+
+    expect(parseTodoItems(body)).toEqual([
+      { lineNumber: 4, checked: false, text: 'real' },
+    ]);
+  });
+});
+
+describe('req_todo_001_set_todo_checked', () => {
+  const markdown = stringifyFrontMatter(
+    { title: '週次定例', language: 'ja', custom: 'keep me' },
+    [
+      '## 要約',
+      '本文です。',
+      '## ToDo',
+      '- [ ] 資料をまとめる',
+      '- [x] 公開する',
+      '## 未決事項',
+      '- [ ] 対象外',
+    ].join('\n'),
+  );
+
+  it('checks a ToDo item and keeps the front matter and other lines', () => {
+    const result = setTodoChecked(markdown, 3, '資料をまとめる', true);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const before = parseFrontMatter(markdown);
+    const after = parseFrontMatter(result.markdown);
+    expect(after.frontMatter).toEqual(before.frontMatter);
+    expect(after.body).toBe(
+      before.body.replace('- [ ] 資料をまとめる', '- [x] 資料をまとめる'),
+    );
+    expect(after.body).toContain('- [x] 公開する');
+    expect(after.body).toContain('- [ ] 対象外');
+  });
+
+  it('unchecks a ToDo item and keeps other checkbox items unchanged', () => {
+    const result = setTodoChecked(markdown, 4, '公開する', false);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const after = parseFrontMatter(result.markdown);
+    expect(after.body).toContain('- [ ] 資料をまとめる');
+    expect(after.body).toContain('- [ ] 公開する');
+    expect(after.body).toContain('- [ ] 対象外');
+  });
+
+  it('rejects a line number outside the body', () => {
+    expect(setTodoChecked(markdown, 99, '資料をまとめる', true)).toEqual({
+      ok: false,
+      reason: 'line-out-of-range',
+    });
+    expect(setTodoChecked(markdown, -1, '資料をまとめる', true)).toEqual({
+      ok: false,
+      reason: 'line-out-of-range',
+    });
+    expect(setTodoChecked(markdown, 3.5, '資料をまとめる', true)).toEqual({
+      ok: false,
+      reason: 'line-out-of-range',
+    });
+  });
+
+  it('rejects a line that is not a checkbox', () => {
+    expect(setTodoChecked(markdown, 0, '要約', true)).toEqual({
+      ok: false,
+      reason: 'not-checkbox',
+    });
+  });
+
+  it('rejects a line whose text does not match the list item', () => {
+    expect(setTodoChecked(markdown, 3, '別の項目', true)).toEqual({
+      ok: false,
+      reason: 'text-mismatch',
+    });
+  });
+
+  it('rejects a checkbox outside the ToDo section without changing the markdown', () => {
+    const withSummaryCheckbox = stringifyFrontMatter(
+      { title: '週次定例', language: 'ja' },
+      ['## 要約', '- [ ] 要約の項目', '## ToDo', '- [ ] 資料をまとめる'].join(
+        '\n',
+      ),
+    );
+    const before = parseFrontMatter(withSummaryCheckbox).body;
+
+    expect(
+      setTodoChecked(withSummaryCheckbox, 1, '要約の項目', true),
+    ).toEqual({ ok: false, reason: 'not-todo' });
+
+    const result = setTodoChecked(
+      withSummaryCheckbox,
+      3,
+      '資料をまとめる',
+      true,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const after = parseFrontMatter(result.markdown).body;
+    expect(after).toBe(
+      before.replace('- [ ] 資料をまとめる', '- [x] 資料をまとめる'),
+    );
+    expect(after).toContain('- [ ] 要約の項目');
+  });
+
+  it('rejects a checkbox inside a code fence without changing the markdown', () => {
+    const withFence = stringifyFrontMatter(
+      { title: '週次定例', language: 'ja' },
+      [
+        '## ToDo',
+        '```',
+        '- [ ] フェンス内',
+        '```',
+        '- [ ] 本物',
+      ].join('\n'),
+    );
+
+    expect(setTodoChecked(withFence, 2, 'フェンス内', true)).toEqual({
+      ok: false,
+      reason: 'not-todo',
+    });
+
+    const result = setTodoChecked(withFence, 4, '本物', true);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    const after = parseFrontMatter(result.markdown).body;
+    expect(after).toContain('- [ ] フェンス内');
+    expect(after).toContain('- [x] 本物');
+  });
+
+  it('normalizes CRLF to LF while keeping the front matter and content', () => {
+    const lf = stringifyFrontMatter(
+      { title: '週次定例', language: 'ja' },
+      ['## ToDo', '- [ ] 資料をまとめる', '## 未決事項', 'なし'].join('\n'),
+    );
+    const crlf = lf.replaceAll('\n', '\r\n');
+
+    const result = setTodoChecked(crlf, 1, '資料をまとめる', true);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.markdown).not.toContain('\r');
+    expect(parseFrontMatter(result.markdown).frontMatter).toEqual(
+      parseFrontMatter(lf).frontMatter,
+    );
+    expect(parseFrontMatter(result.markdown).body).toBe(
+      parseFrontMatter(lf).body.replace(
+        '- [ ] 資料をまとめる',
+        '- [x] 資料をまとめる',
+      ),
+    );
   });
 });

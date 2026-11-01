@@ -12,9 +12,11 @@ export type MeetingFilter =
 
 type SidebarProps = {
   meetings: MeetingSummary[];
-  view: 'meetings' | 'detail' | 'recording' | 'settings' | 'search';
+  view: 'meetings' | 'detail' | 'todos' | 'recording' | 'settings' | 'search';
   filter: MeetingFilter;
+  todoCount: number;
   onFilter: (filter: MeetingFilter) => void;
+  onOpenTodos: () => void;
   onOpenRecording: () => void;
   onOpenSettings: () => void;
 };
@@ -23,7 +25,9 @@ export function Sidebar({
   meetings,
   view,
   filter,
+  todoCount,
   onFilter,
+  onOpenTodos,
   onOpenRecording,
   onOpenSettings,
 }: SidebarProps) {
@@ -132,6 +136,15 @@ export function Sidebar({
 
       <div className="side-spacer" />
       <p className="side-label side-label-spaced">{t('操作')}</p>
+      <button
+        type="button"
+        className={`side ${view === 'todos' ? 'is-active' : ''}`}
+        onClick={onOpenTodos}
+        data-testid="nav-todos"
+      >
+        {t('ToDo 一覧')}
+        <span className="side-count">{todoCount}</span>
+      </button>
       <button
         type="button"
         className={`side ${view === 'recording' ? 'is-active' : ''}`}
