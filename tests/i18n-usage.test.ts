@@ -86,23 +86,27 @@ function isNonDisplayLiteral(node: ts.StringLiteral): boolean {
   return false;
 }
 
-function collectStrings(node: ts.Node, values: string[]): void {
-  if (ts.isStringLiteral(node) && !isNonDisplayLiteral(node)) {
-    values.push(node.text);
+function isDictionaryKeyUsedAsLabel(node: ts.Node, value: string): boolean {
+  if (!Object.hasOwn(EN_MESSAGES, value)) {
+    return false;
   }
-  if (ts.isNoSubstitutionTemplateLiteral(node)) {
-    values.push(node.text);
+  const parent = node.parent;
+  return (
+    ts.isPropertyAssignment(parent) && parent.name.getText() === 'label'
+  );
+}
+
+function literalValues(node: ts.Node): string[] {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+    return [node.text];
   }
   if (ts.isTemplateExpression(node)) {
-    values.push(node.head.text);
-    for (const span of node.templateSpans) {
-      values.push(span.literal.text);
-    }
+    return [node.head.text];
   }
   if (ts.isJsxText(node)) {
-    values.push(node.text);
+    return [node.text];
   }
-  ts.forEachChild(node, (child) => collectStrings(child, values));
+  return [];
 }
 
 function violationsInFile(path: string): Violation[] {
@@ -126,15 +130,15 @@ function violationsInFile(path: string): Violation[] {
         ts.isNoSubstitutionTemplateLiteral(node) ||
         ts.isTemplateExpression(node) ||
         ts.isJsxText(node)) &&
+      !(ts.isStringLiteral(node) && isNonDisplayLiteral(node)) &&
       !isInsideTranslationCall(node)
     ) {
-      const values: string[] = [];
-      collectStrings(node, values);
+      const values = literalValues(node);
       for (const value of values) {
         if (
           !JAPANESE.test(value) ||
           ALLOWED_CONTENT.has(value) ||
-          Object.hasOwn(EN_MESSAGES, value)
+          isDictionaryKeyUsedAsLabel(node, value)
         ) {
           continue;
         }
