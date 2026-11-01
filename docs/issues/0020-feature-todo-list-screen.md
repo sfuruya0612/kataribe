@@ -32,7 +32,7 @@
 
 - ToDo 一覧は、各会議の `summary.md` の ToDo セクションにあるチェックボックス行から組み立てる。SQLite の索引に ToDo 専用のテーブルや完了状態の列を追加しない。
 - 完了状態の正本は `summary.md` のチェックボックスとする。`meta.json` と SQLite 索引に完了状態を複製しない。
-- 一覧からチェックを切り替えるとき、一覧が持つ行番号と本文を main プロセスへ渡す。main プロセスは `summary.md` を読み直し、行番号の行がチェックボックスであり、本文が一致するときだけ書き込む。一致しないときは書き込みを拒否し、一覧を再読み込みさせる。
+- 一覧からチェックを切り替えるとき、一覧が持つ行番号と本文を main プロセスへ渡す。main プロセスは `summary.md` を読み直し、行番号の行が ToDo セクションのチェックボックスであり、本文が一致するときだけ書き込む。一致しないときは書き込みを拒否し、一覧を再読み込みさせる。
 - main プロセスは書き換える前に、`parseTodoItems` の結果に対象の行番号と本文を持つ項目が含まれることを確認する。ToDo セクション外のチェックボックスは書き換えない。
 - 同じ会議へのチェック操作は、会議 ID ごとの write queue で read-modify-write 全体を直列化する。失敗した操作があっても queue は進め、別の会議の操作は待たせない。
 - Renderer の ToDo 一覧の再取得は、最新の要求の応答だけを状態へ反映する。古い応答が後から届いても、最新の一覧とローディング状態を上書きしない。
@@ -78,7 +78,7 @@
   - `setTodoChecked(markdown: string, lineNumber: number, expectedText: string, checked: boolean): SetTodoCheckedResult` は front matter を保持したまま、指定行の `[ ]` と `[x]` だけを書き換える。行がない、チェックボックスでない、本文が一致しない、ToDo セクションの項目でないときは `ok: false` と理由を返す。ToDo セクション外は `not-todo` を返す。改行コードは LF に正規化する。
   - 見出しの判定は既存の ToDo 見出しの別名を使う。チェックボックス行は行頭の空白、`-` または `*`、`[ ]`、`[x]`、`[X]` を許容する。本文が空の行は項目にしない。
 - `src/shared/types.ts` に `MeetingTodo` を追加する。項目は `meetingId`、`meetingTitle`、`startedAt`、`lineNumber`、`checked`、`text` を持つ。
-- `src/main/private-file.ts` を追加し、`processing.ts` の `writePrivateText` を振る舞いを変えずに移す。`processing.ts` は新しい module を import する。一時ファイル名は呼び出しごとに一意にし、書き込み、chmod、rename のいずれかが失敗したら一時ファイルを削除する。
+- `src/main/private-file.ts` を追加し、`processing.ts` の `writePrivateText` を移す。`processing.ts` は新しい module を import する。0600、fsync、rename の順序は変えず、一時ファイル名を呼び出しごとに一意にし、書き込み、chmod、rename のいずれかが失敗したら一時ファイルを削除する。
 - `src/main/todos.ts` を追加する。
   - `listMeetingTodos(store: MeetingStore): Promise<MeetingTodo[]>` は会議一覧を順に読み、`summary.md` の本文から ToDo を集める。
   - `setMeetingTodoChecked(store: MeetingStore, meetingId: string, lineNumber: number, expectedText: string, checked: boolean): Promise<void>` は `summary.md` を読み直し、`setTodoChecked` が成功したときだけ `writePrivateText` で保存する。失敗時は再読み込みを促すエラーを返す。
