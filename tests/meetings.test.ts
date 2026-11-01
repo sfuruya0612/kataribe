@@ -1049,12 +1049,18 @@ describe('req_todo_001_meeting_todos', () => {
     });
     await writeSummaryTodo(meetingDir, '週次定例', ['- [ ] 資料をまとめる']);
 
-    await expect(
-      setMeetingTodoChecked(store, id, 3, '別の項目', true),
-    ).rejects.toThrow(
+    const rejected = setMeetingTodoChecked(store, id, 3, '別の項目', true);
+    const following = setMeetingTodoChecked(
+      store,
+      id,
+      3,
+      '資料をまとめる',
+      true,
+    );
+    await expect(rejected).rejects.toThrow(
       '要約の ToDo が変更されました。一覧を再読み込みしてください。',
     );
-    await setMeetingTodoChecked(store, id, 3, '資料をまとめる', true);
+    await following;
 
     expect(await readFile(join(meetingDir, 'summary.md'), 'utf8')).toContain(
       '- [x] 資料をまとめる',

@@ -87,7 +87,7 @@ export function setMeetingTodoChecked(
       expectedText,
       checked,
     );
-  const operation = previous.then(run, run);
+  const operation = previous.then(run);
   const tail = operation.then(
     () => undefined,
     () => undefined,
