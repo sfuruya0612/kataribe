@@ -128,6 +128,14 @@ function parseCache(value: unknown): DiarizationCache | null {
   ) {
     return null;
   }
+  const nameValues = Object.values(value.names);
+  const labelValues = Object.values(value.labels);
+  if (
+    new Set(nameValues).size !== nameValues.length ||
+    new Set(labelValues).size !== labelValues.length
+  ) {
+    return null;
+  }
   return {
     schema_version: DIARIZATION_CACHE_SCHEMA_VERSION,
     key,

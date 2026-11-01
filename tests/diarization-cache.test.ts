@@ -111,7 +111,9 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
       { ...cache(), turns: [{ start: 2, end: 1, cluster: 'speaker_00' }] },
       { ...cache(), turns: [{ start: 0, end: 1, cluster: '' }] },
       { ...cache(), names: { speaker_00: '' } },
+      { ...cache(), names: { speaker_00: '田中', speaker_01: '田中' } },
       { ...cache(), labels: { '': 'speaker_00' } },
+      { ...cache(), labels: { 田中: 'speaker_00', 佐藤: 'speaker_00' } },
     ];
 
     for (const value of cases) {
