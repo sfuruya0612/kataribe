@@ -5,6 +5,8 @@ import { t } from './i18n';
 import type { MeetingStore } from './meetings';
 import { writePrivateText } from './private-file';
 
+const writeQueues = new Map<string, Promise<void>>();
+
 /**
  * 会議一覧の順序で各会議の summary.md を読み、ToDo セクションの項目を集める。
  *
@@ -34,12 +36,7 @@ export async function listMeetingTodos(
   return todos;
 }
 
-/**
- * 一覧が持つ行番号と本文が要約のチェックボックスと一致するときだけ、完了状態を保存する。
- *
- * 外部のエディタで行が変わっている場合は書き込まず、一覧の再読み込みを促す。
- */
-export async function setMeetingTodoChecked(
+async function applyMeetingTodoChecked(
   store: MeetingStore,
   meetingId: string,
   lineNumber: number,
@@ -66,4 +63,40 @@ export async function setMeetingTodoChecked(
     );
   }
   await writePrivateText(join(meeting.meetingDir, 'summary.md'), result.markdown);
+}
+
+/**
+ * 一覧が持つ行番号と本文が要約のチェックボックスと一致するときだけ、完了状態を保存する。
+ *
+ * 同じ会議への書き込みは read-modify-write の間だけ直列化し、別の会議の書き込みは
+ * 待たせない。失敗した操作があっても後続の操作は実行する。
+ */
+export function setMeetingTodoChecked(
+  store: MeetingStore,
+  meetingId: string,
+  lineNumber: number,
+  expectedText: string,
+  checked: boolean,
+): Promise<void> {
+  const previous = writeQueues.get(meetingId) ?? Promise.resolve();
+  const run = () =>
+    applyMeetingTodoChecked(
+      store,
+      meetingId,
+      lineNumber,
+      expectedText,
+      checked,
+    );
+  const operation = previous.then(run, run);
+  const tail = operation.then(
+    () => undefined,
+    () => undefined,
+  );
+  writeQueues.set(meetingId, tail);
+  void tail.then(() => {
+    if (writeQueues.get(meetingId) === tail) {
+      writeQueues.delete(meetingId);
+    }
+  });
+  return operation;
 }

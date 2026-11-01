@@ -21,6 +21,7 @@ import { Sidebar, type MeetingFilter } from './Sidebar';
 import { TodoList } from './TodoList';
 import { TopBar } from './TopBar';
 import { errorText } from './recording-utils';
+import { createLatestRequest } from './latest-request';
 import { useI18n } from './i18n';
 import { useRecorder } from './use-recorder';
 
@@ -73,6 +74,7 @@ export default function App({
     error: null,
   });
   const lastStageRef = useRef<ProcessingState['stage']>(null);
+  const todosRequest = useRef(createLatestRequest());
 
   useEffect(() => {
     setLocale(settings.uiLanguage);
@@ -93,14 +95,24 @@ export default function App({
   }, [t]);
 
   const refreshTodos = useCallback(async () => {
+    const requestId = todosRequest.current.begin();
     setTodosLoading(true);
     try {
-      setTodos(await window.kataribe.listMeetingTodos());
+      const list = await window.kataribe.listMeetingTodos();
+      if (!todosRequest.current.isCurrent(requestId)) {
+        return;
+      }
+      setTodos(list);
       setTodosError(null);
     } catch (reason: unknown) {
+      if (!todosRequest.current.isCurrent(requestId)) {
+        return;
+      }
       setTodosError(errorText(reason));
     } finally {
-      setTodosLoading(false);
+      if (todosRequest.current.isCurrent(requestId)) {
+        setTodosLoading(false);
+      }
     }
   }, []);
 

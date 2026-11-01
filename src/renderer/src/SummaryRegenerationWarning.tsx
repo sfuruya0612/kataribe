@@ -1,17 +1,18 @@
+import type { SummaryDocument } from '../../shared/types';
 import { useI18n } from './i18n';
 
 type SummaryRegenerationWarningProps = {
-  visible: boolean;
+  summary: SummaryDocument | null;
 };
 
 /**
  * 要約の再生成で既存の要約と ToDo の完了状態が失われることを、送信確認に表示する。
  */
 export function SummaryRegenerationWarning({
-  visible,
+  summary,
 }: SummaryRegenerationWarningProps) {
   const { t } = useI18n();
-  if (!visible) {
+  if (summary === null) {
     return null;
   }
   return (

@@ -49,6 +49,8 @@ const HEADING_ALIASES: Array<{
 ];
 
 const SECTION_HEADING_PATTERN = /^##\s+(.+?)\s*$/u;
+const FENCE_OPEN_PATTERN = /^ {0,3}(`{3,}|~{3,})/u;
+const FENCE_CLOSE_PATTERN = /^ {0,3}(`{3,}|~{3,})\s*$/u;
 
 function unquote(value: string): string {
   const trimmed = value.trim();
@@ -413,6 +415,28 @@ export type SetTodoCheckedResult =
 
 const TODO_CHECKBOX_PATTERN = /^(\s*[-*]\s+)\[([ xX])\](.*)$/u;
 
+type CodeFence = {
+  marker: string;
+  length: number;
+};
+
+function openingCodeFence(line: string): CodeFence | null {
+  const match = line.match(FENCE_OPEN_PATTERN);
+  if (!match) {
+    return null;
+  }
+  return { marker: match[1][0], length: match[1].length };
+}
+
+function closesCodeFence(line: string, fence: CodeFence): boolean {
+  const match = line.match(FENCE_CLOSE_PATTERN);
+  return (
+    match !== null &&
+    match[1][0] === fence.marker &&
+    match[1].length === fence.length
+  );
+}
+
 function isTodoHeading(title: string): boolean {
   const todo = HEADING_ALIASES.find((entry) => entry.key === 'todo');
   return todo !== undefined && todo.pattern.test(title);
@@ -438,9 +462,21 @@ function parseTodoLine(line: string, lineNumber: number): TodoItem | null {
 export function parseTodoItems(body: string): TodoItem[] {
   const items: TodoItem[] = [];
   let inTodoSection = false;
+  let fence: CodeFence | null = null;
   const lines = body.replaceAll('\r\n', '\n').split('\n');
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
+    if (fence) {
+      if (closesCodeFence(line, fence)) {
+        fence = null;
+      }
+      continue;
+    }
+    const opening = openingCodeFence(line);
+    if (opening) {
+      fence = opening;
+      continue;
+    }
     const heading = line.match(SECTION_HEADING_PATTERN);
     if (heading) {
       inTodoSection = isTodoHeading(heading[1].trim());
@@ -460,8 +496,8 @@ export function parseTodoItems(body: string): TodoItem[] {
 /**
  * 要約 Markdown の指定行が一覧の項目と一致するときだけ、チェックボックスを書き換える。
  *
- * front matter と他の行はそのまま残す。行番号、行の形式、本文が ToDo セクションの
- * 項目と一致しないときは書き換えず、理由を返す。
+ * front matter と内容はそのまま残し、改行コードは LF に正規化する。行番号、行の形式、
+ * 本文が ToDo セクションの項目と一致しないときは書き換えず、理由を返す。
  */
 export function setTodoChecked(
   markdown: string,

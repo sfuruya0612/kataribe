@@ -208,6 +208,7 @@ export function TodoList({
         <p className="muted">{t('該当する ToDo はありません。')}</p>
       ) : null}
 
+      {/* 再取得に失敗しても直前の一覧を消さず、エラーと併せて表示する。 */}
       {groups.map((group) => (
         <TodoGroupView
           key={group.meetingId}

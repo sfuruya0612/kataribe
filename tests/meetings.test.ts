@@ -1002,6 +1002,45 @@ describe('req_todo_001_meeting_todos', () => {
     );
   });
 
+  it('serializes concurrent toggles for the same meeting', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000038';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'summarized',
+    });
+    await writeSummaryTodo(meetingDir, '週次定例', [
+      '- [ ] 資料をまとめる',
+      '- [ ] 公開する',
+    ]);
+
+    await Promise.all([
+      setMeetingTodoChecked(store, id, 3, '資料をまとめる', true),
+      setMeetingTodoChecked(store, id, 4, '公開する', true),
+    ]);
+
+    const saved = await readFile(join(meetingDir, 'summary.md'), 'utf8');
+    expect(saved).toContain('- [x] 資料をまとめる');
+    expect(saved).toContain('- [x] 公開する');
+    expect(await listMeetingTodos(new MeetingStore(root))).toEqual([
+      {
+        meetingId: id,
+        meetingTitle: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        lineNumber: 3,
+        checked: true,
+        text: '資料をまとめる',
+      },
+      {
+        meetingId: id,
+        meetingTitle: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        lineNumber: 4,
+        checked: true,
+        text: '公開する',
+      },
+    ]);
+  });
+
   it('rejects a text or line mismatch without writing the summary', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000036';

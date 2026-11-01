@@ -33,11 +33,13 @@ function renderTodoList({
   todos = TODOS,
   loading = false,
   error = null,
+  processing = false,
 }: {
   locale: UiLanguage;
   todos?: readonly MeetingTodo[];
   loading?: boolean;
   error?: string | null;
+  processing?: boolean;
 }): string {
   return renderToStaticMarkup(
     createElement(I18nProvider, {
@@ -46,7 +48,7 @@ function renderTodoList({
         todos,
         loading,
         error,
-        processing: false,
+        processing,
         onToggle: async () => undefined,
         onOpenMeeting: () => undefined,
       }),
@@ -74,8 +76,17 @@ describe('req_todo_001_todo_list', () => {
 
     expect(html).toContain('資料をまとめる');
     expect(html).not.toContain('公開する');
-    expect(html).toContain('aria-pressed="true"');
-    expect(html).toContain('aria-pressed="false"');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>未完了<\/button>/u);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>完了<\/button>/u);
+    expect(html).toMatch(/aria-pressed="false"[^>]*>すべて<\/button>/u);
+  });
+
+  it('disables the checkboxes while processing', () => {
+    const enabled = renderTodoList({ locale: 'ja' });
+    const disabled = renderTodoList({ locale: 'ja', processing: true });
+
+    expect(enabled).not.toMatch(/type="checkbox"[^>]*disabled/u);
+    expect(disabled).toMatch(/type="checkbox"[^>]*disabled/u);
   });
 
   it('renders the English labels without translating the todo text', () => {

@@ -652,7 +652,7 @@ ul {
   margin-bottom: 8px;
 }
 
-.todo-meeting {
+.todo-meeting.link-button {
   font-family: var(--serif);
   font-size: 15px;
   font-weight: 600;
