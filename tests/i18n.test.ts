@@ -33,6 +33,12 @@ describe('req_ui_001_translate', () => {
     }
   });
 
+  it('uses no Japanese characters in the English translations', () => {
+    for (const value of Object.values(EN_MESSAGES)) {
+      expect(value).not.toMatch(/[\u3040-\u30ff\u3400-\u9fff]/u);
+    }
+  });
+
   it('req_ui_001_composes_the_sync_warning_with_the_service_name', () => {
     const key =
       '保存先が {service} の同期対象です。音声と文字起こしが端末外に同期されます。';
