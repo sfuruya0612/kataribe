@@ -383,6 +383,33 @@ describe('MeetingStore', () => {
     expect(await store.list()).toEqual([]);
   });
 
+  it('req_diar_001_returns_the_diarization_error_from_meta', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000027';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'transcribed',
+      diarization: { state: 'failed', error: 'synthetic failure' },
+    });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: 'A です。' },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+
+    expect(detail?.diarizationError).toBe('synthetic failure');
+  });
+
   it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000023';
