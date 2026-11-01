@@ -383,7 +383,7 @@ describe('MeetingStore', () => {
     expect(await store.list()).toEqual([]);
   });
 
-  it('renames speakers in the transcript and translations', async () => {
+  it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000023';
     const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
@@ -439,7 +439,7 @@ describe('MeetingStore', () => {
     expect(meta.speakers).toEqual(['田中', '佐藤']);
   });
 
-  it('swaps speaker names in one pass', async () => {
+  it('req_diar_001_swaps_speaker_names_in_one_pass', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000024';
     const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
@@ -466,7 +466,7 @@ describe('MeetingStore', () => {
     expect(transcript).toContain('[00:00:02] 話者A: B です。');
   });
 
-  it('rejects a speaker count mismatch', async () => {
+  it('req_diar_001_rejects_a_speaker_count_mismatch', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000025';
     const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
@@ -490,7 +490,7 @@ describe('MeetingStore', () => {
     );
   });
 
-  it('rejects invalid speaker names', async () => {
+  it('req_diar_001_rejects_invalid_speaker_names', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000026';
     const meetingDir = await createMeeting(root, id, { status: 'transcribed' });

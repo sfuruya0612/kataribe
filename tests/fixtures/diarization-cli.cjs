@@ -10,6 +10,23 @@ if (process.env.KATARIBE_DIARIZATION_ARGS_FILE) {
 }
 
 const mode = process.env.KATARIBE_DIARIZATION_MODE ?? 'ok';
+
+function writeTurns(count) {
+  for (let index = 0; index < count; index += 1) {
+    process.stdout.write(
+      `${index}.000 -- ${index + 1}.000 speaker_${String(index).padStart(2, '0')}\n`,
+    );
+  }
+}
+
+function writeAlternatingTurns(count) {
+  for (let index = 0; index < count; index += 1) {
+    process.stdout.write(
+      `${index}.000 -- ${index + 1}.000 speaker_${String(index % 2).padStart(2, '0')}\n`,
+    );
+  }
+}
+
 if (mode === 'fail') {
   process.stderr.write('synthetic failure\n');
   process.exit(2);
@@ -21,13 +38,17 @@ if (mode === 'cancel') {
   process.stderr.write('progress 1.00%\n');
   setTimeout(() => undefined, 30000);
 } else if (mode === 'many') {
-  const fixed = args.includes('--clustering.num-clusters=10');
-  const count = fixed ? 10 : 11;
-  for (let index = 0; index < count; index += 1) {
-    process.stdout.write(
-      `${index}.000 -- ${index + 1}.000 speaker_${String(index).padStart(2, '0')}\n`,
-    );
+  writeTurns(args.includes('--clustering.num-clusters=10') ? 10 : 11);
+  process.stderr.write('progress 100.00%\n');
+} else if (mode === 'many-fail-rerun') {
+  if (args.includes('--clustering.num-clusters=10')) {
+    process.stderr.write('synthetic rerun failure\n');
+    process.exit(2);
   }
+  writeTurns(11);
+  process.stderr.write('progress 100.00%\n');
+} else if (mode === 'long') {
+  writeAlternatingTurns(3000);
   process.stderr.write('progress 100.00%\n');
 } else {
   process.stderr.write('progress 50.00%\nprogress 100.00%\n');

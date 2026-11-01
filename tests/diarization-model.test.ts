@@ -1,3 +1,7 @@
+/**
+ * 話者分離モデルの取得、再開、展開、状態を検証する。
+ * 対応する要求: REQ-DIAR-001
+ */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
@@ -256,6 +260,24 @@ describe('DiarizationModelManager', () => {
     await expect(manager.ensureInstalled()).rejects.toThrow();
     expect(await fileSize(join(modelsDir, 'segmentation.tar.bz2.part'))).toBeGreaterThan(0);
     const status = await manager.status();
+    expect(status.state).toBe('missing');
+    expect(status.error).toBeNull();
+  });
+
+  it('reports missing after an installed file disappears', async () => {
+    const root = await createRoot();
+    const fixture = await createFixture(root);
+    const server = await startServer(fixture);
+    const manager = new DiarizationModelManager({
+      modelsDir: join(root, 'models'),
+      definitions: server.definitions,
+    });
+    const paths = await manager.ensureInstalled();
+    await rm(paths.segmentation);
+
+    const status = await manager.status();
+
+    expect(status.installed).toBe(false);
     expect(status.state).toBe('missing');
     expect(status.error).toBeNull();
   });

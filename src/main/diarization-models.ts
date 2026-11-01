@@ -106,13 +106,19 @@ export class DiarizationModelManager {
       : this.active !== null
         ? this.downloadedBytes
         : await this.partialBytes();
+    const state: DiarizationModelState =
+      installed !== null
+        ? 'installed'
+        : this.state === 'installed'
+          ? 'missing'
+          : this.state;
     return {
       installed: installed !== null,
-      state: installed !== null ? 'installed' : this.state,
+      state,
       downloadedBytes,
       totalBytes: total,
       progress: total > 0 ? Math.min(1, downloadedBytes / total) : null,
-      error: this.lastError,
+      error: installed !== null ? null : this.lastError,
       modelsDir: this.modelsDir,
     };
   }
@@ -303,6 +309,12 @@ export class DiarizationModelManager {
         });
       }
 
+      if (signal.aborted) {
+        throw new DOMException(
+          'speaker diarization model download was cancelled',
+          'AbortError',
+        );
+      }
       const paths = await this.installedPaths();
       if (paths === null) {
         throw new Error('speaker diarization models are incomplete after download');

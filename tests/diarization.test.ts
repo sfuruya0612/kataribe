@@ -1,3 +1,7 @@
+/**
+ * 話者分離の出力解析、話者割り当て、子プロセス起動を検証する。
+ * 対応する要求: REQ-DIAR-001
+ */
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -129,8 +133,25 @@ describe('assignSpeakerTurns', () => {
     const segments = [segment(3.5, 4, 'near'), segment(10, 11, 'far')];
 
     expect(assignSpeakerTurns(segments, turns)).toEqual([
-      { ...segments[0], speaker: '話者B' },
+      { ...segments[0], speaker: '話者A' },
       { ...segments[1] },
+    ]);
+  });
+
+  it('labels by the first labeled transcript line, not by turn start', () => {
+    const turns = [
+      turn(0, 1, 'speaker_01'),
+      turn(1, 2, 'speaker_00'),
+      turn(2, 3, 'speaker_01'),
+    ];
+    const segments = [
+      segment(1, 2, 'first visible'),
+      segment(2, 3, 'second visible'),
+    ];
+
+    expect(assignSpeakerTurns(segments, turns)).toEqual([
+      { ...segments[0], speaker: '話者A' },
+      { ...segments[1], speaker: '話者B' },
     ]);
   });
 
@@ -358,6 +379,71 @@ describe('DiarizationService', () => {
         numSpeakers: 'auto',
       }),
     ).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('keeps more than the process capture limit', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    process.env.KATARIBE_DIARIZATION_MODE = 'long';
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+    const segments = Array.from({ length: 3000 }, (_, index) =>
+      segment(index, index + 1, `text ${index}`),
+    );
+
+    const result = await service.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+    });
+
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(3000);
+    expect(result?.[0].speaker).toBe('話者A');
+    expect(result?.[1].speaker).toBe('話者B');
+    expect(result?.[2999].speaker).toBe('話者B');
+  });
+
+  it('falls back to the first result when the ten-cluster retry fails', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    process.env.KATARIBE_DIARIZATION_MODE = 'many-fail-rerun';
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+    const segments = Array.from({ length: 11 }, (_, index) =>
+      segment(index, index + 1, `text ${index}`),
+    );
+
+    const result = await service.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+    });
+
+    expect(result).not.toBeNull();
+    expect(new Set(result?.map((item) => item.speaker)).size).toBe(10);
+    expect(result?.some((item) => item.speaker === '話者11')).toBe(false);
+  });
+
+  it('resolves the binary before downloading the models', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    const calls: string[] = [];
+    const service = new DiarizationService({
+      locator: {
+        sherpaDiarizationPath: async () => {
+          throw new Error('sherpa-onnx missing');
+        },
+      },
+      models: createModels(calls),
+    });
+
+    await expect(
+      service.diarize(wavPath, [segment(0, 1, 'one')], {
+        numSpeakers: 'auto',
+      }),
+    ).rejects.toThrow(/missing/u);
     expect(calls).toEqual([]);
   });
 });

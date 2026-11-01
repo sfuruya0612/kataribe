@@ -1,3 +1,7 @@
+/**
+ * 話者名の抽出、検証、置換を検証する。
+ * 対応する要求: REQ-DIAR-001
+ */
 import { describe, expect, it } from 'vitest';
 import {
   extractTranscriptSpeakers,

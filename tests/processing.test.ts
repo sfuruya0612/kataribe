@@ -358,7 +358,7 @@ describe('runDiarization', () => {
     { startSeconds: 1, endSeconds: 2, text: 'two' },
   ];
 
-  it('counts the labels returned by the service', async () => {
+  it('req_diar_001_counts_the_labels_returned_by_the_service', async () => {
     const service = {
       diarize: async () => [
         { ...segments[0], speaker: '話者A' },
@@ -381,7 +381,7 @@ describe('runDiarization', () => {
     expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
   });
 
-  it('keeps the original segments when the service returns null', async () => {
+  it('req_diar_001_keeps_the_original_segments_when_the_service_returns_null', async () => {
     const service = { diarize: async () => null } as unknown as DiarizationService;
 
     const result = await runDiarization({
@@ -396,7 +396,7 @@ describe('runDiarization', () => {
     expect(result.meta).toEqual({ state: 'completed', speakers: 0 });
   });
 
-  it('keeps the original segments and records the error when the service fails', async () => {
+  it('req_diar_001_keeps_the_original_segments_and_records_the_error_when_the_service_fails', async () => {
     const service = {
       diarize: async () => {
         throw new Error('model download failed');
@@ -418,7 +418,7 @@ describe('runDiarization', () => {
     });
   });
 
-  it('records a cancellation as a failed diarization', async () => {
+  it('req_diar_001_records_a_cancellation_as_a_failed_diarization', async () => {
     const controller = new AbortController();
     controller.abort();
     const service = { diarize: async () => null } as unknown as DiarizationService;

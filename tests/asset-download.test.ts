@@ -1,3 +1,7 @@
+/**
+ * ダウンロード基盤の再開、照合、失敗を検証する。
+ * 要求 ID を持たない内部不変条件のテストであり、REQ-DIAR-001 のモデル取得を支える。
+ */
 import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';

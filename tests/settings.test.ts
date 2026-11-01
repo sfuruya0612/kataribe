@@ -153,6 +153,14 @@ describe('SettingsStore', () => {
     expect(
       normalizeAppSettings({ mp3BitrateKbps: 96 as never }).mp3BitrateKbps,
     ).toBe(64);
+    expect(
+      normalizeAppSettings({
+        whisperSpeedRatios: { small: 0, medium: 99 },
+      }).whisperSpeedRatios,
+    ).toEqual({});
+  });
+
+  it('req_diar_001_normalizes_the_speaker_count', () => {
     expect(normalizeAppSettings({ speakerCount: 5 }).speakerCount).toBe(5);
     expect(normalizeAppSettings({ speakerCount: 11 as never }).speakerCount).toBe(
       'auto',
@@ -160,11 +168,6 @@ describe('SettingsStore', () => {
     expect(normalizeAppSettings({ speakerCount: 'many' as never }).speakerCount).toBe(
       'auto',
     );
-    expect(
-      normalizeAppSettings({
-        whisperSpeedRatios: { small: 0, medium: 99 },
-      }).whisperSpeedRatios,
-    ).toEqual({});
   });
 
   it('migrates legacy LLM settings to a profile named after the provider', () => {

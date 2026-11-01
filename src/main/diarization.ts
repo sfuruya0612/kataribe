@@ -7,7 +7,7 @@ import type {
   DiarizationModelPaths,
 } from './diarization-models';
 import type { BinaryLocator } from './media';
-import { runProcess, type RunProcessResult } from './process';
+import { runProcess } from './process';
 import { readWavInfo } from './wav';
 
 export type DiarizationTurn = {
@@ -32,6 +32,10 @@ export type DiarizationOptions = {
 export type DiarizationModels = Pick<DiarizationModelManager, 'ensureInstalled'>;
 
 export type DiarizationBinaryLocator = Pick<BinaryLocator, 'sherpaDiarizationPath'>;
+
+type DiarizationCommandResult = {
+  output: string;
+};
 
 export type DiarizationServiceOptions = {
   locator: DiarizationBinaryLocator;
@@ -190,15 +194,13 @@ export function assignSpeakerTurns(
   }
   const limited = limitSpeakerTurns(turns, maxSpeakers);
   const starts = firstStartBySpeaker(limited);
-  const order = [...starts.entries()]
+  const turnOrder = [...starts.entries()]
     .sort((left, right) => left[1] - right[1])
     .map(([speaker]) => speaker);
-  const labels = new Map(
-    order.map((speaker, index) => [speaker, speakerLabel(index)] as const),
+  const orderIndex = new Map(
+    turnOrder.map((speaker, index) => [speaker, index] as const),
   );
-  const orderIndex = new Map(order.map((speaker, index) => [speaker, index] as const));
-  let labeled = 0;
-  const result = segments.map((segment) => {
+  const assigned = segments.map((segment) => {
     const start = Math.max(0, segment.startSeconds);
     const end = Math.max(start, segment.endSeconds ?? start + 1);
     const overlaps = new Map<string, number>();
@@ -234,13 +236,26 @@ export function assignSpeakerTurns(
         selected = null;
       }
     }
-    if (selected === null) {
+    return selected;
+  });
+
+  const labels = new Map<string, string>();
+  for (const speaker of assigned) {
+    if (speaker === null || labels.has(speaker)) {
+      continue;
+    }
+    labels.set(speaker, speakerLabel(labels.size));
+  }
+  if (labels.size === 0) {
+    return null;
+  }
+  return segments.map((segment, index) => {
+    const speaker = assigned[index];
+    if (speaker === null) {
       return { ...segment };
     }
-    labeled += 1;
-    return { ...segment, speaker: labels.get(selected) ?? selected };
+    return { ...segment, speaker: labels.get(speaker) ?? speaker };
   });
-  return labeled > 0 ? result : null;
 }
 
 function buildArgs(
@@ -300,13 +315,13 @@ export class DiarizationService {
     ) {
       return null;
     }
+    const binary = await this.locator.sherpaDiarizationPath();
     const paths = await this.models.ensureInstalled(
       options.signal,
       (progress: DiarizationModelProgress) => {
         options.onProgress?.({ phase: 'models', progress: progress.progress });
       },
     );
-    const binary = await this.locator.sherpaDiarizationPath();
     const first = await this.runOnce(
       binary,
       wavPath,
@@ -317,23 +332,28 @@ export class DiarizationService {
     if (first === null) {
       return null;
     }
-    let turns = parseDiarizationOutput(first.stdout);
+    let turns = parseDiarizationOutput(first.output);
     if (
       options.numSpeakers === 'auto' &&
       uniqueSpeakers(turns) > this.maxSpeakers
     ) {
-      const second = await this.runOnce(
-        binary,
-        wavPath,
-        paths,
-        options,
-        this.maxSpeakers,
-      );
-      if (second !== null) {
-        const limitedTurns = parseDiarizationOutput(second.stdout);
-        if (uniqueSpeakers(limitedTurns) >= 2) {
-          turns = limitedTurns;
+      try {
+        const second = await this.runOnce(
+          binary,
+          wavPath,
+          paths,
+          options,
+          this.maxSpeakers,
+        );
+        if (second !== null) {
+          const limitedTurns = parseDiarizationOutput(second.output);
+          if (uniqueSpeakers(limitedTurns) >= 2) {
+            turns = limitedTurns;
+          }
         }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`speaker diarization retry failed: ${message}`);
       }
     }
     return assignSpeakerTurns(segments, turns, this.maxSpeakers);
@@ -345,11 +365,12 @@ export class DiarizationService {
     paths: DiarizationModelPaths,
     options: DiarizationOptions,
     numSpeakers: SpeakerCount | number,
-  ): Promise<RunProcessResult | null> {
+  ): Promise<DiarizationCommandResult | null> {
     if (options.signal?.aborted) {
       return null;
     }
     const controller = new AbortController();
+    const outputLines: string[] = [];
     let timedOut = false;
     let timer: NodeJS.Timeout | null = null;
     const resetTimer = () => {
@@ -371,6 +392,7 @@ export class DiarizationService {
         command: binary,
         args: buildArgs(wavPath, paths, this.threads, numSpeakers),
         signal: controller.signal,
+        onStdoutLine: (line) => outputLines.push(line),
         onStderrLine: (line) => {
           const progress = parseDiarizationProgressLine(line);
           if (progress === null) {
@@ -391,7 +413,7 @@ export class DiarizationService {
           `speaker diarization failed: ${result.stderr.trim() || `exit code ${result.code ?? 'unknown'}`}`,
         );
       }
-      return result;
+      return { output: outputLines.join('\n') };
     } finally {
       if (timer !== null) {
         clearTimeout(timer);

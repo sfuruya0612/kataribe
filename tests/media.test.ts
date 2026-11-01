@@ -106,7 +106,7 @@ describe('BinaryLocator', () => {
     expect(await locator.whisperPath()).toBe('/opt/homebrew/bin/whisper-cli');
   });
 
-  it('locates the sherpa-onnx diarization binary', async () => {
+  it('req_diar_001_locates_the_sherpa_onnx_diarization_binary', async () => {
     const locator = new BinaryLocator({
       isPackaged: false,
       resourcesPath: '/res',
