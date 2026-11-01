@@ -13,6 +13,7 @@ const SPEAKER_LABELS = [
 
 const MAX_SPEAKER_NAME_LENGTH = 40;
 const TRANSCRIPT_LINE = /^\[\d{2}:\d{2}:\d{2}\]\s?(.*)$/u;
+const AUTO_SPEAKER_NAME = /^話者[A-J]$/u;
 
 /**
  * 話者の並び順から表示ラベルを作る。
@@ -23,7 +24,10 @@ export function speakerLabel(index: number): string {
   return `話者${letter ?? String(normalized + 1)}`;
 }
 
-function speakerNameFromLine(line: string): string | null {
+function speakerNameFromLine(
+  line: string,
+  knownNames: ReadonlySet<string>,
+): string | null {
   const content = line.match(TRANSCRIPT_LINE)?.[1] ?? null;
   if (content === null) {
     return null;
@@ -40,7 +44,8 @@ function speakerNameFromLine(line: string): string | null {
     name.includes('[') ||
     name.includes(']') ||
     name.includes('\n') ||
-    name.includes('\r')
+    name.includes('\r') ||
+    (!AUTO_SPEAKER_NAME.test(name) && !knownNames.has(name))
   ) {
     return null;
   }
@@ -48,13 +53,19 @@ function speakerNameFromLine(line: string): string | null {
 }
 
 /**
- * 文字起こしの本文から話者名を最初に現れた順に取り出す。
+ * 文字起こしの本文から、自動ラベルまたは既知の話者名を最初に現れた順に取り出す。
  */
-export function extractTranscriptSpeakers(body: string): string[] {
+export function extractTranscriptSpeakers(
+  body: string,
+  knownNames: readonly string[] = [],
+): string[] {
+  const known = new Set(
+    knownNames.map((name) => name.trim()).filter((name) => name.length > 0),
+  );
   const names: string[] = [];
   const seen = new Set<string>();
   for (const line of body.split('\n')) {
-    const name = speakerNameFromLine(line.replace(/\r$/u, ''));
+    const name = speakerNameFromLine(line.replace(/\r$/u, ''), known);
     if (name === null || seen.has(name)) {
       continue;
     }

@@ -82,6 +82,18 @@ describe('parseDiarizationOutput', () => {
     ]);
   });
 
+  it('accepts confidence suffixes on turn lines', () => {
+    const output = [
+      '0.000 -- 1.000 speaker_00 confidence=0.912',
+      '1.000 -- 2.000 speaker_01 confidence=n/a',
+    ].join('\n');
+
+    expect(parseDiarizationOutput(output)).toEqual([
+      turn(0, 1, 'speaker_00'),
+      turn(1, 2, 'speaker_01'),
+    ]);
+  });
+
   it('drops invalid ranges and sorts by start time', () => {
     const output = [
       '5.000 -- 4.000 speaker_00',
@@ -445,5 +457,62 @@ describe('DiarizationService', () => {
       }),
     ).rejects.toThrow(/missing/u);
     expect(calls).toEqual([]);
+  });
+
+  it('returns null for empty segments without resolving the models', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    const calls: string[] = [];
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(calls),
+    });
+
+    expect(
+      await service.diarize(wavPath, [], { numSpeakers: 'auto' }),
+    ).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('returns null when the CLI finds only one speaker', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    process.env.KATARIBE_DIARIZATION_MODE = 'one';
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+
+    expect(
+      await service.diarize(wavPath, [segment(0, 1, 'one')], {
+        numSpeakers: 'auto',
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when the ten-cluster rerun is cancelled', async () => {
+    const root = await createRoot();
+    const wavPath = await createWav(root);
+    process.env.KATARIBE_DIARIZATION_MODE = 'many-cancel-rerun';
+    const controller = new AbortController();
+    const service = new DiarizationService({
+      locator: { sherpaDiarizationPath: async () => fixturePath },
+      models: createModels(),
+    });
+    const segments = Array.from({ length: 11 }, (_, index) =>
+      segment(index, index + 1, `text ${index}`),
+    );
+
+    const result = await service.diarize(wavPath, segments, {
+      numSpeakers: 'auto',
+      signal: controller.signal,
+      onProgress: (value) => {
+        if (value.phase === 'diarization' && value.progress === 0.01) {
+          controller.abort();
+        }
+      },
+    });
+
+    expect(result).toBeNull();
   });
 });

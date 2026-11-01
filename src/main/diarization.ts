@@ -51,7 +51,7 @@ const CLUSTER_THRESHOLD = 0.9;
 const NEAREST_TURN_SECONDS = 1;
 
 const TURN_PATTERN =
-  /^\s*(\d+(?:\.\d+)?)\s+--\s+(\d+(?:\.\d+)?)\s+(\S+)\s*$/u;
+  /^\s*(\d+(?:\.\d+)?)\s+--\s+(\d+(?:\.\d+)?)\s+(\S+)(?:\s+confidence=\S+)?\s*$/u;
 const PROGRESS_PATTERN = /^progress\s+(\d+(?:\.\d+)?)%\s*$/u;
 
 /**
@@ -354,6 +354,9 @@ export class DiarizationService {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         console.error(`speaker diarization retry failed: ${message}`);
+      }
+      if (options.signal?.aborted) {
+        return null;
       }
     }
     return assignSpeakerTurns(segments, turns, this.maxSpeakers);

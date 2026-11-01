@@ -50,6 +50,22 @@ if (mode === 'cancel') {
 } else if (mode === 'long') {
   writeAlternatingTurns(3000);
   process.stderr.write('progress 100.00%\n');
+} else if (mode === 'one') {
+  writeTurns(1);
+  process.stderr.write('progress 100.00%\n');
+} else if (mode === 'confidence') {
+  process.stderr.write('progress 100.00%\n');
+  process.stdout.write(
+    '0.000 -- 1.000 speaker_00 confidence=0.912\n1.000 -- 2.000 speaker_01 confidence=n/a\n',
+  );
+} else if (mode === 'many-cancel-rerun') {
+  if (args.includes('--clustering.num-clusters=10')) {
+    process.stderr.write('progress 1.00%\n');
+    setTimeout(() => undefined, 30000);
+  } else {
+    writeTurns(11);
+    process.stderr.write('progress 100.00%\n');
+  }
 } else {
   process.stderr.write('progress 50.00%\nprogress 100.00%\n');
   process.stdout.write(

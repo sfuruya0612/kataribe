@@ -410,6 +410,40 @@ describe('MeetingStore', () => {
     expect(detail?.diarizationError).toBe('synthetic failure');
   });
 
+  it('req_diar_001_does_not_treat_an_unlabeled_sentence_as_a_speaker', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000028';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'en',
+        segments: [
+          {
+            startSeconds: 1,
+            endSeconds: 2,
+            text: 'We will start with the agenda: budget, hiring.',
+          },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+
+    expect(detail?.speakers).toEqual([]);
+    await expect(
+      store.renameSpeakers(id, ['We will start with the agenda']),
+    ).rejects.toThrow(/話者数/u);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      'We will start with the agenda: budget, hiring.',
+    );
+  });
+
   it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000023';

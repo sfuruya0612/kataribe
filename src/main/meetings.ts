@@ -296,20 +296,13 @@ export class MeetingStore {
       }
     }
     const transcript = await this.readTranscript(meeting);
-    const extractedSpeakers = transcript
-      ? extractTranscriptSpeakers(transcript.body)
-      : [];
     const storedSpeakers = Array.isArray(meta?.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
-    const speakers =
-      transcript === null
-        ? storedSpeakers
-        : storedSpeakers.length > 0 &&
-            extractedSpeakers.length === storedSpeakers.length &&
-            storedSpeakers.every((name) => extractedSpeakers.includes(name))
-          ? storedSpeakers
-          : extractedSpeakers;
+    const extractedSpeakers = transcript
+      ? extractTranscriptSpeakers(transcript.body, storedSpeakers)
+      : [];
+    const speakers = transcript === null ? storedSpeakers : extractedSpeakers;
     return {
       meeting,
       recordingError,
@@ -669,17 +662,11 @@ export class MeetingStore {
     if (!transcript) {
       throw new Error('文字起こしがありません。');
     }
-    const extracted = extractTranscriptSpeakers(transcript.body);
     const meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
     const stored = Array.isArray(meta.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
-    const currentNames =
-      stored.length > 0 &&
-      extracted.length === stored.length &&
-      stored.every((name) => extracted.includes(name))
-        ? stored
-        : extracted;
+    const currentNames = extractTranscriptSpeakers(transcript.body, stored);
     if (currentNames.length !== names.length) {
       throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
     }

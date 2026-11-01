@@ -33,13 +33,26 @@ describe('extractTranscriptSpeakers', () => {
     expect(extractTranscriptSpeakers(body)).toEqual(['話者B', '話者A']);
   });
 
-  it('keeps renamed labels and ignores a colon inside the text', () => {
+  it('keeps renamed labels when they are known', () => {
     const body = [
       '[00:00:01] 田中: 会議は 10:30 に始めます。',
       '[00:00:09] 佐藤: はい。',
     ].join('\n');
 
-    expect(extractTranscriptSpeakers(body)).toEqual(['田中', '佐藤']);
+    expect(extractTranscriptSpeakers(body, ['田中', '佐藤'])).toEqual([
+      '田中',
+      '佐藤',
+    ]);
+    expect(extractTranscriptSpeakers(body)).toEqual([]);
+  });
+
+  it('ignores an unlabeled sentence with a colon', () => {
+    const body = [
+      '[00:00:01] We will start with the agenda: budget, hiring.',
+      '[00:00:05] 今日は: 晴れです。',
+    ].join('\n');
+
+    expect(extractTranscriptSpeakers(body)).toEqual([]);
   });
 
   it('ignores a label longer than 40 characters', () => {
