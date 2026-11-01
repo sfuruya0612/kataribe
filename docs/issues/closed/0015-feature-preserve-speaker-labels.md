@@ -3,6 +3,7 @@
 - Requirements: REQ-DIAR-002
 - Priority: Medium
 - Created: 2026-11-01
+- Completed: 2026-11-01
 - Model: DeepSeek V4.1 Flash 1017
 - Branch: feature/feature-preserve-speaker-labels
 
@@ -44,7 +45,7 @@ ADR-0020 は「再文字起こしをすると話者ラベルは自動ラベル�
 {
   "schema_version": 1,
   "key": {
-    "audio_sha256": "16 kHz WAV の SHA-256",
+    "audio_sha256": "audio.mp3 の SHA-256",
     "segmentation_sha256": "セグメンテーションモデルの SHA-256",
     "embedding_sha256": "話者埋め込みモデルの SHA-256",
     "speaker_count": "auto",
@@ -70,7 +71,7 @@ ADR-0020 は「再文字起こしをすると話者ラベルは自動ラベル�
 
 ### キャッシュキー
 
-キャッシュキーは、キャッシュ形式のバージョン、話者分離の入力 16 kHz WAV の SHA-256、セグメンテーションモデルの SHA-256、話者埋め込みモデルの SHA-256、話者数設定、クラスタ閾値、実行スレッド数とする。
+キャッシュキーは、キャッシュ形式のバージョン、会議の audio.mp3 の SHA-256、セグメンテーションモデルの SHA-256、話者埋め込みモデルの SHA-256、話者数設定、クラスタ閾値、実行スレッド数とする。
 whisper のモデルと文字起こしセグメントはキーに含めない。
 ターンは音声と話者分離設定だけで決まり、新しいセグメントへの再割り当ては毎回行えるためである。
 音声ハッシュは `src/main/asset-download.ts` の `hashFile` で計算する。
@@ -120,18 +121,18 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 
 ## 完了条件
 
-- [ ] REQ-DIAR-002 の受入基準「同じ音声と同じ話者分離設定で再文字起こししたとき、話者分離の CLI を起動せず、保存済みターンでラベルを付ける」を満たす。
-- [ ] REQ-DIAR-002 の受入基準「クラスタ ID に付けた話者名が、再文字起こし後の文字起こしと、話者名を保持している翻訳に残る」を満たす。
-- [ ] REQ-DIAR-002 の受入基準「音声、話者セグメンテーションモデル、話者埋め込みモデル、話者数、クラスタ閾値のいずれかが変わったとき、キャッシュを無効化して話者分離を再実行する」を満たす。
-- [ ] REQ-DIAR-002 の受入基準「キャッシュの読み書きに失敗しても、文字起こしと話者分離は完了する」を満たす。
-- [ ] REQ-DIAR-002 の受入基準「会議を削除すると、話者分離のキャッシュも削除される」を満たす。
-- [ ] キャッシュキーの一致と不一致、キャッシュヒット時の再割り当て、クラスタ ID ごとの話者名の保持をテストで固定する。
-- [ ] 音声、セグメンテーションモデル、埋め込みモデル、話者数、閾値、スレッド数の変更でキャッシュが無効になることをテストで固定する。
-- [ ] `diarization.json` の破損、読み込み失敗、書き込み失敗で文字起こしが失敗しないことをテストで固定する。
-- [ ] 部分文字起こし、失敗、キャンセルの後もキャッシュと話者名が残ることをテストで固定する。
-- [ ] 再文字起こし時の翻訳の話者名の置換と、話者名を保持していない行が変わらないことをテストで固定する。
-- [ ] `npm run typecheck`、`npm test`、`npm run build`、`npm run package`、`npm run verify:mac` が通る。
-- [ ] PRD、ADR-0021、CHANGES.md、README を同じ変更で更新する。
+- [x] REQ-DIAR-002 の受入基準「同じ音声と同じ話者分離設定で再文字起こししたとき、話者分離の CLI を起動せず、保存済みターンでラベルを付ける」を満たす。
+- [x] REQ-DIAR-002 の受入基準「クラスタ ID に付けた話者名が、再文字起こし後の文字起こしと、話者名を保持している翻訳に残る」を満たす。
+- [x] REQ-DIAR-002 の受入基準「音声、話者セグメンテーションモデル、話者埋め込みモデル、話者数、クラスタ閾値のいずれかが変わったとき、キャッシュを無効化して話者分離を再実行する」を満たす。
+- [x] REQ-DIAR-002 の受入基準「キャッシュの読み書きに失敗しても、文字起こしと話者分離は完了する」を満たす。
+- [x] REQ-DIAR-002 の受入基準「会議を削除すると、話者分離のキャッシュも削除される」を満たす。
+- [x] キャッシュキーの一致と不一致、キャッシュヒット時の再割り当て、クラスタ ID ごとの話者名の保持をテストで固定する。
+- [x] 音声、セグメンテーションモデル、埋め込みモデル、話者数、閾値、スレッド数の変更でキャッシュが無効になることをテストで固定する。
+- [x] `diarization.json` の破損、読み込み失敗、書き込み失敗で文字起こしが失敗しないことをテストで固定する。
+- [x] 部分文字起こし、失敗、キャンセルの後もキャッシュと話者名が残ることをテストで固定する。
+- [x] 再文字起こし時の翻訳の話者名の置換と、話者名を保持していない行が変わらないことをテストで固定する。
+- [x] `npm run typecheck`、`npm test`、`npm run build`、`npm run package`、`npm run verify:mac` が通る。
+- [x] PRD、ADR-0021、CHANGES.md、README を同じ変更で更新する。
 
 テストと文書の条件は、受入基準を検証可能にし、変更を利用者へ伝えるための条件である。
 
@@ -153,14 +154,14 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
   - `DiarizationService.diarize` にキャッシュと `namesByCluster` を受け取る経路を追加する。
     キャッシュが一致する場合は CLI を起動せず、`assignSpeakerTurns` に保存済みターンを渡す。
   - `assignSpeakerTurns` にクラスタ ID ごとの表示名を受け取る引数を追加する。表示名がないクラスタには自動ラベルを付ける。
-  - `buildCacheKey` を追加する。16 kHz WAV のハッシュ、モデルのハッシュ、話者数、閾値、スレッド数、schema バージョンをまとめる。
+  - `buildCacheKey` を追加する。audio.mp3 のハッシュ、モデルのハッシュ、話者数、閾値、スレッド数、schema バージョンをまとめる。
   - `DiarizationService` の解決済みスレッド数と閾値を公開する。
 - `src/main/diarization-models.ts` の `DIARIZATION_ASSETS` からセグメンテーションモデルと埋め込みモデルの最終ハッシュを取得する。
 
 ### 文字起こし処理
 
 - `src/main/processing.ts` を変更する。
-  - 文字起こし完了後、16 kHz WAV のハッシュを計算し、`diarization.json` を読む。
+  - 文字起こし完了後、audio.mp3 のハッシュを計算し、`diarization.json` を読む。
   - キャッシュが一致する場合は CLI を実行せず、保存済みターンで再割り当てする。
   - キャッシュが一致しない場合は CLI を実行し、成功後に `diarization.json` を書く。
   - 話者名の表示と `meta.speakers` のスナップショットを更新する。
@@ -198,3 +199,30 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 - `docs/adr/0020-speaker-diarization-with-sherpa-onnx.md`
 - `docs/adr/0021-speaker-diarization-cache.md`
 - `docs/issues/closed/0014-feature-multi-speaker-diarization.md`
+
+## 実施結果
+
+2026-11-01 に完了した。
+
+- `diarization.json` に話者ターン、クラスタ ID ごとの話者名、現在の表示名からクラスタ ID への対応を保存する。
+- キャッシュキーは audio.mp3 の SHA-256、分離モデルの SHA-256、話者数、閾値、スレッド数、schema バージョンで構成する。
+- キャッシュが一致するときは CLI を起動せず、保存済みターンを新しいセグメントに再割り当てする。
+- 話者名はクラスタ ID で保持し、再文字起こし後も表示名を維持する。
+- 音声、分離モデル、話者数、閾値、スレッド数が変わるとキャッシュを無効にし、話者名を自動ラベルに戻す。
+- キャッシュの破損、読み込み失敗、書き込み失敗はログに残して処理を続ける。
+- 部分文字起こし、失敗、キャンセルでは `diarization.json` を削除しない。
+- 会議フォルダの削除で `diarization.json` も削除する。
+- 再文字起こしのキャッシュヒット時は、既存の翻訳の表示名を新しい表示名に置き換える。話者名を保持していない行は変更しない。
+- `npm run typecheck`、`npm test` (338 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB。
+- `smoke` は起動中の Kataribe との single instance lock を避けるため、一時 user data directory で実行した。
+
+計画との差分:
+
+- 音声ハッシュは再生成される 16 kHz WAV ではなく、保存済みの audio.mp3 を使う。最初の文字起こしと再文字起こしで同じ音声を参照するため。
+- `DiarizationCacheValidationError` は作らず、`readDiarizationCache` が不正なキャッシュに `null` を返す形にした。呼び出し側はログを残して通常の分離へ進む。
+- `assignSpeakerTurns` は `SpeakerAssignment` を返し、セグメント、制限後のターン、表示名からクラスタ ID への対応を含む。
+- `DiarizationService` は `DiarizationResult` を返し、`cacheHit`、`cacheKey`、`turns`、`names`、`labels` を持つ。
+- `runDiarization` が `diarization.json` の内容を組み立て、`processing.ts` が読み書きする。
+- `meta.speakers` は現在の表示名のスナップショットとして残し、`diarization.json` をクラスタ名の正とする。
+- 翻訳の表示名の置換は `buildLabelMapping` で対応を作り、`processing.ts` が翻訳ファイルへ適用する。
+- 0016 の話者分離だけを再実行する UI は範囲外のまま。

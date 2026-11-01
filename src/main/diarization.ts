@@ -2,6 +2,14 @@ import { availableParallelism } from 'node:os';
 import type { DiarizationModelProgress, SpeakerCount } from '../shared/types';
 import type { TranscriptSegment } from '../shared/markdown';
 import { speakerLabel } from '../shared/speakers';
+import { hashFile } from './asset-download';
+import {
+  DIARIZATION_CACHE_SCHEMA_VERSION,
+  matchesCacheKey,
+  type DiarizationCache,
+  type DiarizationCacheKey,
+  type DiarizationCacheTurn,
+} from './diarization-cache';
 import type {
   DiarizationModelManager,
   DiarizationModelPaths,
@@ -27,9 +35,29 @@ export type DiarizationOptions = {
   numSpeakers: SpeakerCount;
   signal?: AbortSignal;
   onProgress?: (progress: DiarizationProgress) => void;
+  cache?: DiarizationCache | null;
+  audioSha256?: string;
 };
 
-export type DiarizationModels = Pick<DiarizationModelManager, 'ensureInstalled'>;
+export type DiarizationModels = Pick<
+  DiarizationModelManager,
+  'ensureInstalled' | 'modelHashes'
+>;
+
+export type SpeakerAssignment = {
+  segments: TranscriptSegment[];
+  turns: DiarizationTurn[];
+  labels: Record<string, string>;
+};
+
+export type DiarizationResult = {
+  segments: TranscriptSegment[];
+  turns: DiarizationTurn[];
+  names: Record<string, string>;
+  labels: Record<string, string>;
+  cacheHit: boolean;
+  cacheKey: DiarizationCacheKey;
+};
 
 export type DiarizationBinaryLocator = Pick<BinaryLocator, 'sherpaDiarizationPath'>;
 
@@ -182,13 +210,14 @@ export function limitSpeakerTurns(
 }
 
 /**
- * 文字起こしセグメントへ話者ターンを割り当て、話者 A から順にラベルを付ける。
+ * 文字起こしセグメントへ話者ターンを割り当て、クラスタ ID ごとの表示名を付ける。
  */
 export function assignSpeakerTurns(
   segments: readonly TranscriptSegment[],
   turns: readonly DiarizationTurn[],
+  namesByCluster: Readonly<Record<string, string>> = {},
   maxSpeakers = DEFAULT_MAX_SPEAKERS,
-): TranscriptSegment[] | null {
+): SpeakerAssignment | null {
   if (turns.length === 0 || uniqueSpeakers(turns) < 2) {
     return null;
   }
@@ -239,23 +268,97 @@ export function assignSpeakerTurns(
     return selected;
   });
 
-  const labels = new Map<string, string>();
-  for (const speaker of assigned) {
-    if (speaker === null || labels.has(speaker)) {
+  const usedDisplays = new Set(
+    Object.values(namesByCluster)
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0),
+  );
+  const displayByCluster = new Map<string, string>();
+  let autoIndex = 0;
+  for (const cluster of assigned) {
+    if (cluster === null || displayByCluster.has(cluster)) {
       continue;
     }
-    labels.set(speaker, speakerLabel(labels.size));
+    const custom = namesByCluster[cluster]?.trim();
+    let display: string;
+    if (custom && custom.length > 0) {
+      display = custom;
+    } else {
+      do {
+        display = speakerLabel(autoIndex);
+        autoIndex += 1;
+      } while (usedDisplays.has(display));
+      usedDisplays.add(display);
+    }
+    displayByCluster.set(cluster, display);
   }
-  if (labels.size === 0) {
+  if (displayByCluster.size === 0) {
     return null;
   }
-  return segments.map((segment, index) => {
-    const speaker = assigned[index];
-    if (speaker === null) {
-      return { ...segment };
-    }
-    return { ...segment, speaker: labels.get(speaker) ?? speaker };
-  });
+
+  const labels: Record<string, string> = {};
+  for (const [cluster, display] of displayByCluster) {
+    labels[display] = cluster;
+  }
+  return {
+    segments: segments.map((segment, index) => {
+      const cluster = assigned[index];
+      if (cluster === null) {
+        return { ...segment };
+      }
+      const display = displayByCluster.get(cluster);
+      return display === undefined ? { ...segment } : { ...segment, speaker: display };
+    }),
+    turns: limited,
+    labels,
+  };
+}
+
+/**
+ * 話者分離キャッシュのキーを作る。
+ */
+export function buildDiarizationCacheKey(input: {
+  audioSha256: string;
+  segmentationSha256: string;
+  embeddingSha256: string;
+  speakerCount: SpeakerCount;
+  clusterThreshold: number;
+  threads: number;
+}): DiarizationCacheKey {
+  return {
+    audio_sha256: input.audioSha256,
+    segmentation_sha256: input.segmentationSha256,
+    embedding_sha256: input.embeddingSha256,
+    speaker_count: input.speakerCount,
+    cluster_threshold: input.clusterThreshold,
+    threads: input.threads,
+  };
+}
+
+/**
+ * キャッシュのターンを内部のターン形式へ変換する。
+ */
+export function turnsFromCache(
+  turns: readonly DiarizationCacheTurn[],
+): DiarizationTurn[] {
+  return turns.map((turn) => ({
+    startSeconds: turn.start,
+    endSeconds: turn.end,
+    speaker: turn.cluster,
+  }));
+}
+
+/**
+ * 内部のターンをキャッシュの形式へ変換する。
+ */
+export function turnsToCache(
+  turns: readonly DiarizationTurn[],
+): DiarizationCacheTurn[] {
+  return turns.map((turn) => ({
+    start: turn.startSeconds,
+    end: turn.endSeconds,
+    cluster: turn.speaker,
+  }));
 }
 
 function buildArgs(
@@ -285,7 +388,8 @@ function buildArgs(
 export class DiarizationService {
   private readonly locator: DiarizationBinaryLocator;
   private readonly models: DiarizationModels;
-  private readonly threads: number;
+  readonly threads: number;
+  readonly clusterThreshold: number;
   private readonly inactivityTimeoutMs: number;
   readonly maxSpeakers: number;
 
@@ -294,6 +398,7 @@ export class DiarizationService {
     this.models = options.models;
     this.threads =
       options.threads ?? Math.max(1, Math.min(4, availableParallelism()));
+    this.clusterThreshold = CLUSTER_THRESHOLD;
     this.inactivityTimeoutMs =
       options.inactivityTimeoutMs ?? DEFAULT_INACTIVITY_TIMEOUT_MS;
     this.maxSpeakers = options.maxSpeakers ?? DEFAULT_MAX_SPEAKERS;
@@ -303,7 +408,7 @@ export class DiarizationService {
     wavPath: string,
     segments: readonly TranscriptSegment[],
     options: DiarizationOptions,
-  ): Promise<TranscriptSegment[] | null> {
+  ): Promise<DiarizationResult | null> {
     if (segments.length === 0) {
       return null;
     }
@@ -315,6 +420,42 @@ export class DiarizationService {
     ) {
       return null;
     }
+
+    const audioSha256 = options.audioSha256 ?? (await hashFile(wavPath));
+    const modelHashes = this.models.modelHashes();
+    const cacheKey = buildDiarizationCacheKey({
+      audioSha256,
+      segmentationSha256: modelHashes.segmentation,
+      embeddingSha256: modelHashes.embedding,
+      speakerCount: options.numSpeakers,
+      clusterThreshold: this.clusterThreshold,
+      threads: this.threads,
+    });
+    const cached = options.cache;
+    if (
+      cached !== null &&
+      cached !== undefined &&
+      cached.schema_version === DIARIZATION_CACHE_SCHEMA_VERSION &&
+      matchesCacheKey(cached.key, cacheKey)
+    ) {
+      const cachedAssignment = assignSpeakerTurns(
+        segments,
+        turnsFromCache(cached.turns),
+        cached.names,
+        this.maxSpeakers,
+      );
+      if (cachedAssignment !== null) {
+        return {
+          segments: cachedAssignment.segments,
+          turns: cachedAssignment.turns,
+          names: cached.names,
+          labels: cachedAssignment.labels,
+          cacheHit: true,
+          cacheKey,
+        };
+      }
+    }
+
     const binary = await this.locator.sherpaDiarizationPath();
     const paths = await this.models.ensureInstalled(
       options.signal,
@@ -359,7 +500,18 @@ export class DiarizationService {
         return null;
       }
     }
-    return assignSpeakerTurns(segments, turns, this.maxSpeakers);
+    const assignment = assignSpeakerTurns(segments, turns, {}, this.maxSpeakers);
+    if (assignment === null) {
+      return null;
+    }
+    return {
+      segments: assignment.segments,
+      turns: assignment.turns,
+      names: {},
+      labels: assignment.labels,
+      cacheHit: false,
+      cacheKey,
+    };
   }
 
   private async runOnce(

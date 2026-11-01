@@ -360,10 +360,27 @@ describe('runDiarization', () => {
 
   it('req_diar_001_counts_the_labels_returned_by_the_service', async () => {
     const service = {
-      diarize: async () => [
-        { ...segments[0], speaker: '話者A' },
-        { ...segments[1], speaker: '話者B' },
-      ],
+      diarize: async () => ({
+        segments: [
+          { ...segments[0], speaker: '話者A' },
+          { ...segments[1], speaker: '話者B' },
+        ],
+        turns: [
+          { startSeconds: 0, endSeconds: 1, speaker: 'speaker_00' },
+          { startSeconds: 1, endSeconds: 2, speaker: 'speaker_01' },
+        ],
+        names: {},
+        labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+        cacheHit: true,
+        cacheKey: {
+          audio_sha256: 'a'.repeat(64),
+          segmentation_sha256: 'b'.repeat(64),
+          embedding_sha256: 'c'.repeat(64),
+          speaker_count: 'auto',
+          cluster_threshold: 0.9,
+          threads: 4,
+        },
+      }),
     } as unknown as DiarizationService;
 
     const result = await runDiarization({
@@ -379,6 +396,24 @@ describe('runDiarization', () => {
       { ...segments[1], speaker: '話者B' },
     ]);
     expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
+    expect(result.cacheHit).toBe(true);
+    expect(result.cache).toEqual({
+      schema_version: 1,
+      key: {
+        audio_sha256: 'a'.repeat(64),
+        segmentation_sha256: 'b'.repeat(64),
+        embedding_sha256: 'c'.repeat(64),
+        speaker_count: 'auto',
+        cluster_threshold: 0.9,
+        threads: 4,
+      },
+      turns: [
+        { start: 0, end: 1, cluster: 'speaker_00' },
+        { start: 1, end: 2, cluster: 'speaker_01' },
+      ],
+      names: {},
+      labels: { 話者A: 'speaker_00', 話者B: 'speaker_01' },
+    });
   });
 
   it('req_diar_001_keeps_the_original_segments_when_the_service_returns_null', async () => {
@@ -394,6 +429,8 @@ describe('runDiarization', () => {
 
     expect(result.segments).toEqual(segments);
     expect(result.meta).toEqual({ state: 'completed', speakers: 0 });
+    expect(result.cache).toBeNull();
+    expect(result.cacheHit).toBe(false);
   });
 
   it('req_diar_001_keeps_the_original_segments_and_records_the_error_when_the_service_fails', async () => {
@@ -416,6 +453,8 @@ describe('runDiarization', () => {
       state: 'failed',
       error: 'model download failed',
     });
+    expect(result.cache).toBeNull();
+    expect(result.cacheHit).toBe(false);
   });
 
   it('req_diar_001_records_a_cancellation_as_a_failed_diarization', async () => {

@@ -15,6 +15,12 @@ import {
   renameTranscriptSpeakers,
   validateSpeakerNames,
 } from '../shared/speakers';
+import {
+  diarizationCachePath,
+  readDiarizationCache,
+  writeDiarizationCache,
+  type DiarizationCache,
+} from './diarization-cache';
 import type {
   MeetingDetail,
   MeetingSearchHit,
@@ -297,18 +303,27 @@ export class MeetingStore {
       }
     }
     const transcript = await this.readTranscript(meeting);
+    const diarizationCache = await readDiarizationCache(
+      diarizationCachePath(meeting.meetingDir),
+    );
     const storedSpeakers = Array.isArray(meta?.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
+    const cacheLabels = diarizationCache
+      ? Object.keys(diarizationCache.labels)
+      : [];
+    const knownNames = [...new Set([...storedSpeakers, ...cacheLabels])];
     let speakers: string[];
     if (transcript === null) {
       speakers = storedSpeakers;
     } else {
-      const extracted = extractTranscriptSpeakers(transcript.body, storedSpeakers);
+      const extracted = extractTranscriptSpeakers(transcript.body, knownNames);
       speakers =
         extracted.length > 0
           ? extracted
-          : recoverTranscriptSpeakers(transcript.body, storedSpeakers.length);
+          : diarizationCache !== null
+            ? []
+            : recoverTranscriptSpeakers(transcript.body, storedSpeakers.length);
     }
     return {
       meeting,
@@ -670,14 +685,23 @@ export class MeetingStore {
       throw new Error('文字起こしがありません。');
     }
     const meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
+    const diarizationCache = await readDiarizationCache(
+      diarizationCachePath(meeting.meetingDir),
+    );
     const stored = Array.isArray(meta.speakers)
       ? meta.speakers.filter((value): value is string => typeof value === 'string')
       : [];
-    const known = extractTranscriptSpeakers(transcript.body, stored);
+    const cacheLabels = diarizationCache
+      ? Object.keys(diarizationCache.labels)
+      : [];
+    const knownNames = [...new Set([...stored, ...cacheLabels])];
+    const known = extractTranscriptSpeakers(transcript.body, knownNames);
     const currentNames =
       known.length > 0
         ? known
-        : recoverTranscriptSpeakers(transcript.body, stored.length);
+        : diarizationCache !== null
+          ? []
+          : recoverTranscriptSpeakers(transcript.body, stored.length);
     if (currentNames.length !== names.length) {
       throw new Error('話者数が一致しません。最新の文字起こしを読み直してください。');
     }
@@ -695,6 +719,32 @@ export class MeetingStore {
     const mapping = new Map(
       currentNames.map((name, index) => [name, names[index]] as const),
     );
+    let updatedCache: DiarizationCache | null = null;
+    if (diarizationCache !== null) {
+      const clusters = currentNames.map((name) => {
+        const cluster = diarizationCache.labels[name];
+        if (cluster === undefined) {
+          throw new Error('話者名に対応するクラスタが見つかりません。');
+        }
+        return cluster;
+      });
+      const nextNames = { ...diarizationCache.names };
+      const nextLabels: Record<string, string> = {};
+      for (const [display, cluster] of Object.entries(diarizationCache.labels)) {
+        if (!currentNames.includes(display)) {
+          nextLabels[display] = cluster;
+        }
+      }
+      for (let index = 0; index < currentNames.length; index += 1) {
+        nextNames[clusters[index]] = names[index];
+        nextLabels[names[index]] = clusters[index];
+      }
+      updatedCache = {
+        ...diarizationCache,
+        names: nextNames,
+        labels: nextLabels,
+      };
+    }
     const transcriptPath = join(meeting.meetingDir, 'transcript.md');
     const renamedTranscript = renameTranscriptSpeakers(transcript.markdown, mapping);
     if (renamedTranscript === transcript.markdown) {
@@ -715,6 +765,18 @@ export class MeetingStore {
     }
 
     await writePrivateMarkdown(transcriptPath, renamedTranscript);
+    if (updatedCache !== null) {
+      try {
+        await writeDiarizationCache(
+          diarizationCachePath(meeting.meetingDir),
+          updatedCache,
+        );
+      } catch (error) {
+        console.error(
+          `failed to save speaker diarization cache: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     await updateMeetingMeta(join(meeting.meetingDir, 'meta.json'), (value) => {
       value.speakers = names;
     });
