@@ -66,6 +66,7 @@ import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
 import { MeetingSearchIndex } from './search-index';
 import { SettingsStore } from './settings';
+import { listMeetingTodos, setMeetingTodoChecked } from './todos';
 import {
   isAllowedPermission,
   type PermissionDetails,
@@ -1073,6 +1074,34 @@ function registerIpc(
     const index = activeMeetingIndex;
     return index?.isReady() ? index.list() : meetingStore.list();
   });
+
+  ipcMain.handle('meetings:list-todos', () => {
+    return listMeetingTodos(meetingStore);
+  });
+
+  ipcMain.handle(
+    'meetings:set-todo-checked',
+    async (
+      _event,
+      meetingId: string,
+      lineNumber: number,
+      expectedText: string,
+      checked: boolean,
+    ) => {
+      if (processing.isBusy()) {
+        throw new Error(t('処理中は ToDo の完了状態を変更できません。'));
+      }
+      await setMeetingTodoChecked(
+        meetingStore,
+        String(meetingId),
+        Number(lineNumber),
+        String(expectedText),
+        checked === true,
+      );
+      await refreshMeetingIndex(meetingStore, String(meetingId));
+      broadcast('meetings:updated', { meetingId: String(meetingId) });
+    },
+  );
 
   ipcMain.handle('index:rebuild', async () => {
     const status = stateStore.getStatus();

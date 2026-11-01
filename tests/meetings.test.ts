@@ -1,6 +1,6 @@
 /**
  * 会議フォルダの読み書き、検索、話者名、保存済みデータの不変条件を検証する。
- * 対応する要求: REQ-DIAR-001、REQ-DIAR-002、REQ-UI-001 (保存済みデータの不変)
+ * 対応する要求: REQ-DIAR-001、REQ-DIAR-002、REQ-UI-001 (保存済みデータの不変)、REQ-TODO-001
  */
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,6 +15,7 @@ import {
   type DiarizationCache,
 } from '../src/main/diarization-cache';
 import { MeetingStore } from '../src/main/meetings';
+import { listMeetingTodos, setMeetingTodoChecked } from '../src/main/todos';
 import { setUiLanguage } from '../src/main/i18n';
 import {
   formatTranscriptMarkdown,
@@ -60,6 +61,22 @@ async function createMeeting(
     await writeFile(join(meetingDir, 'audio.wav'), audio);
   }
   return meetingDir;
+}
+
+async function writeSummaryTodo(
+  meetingDir: string,
+  title: string,
+  todoLines: readonly string[],
+): Promise<void> {
+  await writeFile(
+    join(meetingDir, 'summary.md'),
+    stringifyFrontMatter(
+      { title, date: '2026-10-29', provider: 'claude', language: 'ja' },
+      ['## 要約', '本文です。', '## ToDo', ...todoLines, '## 未決事項'].join(
+        '\n',
+      ),
+    ),
+  );
 }
 
 afterEach(async () => {
@@ -885,6 +902,127 @@ describe('MeetingStore', () => {
 
     await expect(store.renameSpeakers(id, ['田中: 営業'])).rejects.toThrow(
       /コロン/u,
+    );
+  });
+});
+
+describe('req_todo_001_meeting_todos', () => {
+  it('lists todos in meeting order and skips meetings without a summary or todo', async () => {
+    const { root, store } = await createStore();
+    const meetingA = await createMeeting(
+      root,
+      '00000000-0000-4000-8000-000000000031',
+      { status: 'summarized', title: '定例A' },
+    );
+    await writeSummaryTodo(meetingA, '定例A', [
+      '- [ ] A の資料',
+      '- [x] A の公開',
+    ]);
+    await createMeeting(root, '00000000-0000-4000-8000-000000000032', {
+      status: 'transcribed',
+      title: '定例B',
+      started_at: '2026-10-29T06:00:00.000Z',
+    });
+    const meetingC = await createMeeting(
+      root,
+      '00000000-0000-4000-8000-000000000033',
+      { status: 'summarized', title: '定例C', started_at: '2026-10-29T04:00:00.000Z' },
+    );
+    await writeSummaryTodo(meetingC, '定例C', ['- ただのメモ']);
+    const meetingD = await createMeeting(
+      root,
+      '00000000-0000-4000-8000-000000000034',
+      {
+        status: 'summarized',
+        title: '定例D',
+        started_at: '2026-10-29T03:00:00.000Z',
+        pinned: true,
+      },
+    );
+    await writeSummaryTodo(meetingD, '定例D', ['- [ ] D の確認']);
+
+    expect(await listMeetingTodos(store)).toEqual([
+      {
+        meetingId: '00000000-0000-4000-8000-000000000034',
+        meetingTitle: '定例D',
+        startedAt: '2026-10-29T03:00:00.000Z',
+        lineNumber: 3,
+        checked: false,
+        text: 'D の確認',
+      },
+      {
+        meetingId: '00000000-0000-4000-8000-000000000031',
+        meetingTitle: '定例A',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        lineNumber: 3,
+        checked: false,
+        text: 'A の資料',
+      },
+      {
+        meetingId: '00000000-0000-4000-8000-000000000031',
+        meetingTitle: '定例A',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        lineNumber: 4,
+        checked: true,
+        text: 'A の公開',
+      },
+    ]);
+  });
+
+  it('saves the checked state and reads it back from a new store', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000035';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'summarized',
+    });
+    await writeSummaryTodo(meetingDir, '週次定例', ['- [ ] 資料をまとめる']);
+
+    await setMeetingTodoChecked(store, id, 3, '資料をまとめる', true);
+
+    const saved = await readFile(join(meetingDir, 'summary.md'), 'utf8');
+    expect(saved).toContain('- [x] 資料をまとめる');
+    expect(saved).toContain('title: 週次定例');
+    expect(saved).toContain('language: ja');
+
+    const restarted = new MeetingStore(root);
+    expect(await listMeetingTodos(restarted)).toEqual([
+      {
+        meetingId: id,
+        meetingTitle: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        lineNumber: 3,
+        checked: true,
+        text: '資料をまとめる',
+      },
+    ]);
+
+    await setMeetingTodoChecked(restarted, id, 3, '資料をまとめる', false);
+    expect(await readFile(join(meetingDir, 'summary.md'), 'utf8')).toContain(
+      '- [ ] 資料をまとめる',
+    );
+  });
+
+  it('rejects a text or line mismatch without writing the summary', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000036';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'summarized',
+    });
+    await writeSummaryTodo(meetingDir, '週次定例', ['- [ ] 資料をまとめる']);
+    const original = await readFile(join(meetingDir, 'summary.md'), 'utf8');
+
+    await expect(
+      setMeetingTodoChecked(store, id, 3, '別の項目', true),
+    ).rejects.toThrow(
+      '要約の ToDo が変更されました。一覧を再読み込みしてください。',
+    );
+    await expect(
+      setMeetingTodoChecked(store, id, 0, '要約', true),
+    ).rejects.toThrow(
+      '要約の ToDo が変更されました。一覧を再読み込みしてください。',
+    );
+    expect(await readFile(join(meetingDir, 'summary.md'), 'utf8')).toBe(
+      original,
     );
   });
 });

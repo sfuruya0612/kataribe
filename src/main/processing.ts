@@ -1,10 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
-  chmod,
   mkdir,
-  open,
   readFile,
-  rename,
   rm,
   stat,
 } from 'node:fs/promises';
@@ -49,6 +46,7 @@ import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
 import { t } from './i18n';
 import { computeWavWaveform, MediaError, type MediaEncoder } from './media';
+import { writePrivateText } from './private-file';
 import {
   readMeetingMeta,
   updateMeetingMeta,
@@ -133,20 +131,6 @@ async function exists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function writePrivateText(path: string, text: string): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.tmp`;
-  const handle = await open(temporary, 'w', 0o600);
-  try {
-    await handle.writeFile(text);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-  await chmod(temporary, 0o600);
-  await rename(temporary, path);
 }
 
 function clearDiarization(meta: MeetingMeta): void {

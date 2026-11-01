@@ -795,6 +795,35 @@ export const EN_MESSAGES = {
     'Could not open the input device. Check whether another app is using it.',
   '選択した入力デバイスの設定に対応できません。別のデバイスを選んでください。':
     'The selected input device does not support the requested settings. Choose another device.',
+  'ToDo': 'ToDo',
+  'ToDo 一覧': 'ToDo list',
+  'ToDo の絞り込み': 'Filter ToDo items',
+  '未完了': 'Open',
+  '完了': 'Done',
+  'すべて': 'All',
+  'ToDo を読み込んでいます。': 'Loading ToDo items.',
+  'ToDo を読み込めませんでした: {error}': 'Could not load ToDo items: {error}',
+  'ToDo はまだありません。': 'No ToDo items yet.',
+  '会議の要約に ToDo を追加すると、ここに表示されます。':
+    'ToDo items in meeting summaries appear here.',
+  '該当する ToDo はありません。': 'No ToDo items match this filter.',
+  'ToDo の完了状態を変更できませんでした: {error}':
+    'Could not change the ToDo completion state: {error}',
+  '要約の ToDo が変更されました。一覧を再読み込みしてください。':
+    'The ToDo item changed in the summary. Reload the list.',
+  '要約がありません。': 'No summary.',
+  '処理中は ToDo の完了状態を変更できません。':
+    'The ToDo completion state cannot be changed while processing.',
+  '既存の要約を上書きします': 'This replaces the existing summary',
+  '要約を再生成すると、現在の要約を上書きします。':
+    'Regenerating the summary replaces the current summary.',
+  'ToDo の完了状態は引き継ぎません。':
+    'ToDo completion states are not carried over.',
+  '直前の要約は summary.previous.md に退避します。':
+    'The previous summary is saved to summary.previous.md.',
+  '{text} を完了にする': 'Mark {text} as done',
+  '{text} を未完了に戻す': 'Mark {text} as not done',
+  '{title} の会議詳細を開く': 'Open meeting details for {title}',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;

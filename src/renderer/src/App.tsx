@@ -7,6 +7,7 @@ import type {
   MeetingSearchHit,
   MeetingSearchResult,
   MeetingSummary,
+  MeetingTodo,
   ProcessingState,
   RecordingStopResult,
   UiLanguage,
@@ -17,12 +18,13 @@ import { RecordingView } from './RecordingView';
 import { SearchResults } from './SearchResults';
 import { SettingsPanel } from './SettingsPanel';
 import { Sidebar, type MeetingFilter } from './Sidebar';
+import { TodoList } from './TodoList';
 import { TopBar } from './TopBar';
 import { errorText } from './recording-utils';
 import { useI18n } from './i18n';
 import { useRecorder } from './use-recorder';
 
-type View = 'meetings' | 'detail' | 'recording' | 'settings' | 'search';
+type View = 'meetings' | 'detail' | 'todos' | 'recording' | 'settings' | 'search';
 
 function cloudSyncService(path: string): string | null {
   const value = path.toLowerCase();
@@ -50,6 +52,9 @@ export default function App({
   }));
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [todos, setTodos] = useState<MeetingTodo[]>([]);
+  const [todosLoading, setTodosLoading] = useState(true);
+  const [todosError, setTodosError] = useState<string | null>(null);
   const [view, setView] = useState<View>('meetings');
   const [filter, setFilter] = useState<MeetingFilter>('all');
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
@@ -86,6 +91,18 @@ export default function App({
       setMeetingsLoading(false);
     }
   }, [t]);
+
+  const refreshTodos = useCallback(async () => {
+    setTodosLoading(true);
+    try {
+      setTodos(await window.kataribe.listMeetingTodos());
+      setTodosError(null);
+    } catch (reason: unknown) {
+      setTodosError(errorText(reason));
+    } finally {
+      setTodosLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,7 +147,8 @@ export default function App({
 
   useEffect(() => {
     void refreshMeetings();
-  }, [refreshMeetings]);
+    void refreshTodos();
+  }, [refreshMeetings, refreshTodos]);
 
   useEffect(() => {
     if (view !== 'settings') {
@@ -199,9 +217,11 @@ export default function App({
     });
     const unsubscribeMeetings = window.kataribe.onMeetingUpdated(() => {
       void refreshMeetings();
+      void refreshTodos();
     });
     const unsubscribeChanged = window.kataribe.onMeetingsChanged((list) => {
       setMeetings(list);
+      void refreshTodos();
     });
     return () => {
       cancelled = true;
@@ -209,7 +229,7 @@ export default function App({
       unsubscribeMeetings();
       unsubscribeChanged();
     };
-  }, [refreshMeetings]);
+  }, [refreshMeetings, refreshTodos]);
 
   useEffect(() => {
     const query = searchQuery.trim();
@@ -342,13 +362,42 @@ export default function App({
       setSearchQuery('');
       setSearchResult(null);
       await refreshMeetings();
+      await refreshTodos();
       setToast(t('保存先を変更しました。'));
     } catch (reason: unknown) {
       setToast(
         t('保存先を変更できませんでした: {error}', { error: errorText(reason) }),
       );
     }
-  }, [refreshMeetings, t]);
+  }, [refreshMeetings, refreshTodos, t]);
+
+  const setTodoChecked = useCallback(
+    async (todo: MeetingTodo, checked: boolean) => {
+      try {
+        await window.kataribe.setMeetingTodoChecked(
+          todo.meetingId,
+          todo.lineNumber,
+          todo.text,
+          checked,
+        );
+        await refreshTodos();
+      } catch (reason: unknown) {
+        setToast(
+          t('ToDo の完了状態を変更できませんでした: {error}', {
+            error: errorText(reason),
+          }),
+        );
+        await refreshTodos();
+      }
+    },
+    [refreshTodos, t],
+  );
+
+  const openTodoMeeting = (meetingId: string) => {
+    setSelectedMeetingId(meetingId);
+    setDetailSeekSeconds(null);
+    setView('detail');
+  };
 
   const handleSearchChange = (value: string) => {
     setSearchQuery(value);
@@ -447,6 +496,7 @@ export default function App({
         setView('meetings');
       }
       await refreshMeetings();
+      await refreshTodos();
       setToast(t('会議を削除しました。'));
     } catch (reason: unknown) {
       setToast(t('会議を削除できませんでした: {error}', { error: errorText(reason) }));
@@ -469,10 +519,12 @@ export default function App({
           meetings={meetings}
           view={view}
           filter={filter}
+          todoCount={todos.filter((todo) => !todo.checked).length}
           onFilter={(next) => {
             setFilter(next);
             setView('meetings');
           }}
+          onOpenTodos={() => setView('todos')}
           onOpenRecording={() => setView('recording')}
           onOpenSettings={() => setView('settings')}
         />
@@ -503,6 +555,17 @@ export default function App({
               result={searchResult}
               loading={searchLoading}
               onSelect={openSearchHit}
+            />
+          ) : null}
+
+          {view === 'todos' ? (
+            <TodoList
+              todos={todos}
+              loading={todosLoading}
+              error={todosError}
+              processing={processing.stage !== null}
+              onToggle={setTodoChecked}
+              onOpenMeeting={openTodoMeeting}
             />
           ) : null}
 

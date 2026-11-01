@@ -9,6 +9,7 @@ import type {
   TranslationPreview,
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
+import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
 import { useI18n, type I18nValue } from './i18n';
 import {
   errorText,
@@ -1178,6 +1179,7 @@ export function MeetingDetail({
             {preview.warning ? (
               <p className="alert alert-warning">{preview.warning}</p>
             ) : null}
+            <SummaryRegenerationWarning visible={summary !== null} />
             <p className="muted">
               {t(
                 '音声ファイルと会議のメタデータは送信しません。個人名や社名のマスクは行いません。概算料金はプロバイダの料金表を確認してください。送信先でのデータの扱いはプロバイダの規約に従います。',
