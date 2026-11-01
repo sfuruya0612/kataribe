@@ -382,4 +382,235 @@ describe('MeetingStore', () => {
     await expect(stat(meetingDir)).rejects.toThrow();
     expect(await store.list()).toEqual([]);
   });
+
+  it('req_diar_001_returns_the_diarization_error_from_meta', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000027';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'transcribed',
+      diarization: { state: 'failed', error: 'synthetic failure' },
+    });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: 'A です。' },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+
+    expect(detail?.diarizationError).toBe('synthetic failure');
+  });
+
+  it('req_diar_001_does_not_treat_an_unlabeled_sentence_as_a_speaker', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000028';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'en',
+        segments: [
+          {
+            startSeconds: 1,
+            endSeconds: 2,
+            text: 'We will start with the agenda: budget, hiring.',
+          },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+
+    expect(detail?.speakers).toEqual([]);
+    await expect(
+      store.renameSpeakers(id, ['We will start with the agenda']),
+    ).rejects.toThrow(/話者数/u);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      'We will start with the agenda: budget, hiring.',
+    );
+  });
+
+  it('req_diar_001_recovers_speaker_names_when_meta_is_stale', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000029';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'transcribed',
+      speakers: ['話者A', '話者B'],
+    });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '田中', text: '一つ目です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '佐藤', text: '二つ目です。' },
+        ],
+      }),
+    );
+
+    const detail = await store.detail(id);
+    expect(detail?.speakers).toEqual(['田中', '佐藤']);
+
+    const updated = await store.renameSpeakers(id, ['鈴木', '高橋']);
+
+    expect(updated.speakers).toEqual(['鈴木', '高橋']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:01] 鈴木: 一つ目です。',
+    );
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 高橋: 二つ目です。',
+    );
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.speakers).toEqual(['鈴木', '高橋']);
+  });
+
+  it('req_diar_001_renames_speakers_in_the_transcript_and_translations', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000023';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    const segments = [
+      { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: '一つ目です。' },
+      { startSeconds: 2, endSeconds: 3, speaker: '話者B', text: '二つ目です。' },
+      { startSeconds: 3, endSeconds: 4, speaker: '話者A', text: '三つ目です。' },
+    ];
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments,
+      }),
+    );
+    await writeFile(
+      join(meetingDir, 'transcript.ja.md'),
+      formatTranslationMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        sourceLanguage: 'ja',
+        targetLanguage: 'en',
+        provider: 'test',
+        generatedAt: '2026-10-29T05:01:00.000Z',
+        segments,
+      }),
+    );
+
+    const detail = await store.detail(id);
+    expect(detail?.speakers).toEqual(['話者A', '話者B']);
+
+    const updated = await store.renameSpeakers(id, ['田中', '佐藤']);
+
+    expect(updated.speakers).toEqual(['田中', '佐藤']);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:01] 田中: 一つ目です。',
+    );
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '[00:00:02] 佐藤: 二つ目です。',
+    );
+    expect(await readFile(join(meetingDir, 'transcript.ja.md'), 'utf8')).toContain(
+      '[00:00:01] 田中: 一つ目です。',
+    );
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.speakers).toEqual(['田中', '佐藤']);
+  });
+
+  it('req_diar_001_swaps_speaker_names_in_one_pass', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000024';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: 'A です。' },
+          { startSeconds: 2, endSeconds: 3, speaker: '話者B', text: 'B です。' },
+        ],
+      }),
+    );
+
+    await store.renameSpeakers(id, ['話者B', '話者A']);
+
+    const transcript = await readFile(join(meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('[00:00:01] 話者B: A です。');
+    expect(transcript).toContain('[00:00:02] 話者A: B です。');
+  });
+
+  it('req_diar_001_rejects_a_speaker_count_mismatch', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000025';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: 'A です。' },
+        ],
+      }),
+    );
+
+    await expect(store.renameSpeakers(id, ['田中', '佐藤'])).rejects.toThrow(
+      /話者数/u,
+    );
+  });
+
+  it('req_diar_001_rejects_invalid_speaker_names', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000026';
+    const meetingDir = await createMeeting(root, id, { status: 'transcribed' });
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          { startSeconds: 1, endSeconds: 2, speaker: '話者A', text: 'A です。' },
+        ],
+      }),
+    );
+
+    await expect(store.renameSpeakers(id, ['田中: 営業'])).rejects.toThrow(
+      /コロン/u,
+    );
+  });
 });

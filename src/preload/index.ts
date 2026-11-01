@@ -5,6 +5,8 @@ import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  DiarizationModelProgress,
+  DiarizationModelStatus,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -140,6 +142,11 @@ const api = {
     ipcRenderer.invoke('meetings:save-transcript', meetingId, markdown),
   saveSummary: (meetingId: string, markdown: string): Promise<MeetingDetail> =>
     ipcRenderer.invoke('meetings:save-summary', meetingId, markdown),
+  renameMeetingSpeakers: (
+    meetingId: string,
+    names: string[],
+  ): Promise<MeetingDetail> =>
+    ipcRenderer.invoke('meetings:rename-speakers', meetingId, names),
   retryTranscription: (meetingId: string): Promise<ProcessingState> =>
     ipcRenderer.invoke('meetings:retry-transcription', meetingId),
   getMeetingWaveform: (meetingId: string): Promise<MeetingWaveform> =>
@@ -206,6 +213,12 @@ const api = {
     ipcRenderer.invoke('models:cancel', model),
   deleteWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
     ipcRenderer.invoke('models:delete', model),
+  getDiarizationModelStatus: (): Promise<DiarizationModelStatus> =>
+    ipcRenderer.invoke('diarization:model-status'),
+  downloadDiarizationModels: (): Promise<DiarizationModelStatus> =>
+    ipcRenderer.invoke('diarization:model-download'),
+  cancelDiarizationModelDownload: (): Promise<DiarizationModelStatus> =>
+    ipcRenderer.invoke('diarization:model-cancel'),
   copyText: (text: string): Promise<void> =>
     ipcRenderer.invoke('app:copy-text', text),
   onProcessingState: (listener: (state: ProcessingState) => void): (() => void) =>
@@ -222,6 +235,11 @@ const api = {
   ): (() => void) => subscribe('models:progress', listener),
   onModelsChanged: (listener: (list: WhisperModelList) => void): (() => void) =>
     subscribe('models:changed', listener),
+  onDiarizationModelProgress: (
+    listener: (progress: DiarizationModelProgress) => void,
+  ): (() => void) => subscribe('diarization:model-progress', listener),
+  onDiarizationModelsChanged: (listener: () => void): (() => void) =>
+    subscribe('diarization:models-changed', listener),
   onLlmChanged: (listener: (state: LlmProfilesState) => void): (() => void) =>
     subscribe('llm:changed', listener),
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('settings:get'),

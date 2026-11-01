@@ -50,7 +50,8 @@
   - @shoichi.furuya
 - [ADD] タイトル、文字起こし、翻訳、要約を横断する全文検索を追加する
   - @shoichi.furuya
-- [ADD] 音声特徴量による簡易話者分離と話者ラベルの設定を追加する
+- [ADD] 2〜10 人の話者分離、話者数の指定、話者名の変更を追加する
+  - 話者分離モデルは初回利用時にダウンロードする
   - @shoichi.furuya
 - [ADD] Multi-Output Device をアプリから自動作成・削除するヘルパーと設定画面を追加する
   - @shoichi.furuya

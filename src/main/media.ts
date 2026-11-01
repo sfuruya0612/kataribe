@@ -78,7 +78,21 @@ export class BinaryLocator {
     return this.locate('kataribe-multi-output', 'KATARIBE_MULTI_OUTPUT_PATH');
   }
 
-  private async locate(binaryName: string, envKey: string): Promise<string> {
+  async sherpaDiarizationPath(): Promise<string> {
+    return this.locate(
+      this.options.platform === 'win32'
+        ? 'sherpa-onnx-offline-speaker-diarization.exe'
+        : 'sherpa-onnx-offline-speaker-diarization',
+      'KATARIBE_SHERPA_ONNX_PATH',
+      'sherpa-onnx',
+    );
+  }
+
+  private async locate(
+    binaryName: string,
+    envKey: string,
+    label?: string,
+  ): Promise<string> {
     const env = this.options.env ?? process.env;
     const override = env[envKey];
     if (override && (await this.accessPath(resolve(override)))) {
@@ -117,11 +131,12 @@ export class BinaryLocator {
 
     throw this.missingError(
       binaryName,
-      binaryName === 'ffmpeg'
-        ? 'ffmpeg'
-        : binaryName.startsWith('whisper')
-          ? 'whisper.cpp'
-          : 'Multi-Output Device helper',
+      label ??
+        (binaryName === 'ffmpeg'
+          ? 'ffmpeg'
+          : binaryName.startsWith('whisper')
+            ? 'whisper.cpp'
+            : 'Multi-Output Device helper'),
     );
   }
 

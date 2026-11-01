@@ -49,6 +49,8 @@ import type {
 } from '../shared/types';
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
 import { ChildProcessRegistry } from './child-registry';
+import { DiarizationService } from './diarization';
+import { DiarizationModelManager } from './diarization-models';
 import { LlmClient } from './llm';
 import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
@@ -490,6 +492,7 @@ function registerIpc(
   settingsStore: SettingsStore,
   processing: ProcessingCoordinator,
   modelManager: ModelManager,
+  diarizationModelManager: DiarizationModelManager,
   llmProfileManager: LlmProfileManager,
   multiOutput: MultiOutputController,
 ): void {
@@ -933,6 +936,54 @@ function registerIpc(
     return list;
   });
 
+  ipcMain.handle('diarization:model-status', () => diarizationModelManager.status());
+
+  ipcMain.handle('diarization:model-download', async () => {
+    void diarizationModelManager
+      .ensureInstalled()
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        console.error(
+          `speaker diarization model download failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        broadcast('diarization:models-changed', null);
+      });
+    return diarizationModelManager.status();
+  });
+
+  ipcMain.handle('diarization:model-cancel', async () => {
+    diarizationModelManager.cancel();
+    return diarizationModelManager.status();
+  });
+
+  ipcMain.handle(
+    'meetings:rename-speakers',
+    async (_event, meetingId: string, names: unknown) => {
+      if (
+        typeof meetingId !== 'string' ||
+        !Array.isArray(names) ||
+        !names.every((name): name is string => typeof name === 'string')
+      ) {
+        throw new Error('invalid speaker names');
+      }
+      if (processing.isBusy()) {
+        throw new Error('処理中は話者名を変更できません。');
+      }
+      const status = stateStore.getStatus();
+      if (status === 'starting' || status === 'recording' || status === 'stopping') {
+        throw new Error('録音中は話者名を変更できません。');
+      }
+      const detail = await meetingStore.renameSpeakers(meetingId, names);
+      await refreshMeetingIndex(meetingStore, meetingId);
+      broadcast('meetings:updated', { meetingId });
+      return detail;
+    },
+  );
+
   ipcMain.handle('meetings:detail', (_event, meetingId: string) => {
     return meetingStore.detail(meetingId);
   });
@@ -1367,6 +1418,16 @@ if (!app.requestSingleInstanceLock()) {
         broadcast('models:progress', progress);
       },
     });
+    const diarizationModelManager = new DiarizationModelManager({
+      modelsDir: join(app.getPath('userData'), 'models', 'diarization'),
+      fetch: electronFetch,
+      onProgress: (progress) => {
+        broadcast('diarization:model-progress', progress);
+      },
+      onChange: () => {
+        broadcast('diarization:models-changed', null);
+      },
+    });
     const secretCrypto: SecretCrypto = {
       isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
       encrypt: (plainText) => safeStorage.encryptStringAsync(plainText),
@@ -1397,6 +1458,10 @@ if (!app.requestSingleInstanceLock()) {
     });
     const mediaEncoder = new MediaEncoder({ locator });
     const transcriptionService = new TranscriptionService({ locator });
+    const diarizationService = new DiarizationService({
+      locator,
+      models: diarizationModelManager,
+    });
     const llmClient = new LlmClient({ fetch: electronFetch });
     const multiOutput = new MultiOutputController({ locator });
     const processing = new ProcessingCoordinator({
@@ -1406,6 +1471,7 @@ if (!app.requestSingleInstanceLock()) {
       apiKeyStore,
       mediaEncoder,
       transcriptionService,
+      diarizationService,
       llmClient,
       settings: () => settingsStore.get(),
       onStateChange: (state) => {
@@ -1476,6 +1542,7 @@ if (!app.requestSingleInstanceLock()) {
       settingsStore,
       processing,
       modelManager,
+      diarizationModelManager,
       llmProfileManager,
       multiOutput,
     );

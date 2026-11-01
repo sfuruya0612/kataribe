@@ -160,6 +160,16 @@ describe('SettingsStore', () => {
     ).toEqual({});
   });
 
+  it('req_diar_001_normalizes_the_speaker_count', () => {
+    expect(normalizeAppSettings({ speakerCount: 5 }).speakerCount).toBe(5);
+    expect(normalizeAppSettings({ speakerCount: 11 as never }).speakerCount).toBe(
+      'auto',
+    );
+    expect(normalizeAppSettings({ speakerCount: 'many' as never }).speakerCount).toBe(
+      'auto',
+    );
+  });
+
   it('migrates legacy LLM settings to a profile named after the provider', () => {
     const settings = normalizeAppSettings({
       llmProvider: 'gemini',

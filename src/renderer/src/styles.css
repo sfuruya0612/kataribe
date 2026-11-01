@@ -1921,6 +1921,13 @@ ul {
   gap: 8px;
 }
 
+.speaker-rename-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
 .model-name-group {
   display: flex;
   flex-direction: column;
