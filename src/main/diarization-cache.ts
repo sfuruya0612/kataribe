@@ -130,6 +130,17 @@ function parseTurns(value: unknown): DiarizationCacheTurn[] | null {
   return turns;
 }
 
+function isValidCache(cache: DiarizationCache): boolean {
+  return (
+    cache.schema_version === DIARIZATION_CACHE_SCHEMA_VERSION &&
+    parseKey(cache.key) !== null &&
+    parseTurns(cache.turns) !== null &&
+    isStringRecord(cache.names) &&
+    isStringRecord(cache.labels) &&
+    hasValidSpeakerMaps(cache.names, cache.labels)
+  );
+}
+
 function parseCache(value: unknown): DiarizationCache | null {
   if (!isRecord(value) || value.schema_version !== DIARIZATION_CACHE_SCHEMA_VERSION) {
     return null;
@@ -202,7 +213,7 @@ export async function writeDiarizationCache(
   path: string,
   cache: DiarizationCache,
 ): Promise<void> {
-  if (!hasValidSpeakerMaps(cache.names, cache.labels)) {
+  if (!isValidCache(cache)) {
     throw new Error('invalid speaker diarization cache');
   }
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });

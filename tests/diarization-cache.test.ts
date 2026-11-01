@@ -141,6 +141,18 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
       writeDiarizationCache(path, cache({ names: { speaker_02: '鈴木' } })),
     ).rejects.toThrow('invalid speaker diarization cache');
   });
+
+  it('rejects a write with an invalid key', async () => {
+    const root = await createRoot();
+    const path = join(root, 'diarization.json');
+
+    await expect(
+      writeDiarizationCache(
+        path,
+        cache({ key: { ...cacheKey(), audio_sha256: 'short' } }),
+      ),
+    ).rejects.toThrow('invalid speaker diarization cache');
+  });
 });
 
 describe('buildLabelMapping', () => {

@@ -213,7 +213,7 @@ CLI を実行し、生ターンとクラスタ ID ごとの自動ラベルを保
 - 部分文字起こし、失敗、キャンセルでは `diarization.json` を削除しない。
 - 会議フォルダの削除で `diarization.json` も削除する。
 - 再文字起こしのキャッシュヒット時は、既存の翻訳の表示名を新しい表示名に置き換える。話者名を保持していない行は変更しない。
-- `npm run typecheck`、`npm test` (344 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB。
+- `npm run typecheck`、`npm test` (345 件)、`npm run build`、`npm run package`、`npm run verify:mac`、`npm run smoke` が成功した。アプリサイズは 296 MB。
 - `smoke` は起動中の Kataribe との single instance lock を避けるため、一時 user data directory で実行した。
 
 レビュー後の追記:
