@@ -170,6 +170,18 @@ describe('transcript cleanup', () => {
         '[00:00:01] 話者C: 今日はリリースです。\n[00:00:06] 話者A: では進めます。',
       ),
     ).toBe(false);
+    expect(
+      isCleanedChunkValid(
+        body,
+        '[00:00:01] 話者A: 今日は出荷です。\n[00:00:06] 話者A: では進めます。',
+      ),
+    ).toBe(false);
+    expect(
+      isCleanedChunkValid(
+        body,
+        '[00:00:01] 話者A: 今日は、リリースです。\n[00:00:06] 話者A: では進めます。',
+      ),
+    ).toBe(false);
     expect(isCleanedChunkValid(body, '[00:00:01] 話者A: 今日はリリースです。\n[00:00:02] 追加')).toBe(
       false,
     );

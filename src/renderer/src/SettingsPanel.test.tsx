@@ -120,7 +120,23 @@ describe('req_summary_002_settings_panel_cleanup', () => {
 
     expect(html).toContain('>要約の前処理</p>');
     expect(html).toContain('相槌と擬音を除いてから要約する');
-    expect(html).toMatch(/type="checkbox" checked=""/);
+    expect(html).toMatch(
+      /<strong>相槌と擬音を除いてから要約する<\/strong>[\s\S]*?type="checkbox" checked=""/,
+    );
+  });
+
+  it('leaves the cleanup option unchecked when the setting is off', () => {
+    const html = renderSettings(
+      'ja',
+      { removeFillersBeforeSummary: false },
+      'summary',
+    );
+    expect(html).toMatch(
+      /<strong>相槌と擬音を除いてから要約する<\/strong>[\s\S]*?type="checkbox"\/>/,
+    );
+    expect(html).not.toMatch(
+      /<strong>相槌と擬音を除いてから要約する<\/strong>[\s\S]*?type="checkbox" checked=""/,
+    );
   });
 
   it('renders the cleanup option in English', () => {

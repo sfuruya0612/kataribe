@@ -8,7 +8,9 @@ import {
   OpenAiTranscriptionService,
   OPENAI_MAX_REQUEST_BYTES,
   buildMultipartBody,
+  truncateTranscriptionPrompt,
 } from '../src/main/openai-transcription';
+import { estimateTokens } from '../src/shared/llm';
 import { encodeWavMono16 } from '../src/main/wav';
 import {
   buildOpenAiTranscriptionEndpoint,
@@ -173,6 +175,14 @@ describe('OpenAI transcription helpers', () => {
     expect(text).toContain('filename="audio-1.wav"');
     expect(text).toContain('Content-Type: audio/wav');
     expect(multipart.body.includes(file)).toBe(true);
+  });
+
+  it('req_trans_001_keeps_the_prompt_within_the_api_token_limit', () => {
+    expect(truncateTranscriptionPrompt('')).toBe('');
+    expect(truncateTranscriptionPrompt('  短い用語集  ')).toBe('短い用語集');
+    const prompt = truncateTranscriptionPrompt('あ'.repeat(1000));
+    expect(estimateTokens(prompt)).toBeLessThanOrEqual(200);
+    expect(prompt.length).toBe(200);
   });
 });
 
@@ -367,6 +377,25 @@ describe('OpenAiTranscriptionService', () => {
     expect(outcome.state).toBe('failed');
     expect(outcome.errorCode).toBe('file-too-large');
     expect(calls).toBe(1);
+  });
+
+  it('req_trans_001_reports_empty_output_when_every_chunk_is_silent', async () => {
+    const { root, wav } = await createAudio(1);
+    const server = await startServer((_request, response) => {
+      jsonResponse(response, 200, { text: '', segments: [] });
+    });
+    const service = new OpenAiTranscriptionService({ fetch });
+    const outcome = await service.transcribe({
+      audioWavPath: wav,
+      tempDir: root,
+      durationSeconds: 1,
+      model: 'whisper-1',
+      endpoint: server.baseUrl,
+      apiKey: 'sk-test',
+    });
+    expect(outcome.state).toBe('failed');
+    expect(outcome.errorCode).toBe('empty-output');
+    expect(outcome.segments).toEqual([]);
   });
 
   it('req_trans_001_keeps_successful_chunks_as_a_partial_result', async () => {

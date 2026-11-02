@@ -7,6 +7,7 @@ import {
   parseOpenAiTranscriptionResponse,
 } from '../shared/openai-transcription';
 import type { OpenAiTranscriptionModel } from '../shared/types';
+import { estimateTokens } from '../shared/llm';
 import { t } from './i18n';
 import {
   mergeSegments,
@@ -26,7 +27,7 @@ import {
 // 25 MiB の上限と response_format は将来変わりうるため、モデルを追加するときに公式リファレンスを再確認する。
 export const OPENAI_MAX_REQUEST_BYTES = 25 * 1024 * 1024;
 export const OPENAI_CHUNK_SECONDS = 600;
-const MAX_PROMPT_CHARS = 800;
+const MAX_PROMPT_TOKENS = 200;
 const DEFAULT_TIMEOUT_MS = 300_000;
 
 export type OpenAiTranscriptionOptions = {
@@ -99,6 +100,9 @@ function escapeMultipartValue(value: string): string {
   return value.replaceAll('"', '%22').replaceAll('\r', '').replaceAll('\n', '');
 }
 
+/**
+ * OpenAI の文字起こし API 用の multipart/form-data を組み立てる。
+ */
 export function buildMultipartBody(
   fields: ReadonlyArray<readonly [string, string]>,
   file: MultipartFile,
@@ -135,6 +139,27 @@ function retryDelayMs(attempt: number, retryAfter: string | null): number {
     }
   }
   return Math.min(8_000, 1000 * 2 ** attempt);
+}
+
+/**
+ * 用語集を OpenAI の文字起こし API のプロンプト上限に収める。
+ */
+export function truncateTranscriptionPrompt(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (estimateTokens(trimmed) <= MAX_PROMPT_TOKENS) {
+    return trimmed;
+  }
+  let result = '';
+  for (const char of trimmed) {
+    if (estimateTokens(result + char) > MAX_PROMPT_TOKENS) {
+      break;
+    }
+    result += char;
+  }
+  return result;
 }
 
 function errorForStatus(
@@ -222,6 +247,9 @@ function emptyOutcome(
   };
 }
 
+/**
+ * OpenAI の文字起こし API を呼び、区間ごとの結果を 1 つの文字起こしに結合する。
+ */
 export class OpenAiTranscriptionService {
   private readonly fetchImpl: typeof fetch;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -431,7 +459,8 @@ export class OpenAiTranscriptionService {
       await options.onPartial?.(partial);
       return partial;
     }
-    const state = run.completedChunks > 0 ? 'partial' : 'failed';
+    const state =
+      run.completedChunks > 0 && run.segments.length > 0 ? 'partial' : 'failed';
     const partial = this.outcome(
       state,
       run.segments,
@@ -490,7 +519,7 @@ export class OpenAiTranscriptionService {
     if (openAiModelHasSegmentTimestamps(options.model)) {
       fields.push(['temperature', '0']);
     }
-    const prompt = options.initialPrompt?.trim().slice(0, MAX_PROMPT_CHARS);
+    const prompt = truncateTranscriptionPrompt(options.initialPrompt ?? '');
     if (prompt) {
       fields.push(['prompt', prompt]);
     }
@@ -591,9 +620,11 @@ function emitProgress(
     language,
     lastEndSeconds,
     ratio:
-      durationSeconds > 0
-        ? Math.max(0, Math.min(1, chunk.endSeconds / durationSeconds))
-        : 0,
+      chunk.index === chunkCount - 1
+        ? 1
+        : durationSeconds > 0
+          ? Math.max(0, Math.min(1, chunk.endSeconds / durationSeconds))
+          : 0,
     etaSeconds: null,
     message: t('文字起こしをしています（{index}/{total}）', {
       index: chunk.index + 1,

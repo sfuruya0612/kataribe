@@ -496,6 +496,8 @@ export const EN_MESSAGES = {
     'Audio files and meeting metadata are not sent. The translation preserves the source timestamps. Translation quality and cost depend on the provider and model.',
   '専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。用語集が多いと関係のない単語を誘導することがあります。':
     'Enter technical terms and proper nouns separated by commas. This stabilizes terminology in Japanese meetings. A long glossary can bias the model toward unrelated words.',
+  'OpenAI の文字起こしでは、用語集は API のプロンプト上限に合わせて先頭から使います。':
+    'OpenAI transcription uses the beginning of the glossary within the API prompt limit.',
   '音声ファイルと会議のメタデータは送信しません。個人名や社名のマスクは行いません。概算料金はプロバイダの料金表を確認してください。送信先でのデータの扱いはプロバイダの規約に従います。':
     'Audio files and meeting metadata are not sent. Personal and company names are not masked. Check the provider price list for estimated cost. The provider terms govern how the destination handles the data.',
   ' · 残り約 {duration}': ' · about {duration} left',

@@ -1,3 +1,6 @@
+/**
+ * OpenAI の文字起こし API のモデル、エンドポイント、応答の解析を扱う。
+ */
 import type { OpenAiTranscriptionModel } from './types';
 import type { TranscriptSegment } from './markdown';
 

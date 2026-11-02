@@ -587,6 +587,7 @@ export default function App({
               processing={processing}
               defaultSummaryLanguage={settings.summaryLanguage}
               whisperModel={settings.whisperModel}
+              transcriptionEngine={settings.transcriptionEngine}
               initialSeekSeconds={detailSeekSeconds}
               onUpdateSettings={(patch) => updateSettings(patch)}
               onBack={() => setView('meetings')}

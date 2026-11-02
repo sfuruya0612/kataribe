@@ -116,6 +116,9 @@ function endpointHost(baseUrl: string): string {
   }
 }
 
+/**
+ * 設定から文字起こしエンジンを解決し、ローカルまたは OpenAI で文字起こしを実行する。
+ */
 export class TranscriptionRunner {
   private readonly settings: () => AppSettings;
   private readonly apiKeyStore: Pick<ApiKeyStore, 'getKey'>;

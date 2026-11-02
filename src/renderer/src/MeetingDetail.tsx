@@ -6,9 +6,11 @@ import type {
   ProcessingState,
   SummaryLanguage,
   SummaryPreview,
+  TranscriptionEngine,
   TranslationPreview,
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
+import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
 import { useI18n, type I18nValue } from './i18n';
 import {
@@ -27,6 +29,7 @@ type MeetingDetailProps = {
   processing: ProcessingState;
   defaultSummaryLanguage: SummaryLanguage;
   whisperModel: 'large-v3-turbo' | 'medium' | 'small';
+  transcriptionEngine: TranscriptionEngine;
   initialSeekSeconds: number | null;
   onUpdateSettings: (patch: {
     whisperModel?: 'large-v3-turbo' | 'medium' | 'small';
@@ -84,6 +87,7 @@ export function MeetingDetail({
   processing,
   defaultSummaryLanguage,
   whisperModel,
+  transcriptionEngine,
   initialSeekSeconds,
   onUpdateSettings,
   onBack,
@@ -317,11 +321,13 @@ export function MeetingDetail({
   };
 
   const smallerModel =
-    whisperModel === 'large-v3-turbo'
-      ? 'medium'
-      : whisperModel === 'medium'
-        ? 'small'
-        : null;
+    transcriptionEngine === 'openai'
+      ? null
+      : whisperModel === 'large-v3-turbo'
+        ? 'medium'
+        : whisperModel === 'medium'
+          ? 'small'
+          : null;
 
   const retryWithSmallerModel = async () => {
     if (!smallerModel) {
@@ -1204,13 +1210,7 @@ export function MeetingDetail({
             {preview.warning ? (
               <p className="alert alert-warning">{preview.warning}</p>
             ) : null}
-            {preview.cleanupEnabled ? (
-              <p className="alert alert-warning">
-                {t(
-                  '相槌と擬音の除去でも文字起こしを送信するため、送信は 2 回になります。',
-                )}
-              </p>
-            ) : null}
+            <SummaryCleanupWarning enabled={preview.cleanupEnabled} />
             <SummaryRegenerationWarning summary={summary} />
             <p className="muted">
               {t(

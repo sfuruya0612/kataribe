@@ -74,7 +74,7 @@ OpenAI の文字起こし API を Whisper の代わりに選べるようにし�
 - [ ] REQ-TRANS-001 の受入基準「OpenAI API の API キーは、Provider が ChatGPT の LLM プロファイルに保存したキーを使う」を満たす。
 - [ ] REQ-TRANS-001 の受入基準「OpenAI API のリクエストは API の上限以下に分割し、分割した各区間の開始時刻を加算して文字起こしの時刻にする」を満たす。
 - [ ] REQ-TRANS-001 の受入基準「OpenAI API が失敗したときは、成功した区間までの文字起こしを部分結果として保存し、失敗の理由を会議詳細に表示する」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API の送信に失敗しても、音声ファイルと会議のメタデータは送らない」を満たす。
+- [ ] REQ-TRANS-001 の受入基準「OpenAI API に送るのは文字起こし用の音声と、モデル名、用語集、応答形式だけとし、会議のタイトル、日付、保存先のパスは送らない」を満たす。
 - [ ] REQ-SUMMARY-002 の受入基準「設定画面の「要約」で、要約の前に相槌と擬音を除くかどうかを選べる。既定は除くとする」を満たす。
 - [ ] REQ-SUMMARY-002 の受入基準「除く設定が有効なとき、要約の生成は、文字起こしを LLM に送って相槌と擬音を除いた本文を作り、その本文を要約に使う」を満たす。
 - [ ] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理と要約の生成は、同じ LLM プロファイルと送信先を使う」を満たす。
@@ -145,7 +145,7 @@ OpenAI の文字起こし API を Whisper の代わりに選べるようにし�
   - `CLEANUP_CHUNK_CHARS = 8_000`。
   - `buildCleanupSystemPrompt()` と `buildCleanupUserPrompt(chunk)` を追加する。
   - `splitTranscriptForCleanup(body, maxChars)` は行単位で重複なしに分割する。
-  - `cleanTranscript(options)` は各区間を LLM に送り、出力のタイムスタンプ接頭辞を検査する。失敗した区間は元の本文を使い、`fallbackChunks` を返す。
+  - `cleanTranscript(options)` は各区間を LLM に送り、出力のタイムスタンプ、話者ラベル、本文が入力の削除だけで得られることを検査する。失敗した区間は元の本文を使い、`fallbackChunks` を返す。
   - `cleanup` の状態は `completed`、`partial`、`failed`、`skipped` のいずれかとする。
 - `src/main/summary.ts` の `generateSummary` に `cleanupFillers` を追加し、要約の前に `cleanTranscript` を呼ぶ。使用トークンと区間数を合算する。失敗時は元の本文で続行する。
 - `src/main/processing.ts` の `createSummaryPreview` で `cleanupEnabled` と `cleanupEstimatedTokens` を返し、`generateSummary` で `cleanup` を `meta.json` と戻り値に記録する。

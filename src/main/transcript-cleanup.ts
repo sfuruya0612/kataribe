@@ -1,3 +1,6 @@
+/**
+ * 要約の前に、会議の文字起こしから相槌と擬音を除く。
+ */
 import { t } from './i18n';
 import type { LlmClient } from './llm';
 
@@ -93,6 +96,35 @@ function speakerKey(line: string): string | null {
   return match?.[1]?.trim() ?? null;
 }
 
+function lineContent(line: string): string | null {
+  const trimmed = line.trim();
+  const timestamp = trimmed.match(TIMESTAMP_PREFIX);
+  if (!timestamp) {
+    return null;
+  }
+  let rest = trimmed.slice(timestamp[0].length).trimStart();
+  if (speakerKey(line) !== null) {
+    const colon = rest.search(/[:：]/u);
+    if (colon < 0) {
+      return null;
+    }
+    rest = rest.slice(colon + 1).trimStart();
+  }
+  return rest;
+}
+
+function isSubsequence(cleaned: string, original: string): boolean {
+  let index = 0;
+  for (const char of cleaned) {
+    index = original.indexOf(char, index);
+    if (index < 0) {
+      return false;
+    }
+    index += 1;
+  }
+  return true;
+}
+
 export function isCleanedChunkValid(
   originalChunk: string,
   cleanedChunk: string,
@@ -104,6 +136,7 @@ export function isCleanedChunkValid(
   const order = new Map<string, number>();
   const speakers = new Set<string>();
   const speakerByTimestamp = new Map<string, string | null>();
+  const contentByTimestamp = new Map<string, string>();
   for (const line of originalChunk.split('\n')) {
     const key = timestampKey(line);
     if (key === null) {
@@ -112,6 +145,7 @@ export function isCleanedChunkValid(
     if (!order.has(key)) {
       order.set(key, order.size);
       speakerByTimestamp.set(key, speakerKey(line));
+      contentByTimestamp.set(key, lineContent(line) ?? '');
     }
     const speaker = speakerKey(line);
     if (speaker !== null) {
@@ -138,6 +172,11 @@ export function isCleanedChunkValid(
     }
     const expectedSpeaker = speakerByTimestamp.get(key);
     if (expectedSpeaker && speaker !== expectedSpeaker) {
+      return false;
+    }
+    const content = lineContent(line);
+    const originalContent = contentByTimestamp.get(key) ?? '';
+    if (content === null || !isSubsequence(content, originalContent)) {
       return false;
     }
     previous = position;
