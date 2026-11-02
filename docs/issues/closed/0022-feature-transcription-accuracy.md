@@ -3,6 +3,7 @@
 - Requirements: REQ-TRANS-001, REQ-SUMMARY-002
 - Priority: High
 - Created: 2026-11-02
+- Completed: 2026-11-02
 - Model: DeepSeek V4.1 Flash 1017
 - Branch: feature/feature-transcription-accuracy
 
@@ -64,32 +65,32 @@ OpenAI の文字起こし API を Whisper の代わりに選べるようにし�
 
 ## 完了条件
 
-- [ ] REQ-TRANS-001 の受入基準「設定画面の「文字起こし」で、文字起こしエンジンを「ローカル (whisper.cpp)」と「OpenAI API」から選べる」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「既定のエンジンはローカル (whisper.cpp) とする」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API を選んだとき、音声を送信する前に、送信先のホスト、モデル、音声の長さ、分割数、音声が端末外に出ることを確認ダイアログに表示する」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「確認ダイアログで送信を承認したときだけ、音声を OpenAI API に送る」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「承認しなかったときは音声を送らず、ローカルの whisper.cpp で文字起こしを続ける。ローカルのモデルがない場合は、モデルがない旨を表示する」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API の文字起こしモデルとして `whisper-1`、`gpt-4o-transcribe`、`gpt-4o-mini-transcribe` を選べる。既定は `whisper-1` とする」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「`whisper-1` 以外のモデルを選んだとき、文字起こしのタイムスタンプが分割単位になることを設定画面に表示する」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API の API キーは、Provider が ChatGPT の LLM プロファイルに保存したキーを使う」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API のリクエストは API の上限以下に分割し、分割した各区間の開始時刻を加算して文字起こしの時刻にする」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API が失敗したときは、成功した区間までの文字起こしを部分結果として保存し、失敗の理由を会議詳細に表示する」を満たす。
-- [ ] REQ-TRANS-001 の受入基準「OpenAI API に送るのは文字起こし用の音声と、モデル名、用語集、応答形式だけとし、会議のタイトル、日付、保存先のパスは送らない」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「設定画面の「要約」で、要約の前に相槌と擬音を除くかどうかを選べる。既定は除くとする」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「除く設定が有効なとき、要約の生成は、文字起こしを LLM に送って相槌と擬音を除いた本文を作り、その本文を要約に使う」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理と要約の生成は、同じ LLM プロファイルと送信先を使う」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「送信前の確認ダイアログに、相槌と擬音を除く処理でも文字起こしを送ることと、送信が 2 回になることを表示する」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理が失敗したときは、元の文字起こしで要約を生成し、その旨を利用者に表示する」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理は、話者ラベルとタイムスタンプを保持する。相槌だけの発話行は削除してよい」を満たす。
-- [ ] REQ-SUMMARY-002 の受入基準「要約の出力言語は、相槌と擬音を除く設定で変えない」を満たす。
-- [ ] OpenAI のリクエスト本文、区間分割、タイムスタンプの加算、再試行、部分結果、キャンセルをテストで固定する。
-- [ ] 相槌除去のプロンプト、区間分割、タイムスタンプの検査、失敗時のフォールバック、送信回数と使用トークンの合算をテストで固定する。
-- [ ] 設定の既定値、正規化、存在しないプロファイルの扱いをテストで固定する。
-- [ ] 設定画面の日本語と英語の文言、エンジン選択、OpenAI のプロファイルとモデル、制約の表示をテストで固定する。
-- [ ] RE-USE の検証結果と採用しない判断を ADR-0026 と `docs/testing/reuse-speech-enhancement.md` に記録する。
-- [ ] `npm run typecheck`、`npm test`、`npm run build` が通る。
-- [ ] README と CHANGES.md を同じ変更で更新する。
-- [ ] 依存パッケージを追加しない。
+- [x] REQ-TRANS-001 の受入基準「設定画面の「文字起こし」で、文字起こしエンジンを「ローカル (whisper.cpp)」と「OpenAI API」から選べる」を満たす。
+- [x] REQ-TRANS-001 の受入基準「既定のエンジンはローカル (whisper.cpp) とする」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API を選んだとき、音声を送信する前に、送信先のホスト、モデル、音声の長さ、分割数、音声が端末外に出ることを確認ダイアログに表示する」を満たす。
+- [x] REQ-TRANS-001 の受入基準「確認ダイアログで送信を承認したときだけ、音声を OpenAI API に送る」を満たす。
+- [x] REQ-TRANS-001 の受入基準「承認しなかったときは音声を送らず、ローカルの whisper.cpp で文字起こしを続ける。ローカルのモデルがない場合は、モデルがない旨を表示する」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API の文字起こしモデルとして `whisper-1`、`gpt-4o-transcribe`、`gpt-4o-mini-transcribe` を選べる。既定は `whisper-1` とする」を満たす。
+- [x] REQ-TRANS-001 の受入基準「`whisper-1` 以外のモデルを選んだとき、文字起こしのタイムスタンプが分割単位になることを設定画面に表示する」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API の API キーは、Provider が ChatGPT の LLM プロファイルに保存したキーを使う」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API のリクエストは API の上限以下に分割し、分割した各区間の開始時刻を加算して文字起こしの時刻にする」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API が失敗したときは、成功した区間までの文字起こしを部分結果として保存し、失敗の理由を会議詳細に表示する」を満たす。
+- [x] REQ-TRANS-001 の受入基準「OpenAI API に送るのは文字起こし用の音声と、モデル名、用語集、応答形式だけとし、会議のタイトル、日付、保存先のパスは送らない」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「設定画面の「要約」で、要約の前に相槌と擬音を除くかどうかを選べる。既定は除くとする」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「除く設定が有効なとき、要約の生成は、文字起こしを LLM に送って相槌と擬音を除いた本文を作り、その本文を要約に使う」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理と要約の生成は、同じ LLM プロファイルと送信先を使う」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「送信前の確認ダイアログに、相槌と擬音を除く処理でも文字起こしを送ることと、送信が 2 回になることを表示する」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理が失敗したときは、元の文字起こしで要約を生成し、その旨を利用者に表示する」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「相槌と擬音を除く処理は、話者ラベルとタイムスタンプを保持する。相槌だけの発話行は削除してよい」を満たす。
+- [x] REQ-SUMMARY-002 の受入基準「要約の出力言語は、相槌と擬音を除く設定で変えない」を満たす。
+- [x] OpenAI のリクエスト本文、区間分割、タイムスタンプの加算、再試行、部分結果、キャンセルをテストで固定する。
+- [x] 相槌除去のプロンプト、区間分割、タイムスタンプの検査、失敗時のフォールバック、送信回数と使用トークンの合算をテストで固定する。
+- [x] 設定の既定値、正規化、存在しないプロファイルの扱いをテストで固定する。
+- [x] 設定画面の日本語と英語の文言、エンジン選択、OpenAI のプロファイルとモデル、制約の表示をテストで固定する。
+- [x] RE-USE の検証結果と採用しない判断を ADR-0026 と `docs/testing/reuse-speech-enhancement.md` に記録する。
+- [x] `npm run typecheck`、`npm test`、`npm run build` が通る。
+- [x] README と CHANGES.md を同じ変更で更新する。
+- [x] 依存パッケージを追加しない。
 
 ## 解決方法
 
@@ -182,3 +183,13 @@ OpenAI の文字起こし API を Whisper の代わりに選べるようにし�
 - `docs/testing/reuse-speech-enhancement.md` を追加する。
 - `README.md` の文字起こし、設定、プライバシーの節を更新する。
 - `CHANGES.md` の `## develop` に OpenAI 文字起こしと相槌除去の追加を記録し、`### misc` に ADR、検証記録、README の更新を記録する。
+
+## 実施結果
+
+- OpenAI 文字起こしは `TranscriptionRunner` でエンジンを解決し、`OpenAiTranscriptionService` で 25 MiB 以下、最大 10 分の区間に分割して送信する。送信前に確認ダイアログを出し、承認しなかった場合はローカルの whisper.cpp に切り替える。API キーは ChatGPT プロファイルのキーを使う。
+- 相槌と擬音の除去は `transcript-cleanup.ts` で行い、要約の前に同じ LLM プロファイルで実行する。タイムスタンプ、話者ラベル、本文が入力の文字の削除だけで得られることを検査し、失敗した区間は元の本文を使う。
+- 設定画面の追加 UI は `TranscriptionEngineSettings.tsx` と `SummaryCleanupSetting.tsx` に分けた。既存の CSS クラスで足りたため、`styles.css` は変更していない。
+- テストは `src/main/wav.test.ts`、`tests/openai-transcription.test.ts`、`tests/transcription-runner.test.ts`、`tests/summary.test.ts`、`tests/processing.test.ts`、`tests/settings.test.ts`、`src/renderer/src/SettingsPanel.test.tsx`、`src/renderer/src/TranscriptionEngineSettings.test.tsx`、`src/renderer/src/SummaryCleanupWarning.test.tsx` に追加した。
+- `npm run typecheck`、`npm test` (462 件)、`npm run build` が通る。
+- RE-USE の検証は `docs/testing/reuse-speech-enhancement.md` と ADR-0026 に記録し、入力時にも文字起こしの前処理にも採用しない判断にした。
+- 計画との差分: `wav` のテストは既存の `src/main/wav.test.ts` に追加した。`styles.css` は変更していない。設定画面の UI は `SettingsPanel.tsx` に直書きせず、新しい 2 つのコンポーネントに分けた。確認ダイアログの 2 回送信の警告は `SummaryCleanupWarning.tsx` に分け、テストを追加した。
