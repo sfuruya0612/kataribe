@@ -580,10 +580,24 @@ export function MeetingDetail({
     setSummaryBusy(true);
     setError(null);
     try {
-      await window.kataribe.generateSummary(meeting.id, currentPreview.token);
+      const result = await window.kataribe.generateSummary(meeting.id, currentPreview.token);
       setPreview(null);
       setTab('summary');
-      setNotice(t('要約を生成しました。'));
+      if (result.cleanup.state === 'failed') {
+        setNotice(
+          t(
+            '相槌と擬音を除去できなかったため、元の文字起こしで要約しました。',
+          ),
+        );
+      } else if (result.cleanup.state === 'partial') {
+        setNotice(
+          t(
+            '一部の区間で相槌と擬音を除去できなかったため、元の文字起こしを混ぜて要約しました。',
+          ),
+        );
+      } else {
+        setNotice(t('要約を生成しました。'));
+      }
       await load();
     } catch (reason: unknown) {
       setError(errorText(reason));
@@ -1172,12 +1186,30 @@ export function MeetingDetail({
                 </dd>
               </div>
               <div>
+                <dt>{t('相槌と擬音の除去')}</dt>
+                <dd>
+                  {preview.cleanupEnabled
+                    ? t('あり（約 {count} tokens を追加）', {
+                        count:
+                          preview.cleanupEstimatedTokens.toLocaleString(locale),
+                      })
+                    : t('なし')}
+                </dd>
+              </div>
+              <div>
                 <dt>{t('内容ハッシュ')}</dt>
                 <dd className="mono">{preview.contentHash.slice(0, 16)}...</dd>
               </div>
             </dl>
             {preview.warning ? (
               <p className="alert alert-warning">{preview.warning}</p>
+            ) : null}
+            {preview.cleanupEnabled ? (
+              <p className="alert alert-warning">
+                {t(
+                  '相槌と擬音の除去でも文字起こしを送信するため、送信は 2 回になります。',
+                )}
+              </p>
             ) : null}
             <SummaryRegenerationWarning summary={summary} />
             <p className="muted">

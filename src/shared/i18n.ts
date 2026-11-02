@@ -822,6 +822,67 @@ export const EN_MESSAGES = {
   '{text} を完了にする': 'Mark {text} as done',
   '{text} を未完了に戻す': 'Mark {text} as not done',
   '{title} の会議詳細を開く': 'Open meeting details for {title}',
+  '文字起こしエンジン': 'Transcription engine',
+  'ローカル (whisper.cpp)': 'Local (whisper.cpp)',
+  'OpenAI API': 'OpenAI API',
+  'OpenAI の文字起こしモデル': 'OpenAI transcription model',
+  'ChatGPT プロファイル': 'ChatGPT profile',
+  'ChatGPT のプロファイルがありません': 'No ChatGPT profile is configured',
+  '（API キー未設定）': ' (API key not set)',
+  'OpenAI の API キーを設定': 'Set the OpenAI API key',
+  '文字起こしを開始する前に、送信先、モデル、音声の長さ、分割数を確認します。音声ファイルは端末外に出ます。':
+    'Before transcription starts, Kataribe shows the destination, model, audio duration, and chunk count. The audio file leaves this device.',
+  'このモデルは区間のタイムスタンプを返しません。文字起こしの時刻は分割した区間の単位になります。':
+    'This model does not return segment timestamps. Transcript times use the chunk boundaries.',
+  'API キーは「要約」タブの ChatGPT プロファイルに保存したキーを使います。送信を承認しなかった場合は、下のローカルモデルで文字起こしを続けます。':
+    'The API key is the one saved in the ChatGPT profile on the Summary tab. If you do not approve the upload, Kataribe continues with the local model below.',
+  '録音停止後の文字起こしで使うモデルです。OpenAI API を選んだ場合も、送信を取りやめたときのフォールバックに使います。':
+    'This model is used for transcription after recording stops. It is also the fallback when you cancel an OpenAI upload.',
+  'OpenAI 文字起こしの確認': 'Confirm OpenAI transcription',
+  '音声を OpenAI に送信しますか？': 'Send the audio to OpenAI?',
+  '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。':
+    'Destination: {host}\nModel: {model}\nAudio duration: {minutes} min\nChunks: {chunks}\n\nThe audio file leaves this device. Only the transcription audio is sent; the meeting title and save path are not sent.',
+  '送信': 'Send',
+  'ローカルで続ける': 'Continue locally',
+  'OpenAI への送信を取りやめ、ローカルの whisper で文字起こしをしています。':
+    'Skipped the OpenAI upload and continued transcription with the local whisper model.',
+  '文字起こしをしています（{index}/{total}）': 'Transcribing ({index}/{total})',
+  'OpenAI 文字起こし用の ChatGPT プロファイルが設定されていません。設定画面で ChatGPT のプロファイルを選んでください。':
+    'No ChatGPT profile is selected for OpenAI transcription. Select a ChatGPT profile in Settings.',
+  'OpenAI の API キーを復号できませんでした。設定画面で再入力してください。{detail}':
+    'Could not decrypt the OpenAI API key. Enter it again in Settings. {detail}',
+  'OpenAI の API キーが設定されていません。設定画面の ChatGPT プロファイルに API キーを保存してください。':
+    'The OpenAI API key is not configured. Save an API key in the ChatGPT profile in Settings.',
+  '音声を送信する確認を表示できないため、OpenAI 文字起こしを中止しました。':
+    'OpenAI transcription was cancelled because the upload confirmation could not be shown.',
+  'OpenAI の文字起こし設定を確認してください。{detail}':
+    'Check the OpenAI transcription settings. {detail}',
+  'OpenAI の文字起こし API のレート制限に達しました。時間をおいて再実行してください。':
+    'The OpenAI transcription API rate limit was reached. Try again later.',
+  'OpenAI の文字起こし API がサーバーエラーを返しました。時間をおいて再実行してください。':
+    'The OpenAI transcription API returned a server error. Try again later.',
+  'OpenAI の文字起こし API に接続できませんでした。ネットワークを確認してください。':
+    'Could not reach the OpenAI transcription API. Check the network connection.',
+  'OpenAI の文字起こしに失敗しました。{detail}':
+    'OpenAI transcription failed. {detail}',
+  '音声の分割が大きすぎます。音声を短くして再実行してください。':
+    'An audio chunk is too large. Shorten the audio and try again.',
+  '要約の前処理': 'Summary preprocessing',
+  '相槌と擬音を除いてから要約する': 'Remove fillers and interjections before summarizing',
+  '文字起こしを LLM に送って相槌と擬音を除き、その本文から要約を作ります。送信回数とトークン数が増えます。':
+    'Kataribe sends the transcript to the LLM to remove fillers and interjections, then summarizes the cleaned text. This adds another request and more tokens.',
+  '相槌と擬音の除去': 'Filler and interjection removal',
+  'あり（約 {count} tokens を追加）': 'Yes (about {count} additional tokens)',
+  'なし': 'None',
+  '相槌と擬音の除去でも文字起こしを送信するため、送信は 2 回になります。':
+    'Filler and interjection removal also sends the transcript, so the transcript is sent twice.',
+  '相槌と擬音を除去できなかったため、元の文字起こしで要約しました。':
+    'Kataribe could not remove fillers and interjections, so it summarized the original transcript.',
+  '一部の区間で相槌と擬音を除去できなかったため、元の文字起こしを混ぜて要約しました。':
+    'Kataribe could not remove fillers and interjections in some chunks, so it summarized a mix of cleaned and original text.',
+  '相槌と擬音を除いています': 'Removing fillers and interjections',
+  '相槌と擬音を除いています（{index}/{total}）':
+    'Removing fillers and interjections ({index}/{total})',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;

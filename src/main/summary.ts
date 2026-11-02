@@ -4,9 +4,10 @@ import {
   SUMMARY_HEADINGS,
   type SummarySectionKey,
 } from '../shared/markdown';
-import type { SummaryLanguage } from '../shared/types';
+import type { SummaryCleanup, SummaryLanguage } from '../shared/types';
 import { t } from './i18n';
 import type { ChatCompletionResult, LlmClient } from './llm';
+import { cleanTranscript } from './transcript-cleanup';
 
 export const SUMMARY_CHUNK_CHARS = 24_000;
 export const SUMMARY_CHUNK_OVERLAP_CHARS = 1_000;
@@ -129,6 +130,8 @@ export type SummaryGenerationOptions = {
   signal?: AbortSignal;
   onProgress?: (message: string, progress: number | null) => void;
   chunkChars?: number;
+  cleanupFillers?: boolean;
+  cleanupChunkChars?: number;
   systemPromptOverride?: string;
 };
 
@@ -137,6 +140,8 @@ export type SummaryGenerationResult = {
   usage: { inputTokens: number | null; outputTokens: number | null };
   chunkCount: number;
   raw: string;
+  cleanup: SummaryCleanup;
+  usedTranscriptBody: string;
 };
 
 function addUsage(
@@ -150,14 +155,48 @@ function addUsage(
 export async function generateSummary(
   options: SummaryGenerationOptions,
 ): Promise<SummaryGenerationResult> {
+  const usage = { inputTokens: 0, outputTokens: 0 };
+  let transcriptBody = options.transcriptBody;
+  let cleanup: SummaryCleanup = {
+    state: 'skipped',
+    chunks: 0,
+    fallbackChunks: 0,
+    removedChars: 0,
+    error: null,
+  };
+  if (options.cleanupFillers) {
+    const cleaned = await cleanTranscript({
+      client: options.client,
+      transcriptBody,
+      kind: options.kind,
+      endpoint: options.endpoint,
+      apiKey: options.apiKey,
+      model: options.model,
+      signal: options.signal,
+      chunkChars: options.cleanupChunkChars,
+      onProgress: options.onProgress,
+    });
+    if (cleaned.body.trim()) {
+      transcriptBody = cleaned.body;
+    }
+    cleanup = {
+      state: cleaned.state,
+      chunks: cleaned.chunks,
+      fallbackChunks: cleaned.fallbackChunks,
+      removedChars: cleaned.removedChars,
+      error: cleaned.error,
+    };
+    usage.inputTokens += cleaned.usage.inputTokens;
+    usage.outputTokens += cleaned.usage.outputTokens;
+  }
+
   const chunks = splitTranscriptForSummary(
-    options.transcriptBody,
+    transcriptBody,
     options.chunkChars ?? SUMMARY_CHUNK_CHARS,
   );
   if (chunks.length === 0) {
     throw new Error('transcript is empty');
   }
-  const usage = { inputTokens: 0, outputTokens: 0 };
   const partials: string[] = [];
 
   for (let index = 0; index < chunks.length; index += 1) {
@@ -168,7 +207,11 @@ export async function generateSummary(
             total: chunks.length,
           })
         : t('要約を生成しています'),
-      chunks.length > 1 ? index / chunks.length : 0.2,
+      options.cleanupFillers
+        ? 0.25 + (chunks.length > 1 ? (index / chunks.length) * 0.65 : 0.2)
+        : chunks.length > 1
+          ? index / chunks.length
+          : 0.2,
     );
     const result = await options.client.complete({
       kind: options.kind,
@@ -214,6 +257,8 @@ export async function generateSummary(
     },
     chunkCount: chunks.length,
     raw,
+    cleanup,
+    usedTranscriptBody: transcriptBody,
   };
 }
 

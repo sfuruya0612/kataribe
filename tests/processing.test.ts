@@ -18,9 +18,8 @@ import {
 } from '../src/main/diarization-cache';
 import type { LlmClient } from '../src/main/llm';
 import type { EncodeOptions, MediaEncoder } from '../src/main/media';
-import { writeMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
+import { writeMeetingMeta, readMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
 import { MeetingStore } from '../src/main/meetings';
-import type { ModelManager } from '../src/main/models';
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
 import type {
@@ -28,6 +27,7 @@ import type {
   TranscriptionOutcome,
   TranscriptionService,
 } from '../src/main/transcription';
+import type { TranscriptionRunner } from '../src/main/transcription-runner';
 import { encodeWavMono16 } from '../src/main/wav';
 import {
   formatTranscriptMarkdown,
@@ -35,6 +35,7 @@ import {
   type TranscriptSegment,
 } from '../src/shared/markdown';
 import { normalizeAppSettings } from '../src/shared/settings';
+import type { AppSettings } from '../src/shared/types';
 
 const roots: string[] = [];
 
@@ -89,13 +90,13 @@ function createCoordinator(options: {
   root: string;
   saveRoot: string;
   complete: ReturnType<typeof vi.fn>;
+  settings?: Partial<AppSettings>;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const states: string[] = [];
   const coordinator = new ProcessingCoordinator({
     tempRoot: join(options.root, 'tmp'),
     meetingStore,
-    modelManager: {} as ModelManager,
     apiKeyStore: {
       status: async (profileId: string) => ({
         profileId,
@@ -109,6 +110,7 @@ function createCoordinator(options: {
     } as unknown as ApiKeyStore,
     mediaEncoder: {} as MediaEncoder,
     transcriptionService: {} as TranscriptionService,
+    transcriptionRunner: {} as TranscriptionRunner,
     diarizationService: {} as DiarizationService,
     llmClient: { complete: options.complete } as unknown as LlmClient,
     settings: () =>
@@ -130,6 +132,8 @@ function createCoordinator(options: {
         llmDefaultProfileId: 'work',
         summaryLanguage: 'ja',
         whisperModel: 'small',
+        removeFillersBeforeSummary: false,
+        ...options.settings,
       }),
     onStateChange: (state) => {
       states.push(`${state.stage}:${state.progress}`);
@@ -171,6 +175,8 @@ describe('ProcessingCoordinator summary flow', () => {
     });
     expect(preview.text).toContain('リリース時期');
     expect(preview.estimatedTokens).toBeGreaterThan(0);
+    expect(preview.cleanupEnabled).toBe(false);
+    expect(preview.cleanupEstimatedTokens).toBe(0);
     expect(complete).not.toHaveBeenCalled();
 
     const result = await coordinator.generateSummary(meetingId, preview.token);
@@ -178,6 +184,7 @@ describe('ProcessingCoordinator summary flow', () => {
     expect(result.summary.body).toContain('## 要約');
     expect(result.summary.body).toContain('- [ ] 資料をまとめる');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 });
+    expect(result.cleanup.state).toBe('skipped');
 
     const summaryPath = join(meetingDir, 'summary.md');
     const markdown = await readFile(summaryPath, 'utf8');
@@ -192,6 +199,66 @@ describe('ProcessingCoordinator summary flow', () => {
     await expect(
       coordinator.generateSummary(meetingId, preview.token),
     ).rejects.toThrow('確認トークンが無効');
+  });
+
+  it('req_summary_002_cleans_before_summary_and_records_the_result', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '要約テスト',
+        startedAt: '2026-10-31T01:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          {
+            startSeconds: 1,
+            endSeconds: 2,
+            speaker: '話者A',
+            text: 'あー、リリース時期を決めます。',
+          },
+          {
+            startSeconds: 12,
+            endSeconds: 13,
+            speaker: '話者B',
+            text: 'なるほど、担当は田中さんです。',
+          },
+        ],
+      }),
+    );
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: '[00:00:01] 話者A: リリース時期を決めます。\n[00:00:12] 話者B: 担当は田中さんです。',
+        inputTokens: 10,
+        outputTokens: 5,
+        status: 200,
+      })
+      .mockResolvedValueOnce(summaryResponse);
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: { removeFillersBeforeSummary: true },
+    });
+
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    expect(preview.cleanupEnabled).toBe(true);
+    expect(preview.cleanupEstimatedTokens).toBeGreaterThan(0);
+
+    const result = await coordinator.generateSummary(meetingId, preview.token);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0].user).not.toContain('なるほど');
+    expect(result.cleanup.state).toBe('completed');
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.summary.cleanup).toMatchObject({
+      state: 'completed',
+      chunks: 1,
+      fallback_chunks: 0,
+    });
+    expect(meta.summary.usage).toEqual({ input_tokens: 110, output_tokens: 45 });
   });
 
   it('uses the selected LLM profile for preview and generation', async () => {
@@ -619,6 +686,8 @@ function createDiarizationCoordinator(options: {
     segments: TranscriptSegment[],
     options: DiarizationOptions,
   ) => Promise<DiarizationResult | null>;
+  runner?: TranscriptionRunner;
+  settings?: Partial<AppSettings>;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const calls: Array<{
@@ -629,9 +698,6 @@ function createDiarizationCoordinator(options: {
   const coordinator = new ProcessingCoordinator({
     tempRoot: join(options.root, 'tmp'),
     meetingStore,
-    modelManager: {
-      installedPath: async () => '/tmp/ggml-small.bin',
-    } as unknown as ModelManager,
     apiKeyStore: {
       status: async (profileId: string) => ({
         profileId,
@@ -654,6 +720,18 @@ function createDiarizationCoordinator(options: {
     transcriptionService: {
       transcribe: async (_options: TranscribeOptions) => transcriptionOutcome,
     } as unknown as TranscriptionService,
+    transcriptionRunner:
+      options.runner ??
+      ({
+        run: async () => ({
+          outcome: transcriptionOutcome,
+          resolution: {
+            engine: 'whisper-cpp' as const,
+            modelLabel: 'small',
+            fallbackReason: null,
+          },
+        }),
+      } as unknown as TranscriptionRunner),
     diarizationService: {
       diarize: async (
         wavPath: string,
@@ -687,6 +765,8 @@ function createDiarizationCoordinator(options: {
         whisperModel: 'small',
         speakerDiarization: true,
         speakerCount: 'auto',
+        removeFillersBeforeSummary: false,
+        ...options.settings,
       }),
     onStateChange: () => undefined,
     onMeetingUpdated: () => undefined,
@@ -822,5 +902,81 @@ describe('ProcessingCoordinator diarization cache', () => {
     const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
     expect(transcript).toContain('一つ目です。');
     expect(transcript).not.toContain('田中');
+  });
+});
+
+describe('ProcessingCoordinator transcription engine metadata', () => {
+  it('req_trans_001_records_the_openai_engine_and_model', async () => {
+    const setup = await createDiarizationMeeting();
+    const runner = {
+      run: async () => ({
+        outcome: transcriptionOutcome,
+        resolution: {
+          engine: 'openai' as const,
+          modelLabel: 'openai/whisper-1',
+          fallbackReason: null,
+        },
+      }),
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.transcription?.state).toBe('completed');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.model).toBe('openai/whisper-1');
+    const transcript = await readFile(
+      join(setup.meetingDir, 'transcript.md'),
+      'utf8',
+    );
+    expect(transcript).toContain('model: openai/whisper-1');
+  });
+
+  it('req_trans_001_reports_a_failed_openai_transcription', async () => {
+    const setup = await createDiarizationMeeting();
+    const failedOutcome: TranscriptionOutcome = {
+      state: 'failed',
+      segments: [],
+      language: 'auto',
+      lastEndSeconds: 0,
+      durationSeconds: 4,
+      elapsedSeconds: 0,
+      errorCode: 'openai-config',
+      error: 'invalid key',
+      resumed: false,
+    };
+    const runner = {
+      run: async () => ({
+        outcome: failedOutcome,
+        resolution: {
+          engine: 'openai' as const,
+          modelLabel: 'openai/whisper-1',
+          fallbackReason: null,
+        },
+      }),
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.status).toBe('error');
+    expect(meta.transcription?.state).toBe('failed');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.model).toBe('openai/whisper-1');
+    expect(meta.error).toContain('OpenAI');
   });
 });

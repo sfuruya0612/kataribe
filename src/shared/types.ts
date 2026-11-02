@@ -135,6 +135,19 @@ export type ProcessingState = {
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
 
+export type TranscriptionEngine = 'whisper-cpp' | 'openai';
+
+export type OpenAiTranscriptionModel =
+  | 'whisper-1'
+  | 'gpt-4o-transcribe'
+  | 'gpt-4o-mini-transcribe';
+
+export type TranscriptionCleanupState =
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'skipped';
+
 export type SpeakerCount = 'auto' | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export type DiarizationModelState =
@@ -188,6 +201,9 @@ export type AppSettings = {
   theme: ThemeMode;
   uiLanguage: UiLanguage;
   whisperModel: WhisperModel;
+  transcriptionEngine: TranscriptionEngine;
+  openaiTranscriptionProfileId: string;
+  openaiTranscriptionModel: OpenAiTranscriptionModel;
   speakerDiarization: boolean;
   speakerCount: SpeakerCount;
   whisperInitialPrompt: string;
@@ -197,6 +213,7 @@ export type AppSettings = {
   llmDefaultProfileId: string;
   summaryLanguage: SummaryLanguage;
   summaryPromptTemplate: string;
+  removeFillersBeforeSummary: boolean;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };
@@ -461,6 +478,8 @@ export type SummaryPreview = {
   language: SummaryLanguage;
   charCount: number;
   estimatedTokens: number;
+  cleanupEnabled: boolean;
+  cleanupEstimatedTokens: number;
   contentHash: string;
   text: string;
   partial: boolean;
@@ -513,10 +532,19 @@ export type SummaryUsage = {
   outputTokens: number | null;
 };
 
+export type SummaryCleanup = {
+  state: TranscriptionCleanupState;
+  chunks: number;
+  fallbackChunks: number;
+  removedChars: number;
+  error: string | null;
+};
+
 export type GenerateSummaryResult = {
   meeting: MeetingSummary;
   summary: SummaryDocument;
   usage: SummaryUsage | null;
+  cleanup: SummaryCleanup;
 };
 
 export type SaveMarkdownResult = {

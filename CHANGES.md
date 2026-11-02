@@ -99,6 +99,13 @@
   - @shoichi.furuya
 - [ADD] 要約の再生成前に、既存の要約の上書きと ToDo の完了状態を引き継がない旨の警告を確認ダイアログに表示する
   - @shoichi.furuya
+- [ADD] OpenAI の文字起こし API をローカルの whisper.cpp と切り替えて使えるようにする
+  - 送信のたびに送信先、モデル、音声の長さ、分割数を確認し、承認しなかった場合はローカルの whisper.cpp で続ける
+  - `whisper-1`、`gpt-4o-transcribe`、`gpt-4o-mini-transcribe` を選べる
+  - @shoichi.furuya
+- [ADD] 要約の前に相槌と擬音を除く前処理を追加する
+  - 文字起こしを 2 回送る場合があることを確認ダイアログに表示し、除去に失敗したときは元の文字起こしで要約する
+  - @shoichi.furuya
 
 ### CHANGE
 
@@ -145,4 +152,10 @@
 - [ADD] README とリリースチェックリストに UI の言語の確認手順を追加する
   - @shoichi.furuya
 - [FIX] 話者分離モデルの実 I/O テストが CI の並列実行でタイムアウトする問題を修正する
+  - @shoichi.furuya
+- [ADD] ADR-0024、ADR-0025、ADR-0026 を追加し、OpenAI 文字起こし、相槌の除去、RE-USE の不採用を記録する
+  - @shoichi.furuya
+- [ADD] RE-USE の文字起こし精度に対する検証手順と結果を記録する
+  - @shoichi.furuya
+- [ADD] PRD に OpenAI 文字起こしと相槌の除去の要求を追加し、README とリリースチェックリストを更新する
   - @shoichi.furuya

@@ -9,6 +9,8 @@ import type {
   RecordingErrorInfo,
   RecordingEvent,
   SummaryLanguage,
+  TranscriptionCleanupState,
+  TranscriptionEngine,
 } from '../shared/types';
 import { WAV_BITS_PER_SAMPLE, WAV_CHANNELS } from './wav';
 import { t } from './i18n';
@@ -52,12 +54,21 @@ export type MeetingMetaTranscription = {
     | 'completed';
   started_at?: string;
   finished_at?: string;
+  engine?: TranscriptionEngine;
   model?: string;
   language?: string;
   last_segment_end?: number;
   resume_count?: number;
   error?: string;
   partial?: boolean;
+};
+
+export type MeetingMetaSummaryCleanup = {
+  state: TranscriptionCleanupState;
+  chunks: number;
+  fallback_chunks: number;
+  removed_chars: number;
+  error?: string;
 };
 
 export type MeetingMetaSummary = {
@@ -67,6 +78,7 @@ export type MeetingMetaSummary = {
   language?: string;
   generated_at?: string;
   error?: string;
+  cleanup?: MeetingMetaSummaryCleanup;
   usage?: {
     input_tokens: number | null;
     output_tokens: number | null;

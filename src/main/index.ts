@@ -59,6 +59,7 @@ import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
 import { ModelManager } from './models';
 import { MultiOutputController } from './multi-output';
+import { OpenAiTranscriptionService } from './openai-transcription';
 import { ProcessingCoordinator } from './processing';
 import { configureChildProcessRegistry } from './process';
 import { RecordingCoordinator } from './recording-coordinator';
@@ -72,6 +73,7 @@ import {
   type PermissionDetails,
 } from './security';
 import { TranscriptionService } from './transcription';
+import { TranscriptionRunner } from './transcription-runner';
 import { TrayController } from './tray';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
@@ -193,13 +195,13 @@ async function refreshMeetingIndex(
 }
 
 async function showOpenDirectoryDialog(options: OpenDialogOptions) {
-  return mainWindow
+  return mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
     ? dialog.showOpenDialog(mainWindow, options)
     : dialog.showOpenDialog(options);
 }
 
 async function showMessageDialog(options: MessageBoxOptions) {
-  return mainWindow
+  return mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
     ? dialog.showMessageBox(mainWindow, options)
     : dialog.showMessageBox(options);
 }
@@ -1542,6 +1544,36 @@ if (!app.requestSingleInstanceLock()) {
     });
     const mediaEncoder = new MediaEncoder({ locator });
     const transcriptionService = new TranscriptionService({ locator });
+    const openAiTranscriptionService = new OpenAiTranscriptionService({
+      fetch: electronFetch,
+    });
+    const transcriptionRunner = new TranscriptionRunner({
+      settings: () => settingsStore.get(),
+      apiKeyStore,
+      modelManager,
+      localService: transcriptionService,
+      openAiService: openAiTranscriptionService,
+      confirmCloudTranscription: async (details) => {
+        const result = await showMessageDialog({
+          type: 'warning',
+          title: t('OpenAI 文字起こしの確認'),
+          message: t('音声を OpenAI に送信しますか？'),
+          detail: t(
+            '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。',
+            {
+              host: details.host || 'OpenAI',
+              model: details.model,
+              minutes: Math.max(1, Math.round(details.durationSeconds / 60)),
+              chunks: details.chunkCount,
+            },
+          ),
+          buttons: [t('送信'), t('ローカルで続ける')],
+          defaultId: 1,
+          cancelId: 1,
+        });
+        return result.response === 0;
+      },
+    });
     const diarizationService = new DiarizationService({
       locator,
       models: diarizationModelManager,
@@ -1551,10 +1583,10 @@ if (!app.requestSingleInstanceLock()) {
     const processing = new ProcessingCoordinator({
       tempRoot: join(app.getPath('userData'), 'tmp'),
       meetingStore,
-      modelManager,
       apiKeyStore,
       mediaEncoder,
       transcriptionService,
+      transcriptionRunner,
       diarizationService,
       llmClient,
       settings: () => settingsStore.get(),

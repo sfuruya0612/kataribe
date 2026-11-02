@@ -54,20 +54,20 @@ import {
   type MeetingMetaDiarization,
 } from './meeting-meta';
 import { TRANSLATION_FILES, type MeetingStore } from './meetings';
-import type { ModelManager } from './models';
 import { generateSummary } from './summary';
 import { generateMeetingTitle } from './summary';
 import type { TranscriptionOutcome, TranscriptionService } from './transcription';
+import type { TranscriptionRunner } from './transcription-runner';
 import { translateTranscript } from './translation';
 import { readWavInfo } from './wav';
 
 export type ProcessingCoordinatorOptions = {
   tempRoot: string;
   meetingStore: MeetingStore;
-  modelManager: ModelManager;
   apiKeyStore: ApiKeyStore;
   mediaEncoder: MediaEncoder;
   transcriptionService: TranscriptionService;
+  transcriptionRunner: TranscriptionRunner;
   diarizationService: DiarizationService;
   llmClient: LlmClient;
   settings: () => AppSettings;
@@ -93,6 +93,7 @@ type PreviewToken = {
   model: string;
   kind: 'openai' | 'anthropic';
   language: AppSettings['summaryLanguage'];
+  cleanupFillers: boolean;
 };
 
 type TranslationToken = {
@@ -214,6 +215,28 @@ function transcriptionErrorMessage(outcome: TranscriptionOutcome): string {
       return t('文字起こしをキャンセルしました。部分的な結果を保存しています。');
     case 'invalid-audio':
       return t('文字起こし用の音声ファイルを読み込めませんでした。');
+    case 'openai-config':
+      return t('OpenAI の文字起こし設定を確認してください。{detail}', {
+        detail: outcome.error ?? '',
+      }).trim();
+    case 'openai-rate-limit':
+      return t(
+        'OpenAI の文字起こし API のレート制限に達しました。時間をおいて再実行してください。',
+      );
+    case 'openai-server':
+      return t(
+        'OpenAI の文字起こし API がサーバーエラーを返しました。時間をおいて再実行してください。',
+      );
+    case 'openai-network':
+      return t(
+        'OpenAI の文字起こし API に接続できませんでした。ネットワークを確認してください。',
+      );
+    case 'file-too-large':
+      return t('音声の分割が大きすぎます。音声を短くして再実行してください。');
+    case 'openai-failed':
+      return t('OpenAI の文字起こしに失敗しました。{detail}', {
+        detail: outcome.error ?? '',
+      }).trim();
     default:
       return t('whisper.cpp の実行に失敗しました。{detail}', {
         detail: outcome.error ?? '',
@@ -231,10 +254,10 @@ function summaryErrorMessage(error: unknown): string {
 export class ProcessingCoordinator {
   private readonly tempRoot: string;
   private readonly meetingStore: MeetingStore;
-  private readonly modelManager: ModelManager;
   private readonly apiKeyStore: ApiKeyStore;
   private readonly mediaEncoder: MediaEncoder;
   private readonly transcriptionService: TranscriptionService;
+  private readonly transcriptionRunner: TranscriptionRunner;
   private readonly diarizationService: DiarizationService;
   private readonly llmClient: LlmClient;
   private readonly settings: () => AppSettings;
@@ -261,10 +284,10 @@ export class ProcessingCoordinator {
   constructor(options: ProcessingCoordinatorOptions) {
     this.tempRoot = options.tempRoot;
     this.meetingStore = options.meetingStore;
-    this.modelManager = options.modelManager;
     this.apiKeyStore = options.apiKeyStore;
     this.mediaEncoder = options.mediaEncoder;
     this.transcriptionService = options.transcriptionService;
+    this.transcriptionRunner = options.transcriptionRunner;
     this.diarizationService = options.diarizationService;
     this.llmClient = options.llmClient;
     this.settings = options.settings;
@@ -438,6 +461,7 @@ export class ProcessingCoordinator {
     const now = this.now().getTime();
     const language =
       detail.meeting.summaryLanguage ?? this.settings().summaryLanguage;
+    const cleanupFillers = this.settings().removeFillersBeforeSummary;
     this.previewTokens.set(token, {
       meetingId,
       contentHash: hash,
@@ -450,6 +474,7 @@ export class ProcessingCoordinator {
       model: config.model,
       kind: config.kind,
       language,
+      cleanupFillers,
     });
     return {
       token,
@@ -462,6 +487,8 @@ export class ProcessingCoordinator {
       language,
       charCount: transcript.length,
       estimatedTokens: estimateTokens(transcript),
+      cleanupEnabled: cleanupFillers,
+      cleanupEstimatedTokens: cleanupFillers ? estimateTokens(transcript) : 0,
       contentHash: hash,
       text: transcript,
       partial: detail.transcript.partial,
@@ -576,6 +603,7 @@ export class ProcessingCoordinator {
         model: config.model,
         signal: controller.signal,
         systemPromptOverride: this.settings().summaryPromptTemplate,
+        cleanupFillers: preview.cleanupFillers,
         onProgress: (message, progress) => {
           this.setState({
             ...this.state,
@@ -614,6 +642,15 @@ export class ProcessingCoordinator {
           model: config.model,
           language: config.language,
           generated_at: this.now().toISOString(),
+          cleanup: {
+            state: generated.cleanup.state,
+            chunks: generated.cleanup.chunks,
+            fallback_chunks: generated.cleanup.fallbackChunks,
+            removed_chars: generated.cleanup.removedChars,
+            ...(generated.cleanup.error
+              ? { error: generated.cleanup.error }
+              : {}),
+          },
           usage: {
             input_tokens: generated.usage.inputTokens,
             output_tokens: generated.usage.outputTokens,
@@ -626,7 +663,7 @@ export class ProcessingCoordinator {
         try {
           const generatedTitle = await generateMeetingTitle({
             client: this.llmClient,
-            transcriptBody: body,
+            transcriptBody: generated.usedTranscriptBody,
             language: config.language,
             kind: config.kind,
             endpoint: config.endpoint,
@@ -660,6 +697,7 @@ export class ProcessingCoordinator {
         meeting,
         summary,
         usage: generated.usage,
+        cleanup: generated.cleanup,
       };
     } catch (error) {
       if (controller.signal.aborted) {
@@ -1178,7 +1216,11 @@ export class ProcessingCoordinator {
           ...(value.transcription ?? {}),
           state: 'running',
           started_at: this.now().toISOString(),
-          model: this.settings().whisperModel,
+          engine: this.settings().transcriptionEngine,
+          model:
+            this.settings().transcriptionEngine === 'openai'
+              ? `openai/${this.settings().openaiTranscriptionModel}`
+              : this.settings().whisperModel,
           partial: false,
           resume_count: 0,
         };
@@ -1233,27 +1275,12 @@ export class ProcessingCoordinator {
     transcriptionWav: string,
     controller: AbortController,
   ): Promise<void> {
-    const model = this.settings().whisperModel;
-    const modelPath = await this.modelManager.installedPath(model);
-    if (!modelPath) {
-      const message = t(
-        'whisper モデル（{model}）がダウンロードされていません。設定画面から取得してください。',
-        { model },
-      );
-      await updateMeetingMeta(metaPath, (value) => {
-        value.status = 'error';
-        value.error = message;
-        clearDiarization(value);
-        value.transcription = {
-          ...(value.transcription ?? {}),
-          state: 'failed',
-          error: 'model-missing',
-        };
-      });
-      this.onMeetingUpdated(meetingId);
-      this.setState({ ...IDLE_STATE, error: message });
-      return;
-    }
+    const settings = this.settings();
+    let transcriptionEngine = settings.transcriptionEngine;
+    let transcriptionModel =
+      transcriptionEngine === 'openai'
+        ? `openai/${settings.openaiTranscriptionModel}`
+        : settings.whisperModel;
 
     this.setState({
       stage: 'transcribing',
@@ -1288,7 +1315,7 @@ export class ProcessingCoordinator {
         startedAt: meta.started_at,
         durationSeconds: meta.duration,
         source: sourceLabel(meta),
-        model,
+        model: transcriptionModel,
         language,
         segments,
         partial,
@@ -1299,7 +1326,8 @@ export class ProcessingCoordinator {
         value.transcription = {
           ...(value.transcription ?? {}),
           state: partial ? 'partial' : 'running',
-          model,
+          engine: transcriptionEngine,
+          model: transcriptionModel,
           language,
           partial,
           last_segment_end: segments.reduce(
@@ -1329,15 +1357,11 @@ export class ProcessingCoordinator {
 
     let outcome: TranscriptionOutcome | null = null;
     try {
-      outcome = await this.transcriptionService.transcribe({
+      const run = await this.transcriptionRunner.run({
         meetingId,
         tempDir: dirname(transcriptionWav),
         audioWavPath: transcriptionWav,
-        model,
-        modelPath,
         durationSeconds: meta.duration,
-        predictedSpeedRatio: this.settings().whisperSpeedRatios[model] ?? 0.2,
-        initialPrompt: this.settings().whisperInitialPrompt,
         signal: controller.signal,
         onHardLimitExceeded: async (elapsedSeconds, predictedSeconds) => {
           if (!this.confirmContinue) {
@@ -1370,7 +1394,38 @@ export class ProcessingCoordinator {
             partial,
           );
         },
+        onResolved: (resolution) => {
+          transcriptionEngine = resolution.engine;
+          transcriptionModel = resolution.modelLabel;
+          partialQueue = partialQueue
+            .then(async () => {
+              await updateMeetingMeta(metaPath, (value) => {
+                value.transcription = {
+                  ...(value.transcription ?? {}),
+                  state: value.transcription?.state ?? 'running',
+                  engine: resolution.engine,
+                  model: resolution.modelLabel,
+                };
+              });
+            })
+            .catch((error: unknown) => {
+              console.error(
+                `failed to save the transcription engine: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
+          if (resolution.fallbackReason === 'cloud-declined') {
+            this.setState({
+              ...this.state,
+              message: t(
+                'OpenAI への送信を取りやめ、ローカルの whisper で文字起こしをしています。',
+              ),
+            });
+          }
+        },
       });
+      outcome = run.outcome;
+      transcriptionEngine = run.resolution.engine;
+      transcriptionModel = run.resolution.modelLabel;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await updateMeetingMeta(metaPath, (value) => {
@@ -1391,11 +1446,18 @@ export class ProcessingCoordinator {
     const finishedAt = this.now().toISOString();
     if (outcome.state === 'completed') {
       await partialQueue;
-      if (outcome.durationSeconds > 0 && outcome.elapsedSeconds > 0) {
+      if (
+        transcriptionEngine === 'whisper-cpp' &&
+        outcome.durationSeconds > 0 &&
+        outcome.elapsedSeconds > 0
+      ) {
         const ratio = outcome.elapsedSeconds / outcome.durationSeconds;
         if (Number.isFinite(ratio) && ratio >= 0.01 && ratio <= 10) {
           try {
-            await this.onSpeedRatioMeasured?.(model, Math.round(ratio * 1000) / 1000);
+            await this.onSpeedRatioMeasured?.(
+              this.settings().whisperModel,
+              Math.round(ratio * 1000) / 1000,
+            );
           } catch (error) {
             console.error(
               `failed to save transcription speed ratio: ${error instanceof Error ? error.message : String(error)}`,
@@ -1477,7 +1539,7 @@ export class ProcessingCoordinator {
         startedAt: meta.started_at,
         durationSeconds: outcome.durationSeconds,
         source: sourceLabel(meta),
-        model,
+        model: transcriptionModel,
         language: outcome.language,
         segments: finalSegments,
       });
@@ -1498,7 +1560,8 @@ export class ProcessingCoordinator {
           state: 'completed',
           started_at: value.transcription?.started_at ?? finishedAt,
           finished_at: finishedAt,
-          model,
+          engine: transcriptionEngine,
+          model: transcriptionModel,
           language: outcome.language,
           last_segment_end: outcome.lastEndSeconds,
           resume_count: outcome.resumed ? 1 : 0,
@@ -1528,7 +1591,7 @@ export class ProcessingCoordinator {
     const state =
       outcome.state === 'cancelled'
         ? 'cancelled'
-        : outcome.errorCode === 'model-missing' || outcome.errorCode === 'binary-missing'
+        : outcome.state === 'failed'
           ? 'failed'
           : 'partial';
     await partialQueue;
@@ -1550,7 +1613,8 @@ export class ProcessingCoordinator {
         ...(value.transcription ?? {}),
         state,
         finished_at: finishedAt,
-        model,
+        engine: transcriptionEngine,
+        model: transcriptionModel,
         language: outcome.language || lastLanguage,
         partial: finalSegments.length > 0,
         error: outcome.error ?? message,

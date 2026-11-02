@@ -19,6 +19,7 @@ const SKIPPED_FILES = new Set([
   'shared/speakers.ts',
   'shared/title.ts',
   'main/summary.ts',
+  'main/transcript-cleanup.ts',
   'main/translation.ts',
 ]);
 

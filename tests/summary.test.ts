@@ -7,6 +7,11 @@ import {
   hashTranscript,
   splitTranscriptForSummary,
 } from '../src/main/summary';
+import {
+  buildCleanupSystemPrompt,
+  isCleanedChunkValid,
+  splitTranscriptForCleanup,
+} from '../src/main/transcript-cleanup';
 
 describe('summary prompts', () => {
   it('requests the four Japanese sections and TBD owners', () => {
@@ -122,5 +127,144 @@ describe('generateSummary', () => {
         model: 'model',
       }),
     ).rejects.toThrow('transcript is empty');
+  });
+});
+
+describe('transcript cleanup', () => {
+  const body = [
+    '[00:00:01] 話者A: あー、今日はリリースです。',
+    '[00:00:05] 話者B: なるほど。',
+    '[00:00:06] 話者A: では進めます。',
+  ].join('\n');
+
+  it('req_summary_002_builds_a_prompt_that_preserves_timestamps_and_speakers', () => {
+    const prompt = buildCleanupSystemPrompt();
+    expect(prompt).toContain('相槌');
+    expect(prompt).toContain('擬音');
+    expect(prompt).toContain('話者ラベル');
+    expect(prompt).toContain('タイムスタンプ');
+    expect(prompt).toContain('入力と同じ言語');
+  });
+
+  it('req_summary_002_splits_by_lines_without_overlap', () => {
+    const chunks = splitTranscriptForCleanup(body, 30);
+    expect(chunks.length).toBe(3);
+    expect(chunks.join('\n')).toBe(body);
+  });
+
+  it('req_summary_002_accepts_removed_lines_when_timestamps_stay_in_order', () => {
+    const cleaned = [
+      '[00:00:01] 話者A: 今日はリリースです。',
+      '[00:00:06] 話者A: では進めます。',
+    ].join('\n');
+    expect(isCleanedChunkValid(body, cleaned)).toBe(true);
+    expect(
+      isCleanedChunkValid(
+        body,
+        '[00:00:01] 話者B: 今日はリリースです。\n[00:00:06] 話者A: では進めます。',
+      ),
+    ).toBe(false);
+    expect(
+      isCleanedChunkValid(
+        body,
+        '[00:00:01] 話者C: 今日はリリースです。\n[00:00:06] 話者A: では進めます。',
+      ),
+    ).toBe(false);
+    expect(isCleanedChunkValid(body, '[00:00:01] 話者A: 今日はリリースです。\n[00:00:02] 追加')).toBe(
+      false,
+    );
+    expect(isCleanedChunkValid(body, '[missing] 本文')).toBe(false);
+    expect(isCleanedChunkValid(body, '')).toBe(false);
+  });
+
+  it('req_summary_002_cleans_the_transcript_before_summarizing', async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: '[00:00:01] 話者A: 今日はリリースです。\n[00:00:06] 話者A: では進めます。',
+        inputTokens: 10,
+        outputTokens: 5,
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        text: '## 要約\n内容\n## 決定事項\n決定\n## ToDo\n- 作業\n## 未決事項\nなし',
+        inputTokens: 100,
+        outputTokens: 50,
+        status: 200,
+      });
+    const result = await generateSummary({
+      client: { complete } as unknown as LlmClient,
+      transcriptBody: body,
+      language: 'ja',
+      kind: 'openai',
+      endpoint: 'https://api.example.com/v1/chat/completions',
+      apiKey: 'key',
+      model: 'model',
+      cleanupFillers: true,
+    });
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({
+      system: expect.stringContaining('相槌'),
+      user: expect.stringContaining('あー、今日はリリースです。'),
+    });
+    expect(complete.mock.calls[1]?.[0]).toMatchObject({
+      user: expect.stringContaining('今日はリリースです。'),
+    });
+    expect(complete.mock.calls[1]?.[0].user).not.toContain('なるほど');
+    expect(result.cleanup.state).toBe('completed');
+    expect(result.cleanup.removedChars).toBeGreaterThan(0);
+    expect(result.usage).toEqual({ inputTokens: 110, outputTokens: 55 });
+  });
+
+  it('req_summary_002_falls_back_to_the_original_transcript_when_cleanup_fails', async () => {
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: 'タイムスタンプを失った本文',
+        inputTokens: 10,
+        outputTokens: 5,
+        status: 200,
+      })
+      .mockResolvedValueOnce({
+        text: '## 要約\n内容\n## 決定事項\n決定\n## ToDo\n- 作業\n## 未決事項\nなし',
+        inputTokens: 100,
+        outputTokens: 50,
+        status: 200,
+      });
+    const result = await generateSummary({
+      client: { complete } as unknown as LlmClient,
+      transcriptBody: body,
+      language: 'ja',
+      kind: 'openai',
+      endpoint: 'https://api.example.com/v1/chat/completions',
+      apiKey: 'key',
+      model: 'model',
+      cleanupFillers: true,
+    });
+    expect(complete.mock.calls[1]?.[0].user).toContain('なるほど');
+    expect(result.cleanup.state).toBe('failed');
+    expect(result.cleanup.fallbackChunks).toBe(1);
+    expect(result.body).toContain('## 要約');
+  });
+
+  it('req_summary_002_does_not_clean_when_the_setting_is_off', async () => {
+    const complete = vi.fn(async () => ({
+      text: '## 要約\n内容\n## 決定事項\n決定\n## ToDo\n- 作業\n## 未決事項\nなし',
+      inputTokens: 100,
+      outputTokens: 50,
+      status: 200,
+    }));
+    const result = await generateSummary({
+      client: { complete } as unknown as LlmClient,
+      transcriptBody: body,
+      language: 'ja',
+      kind: 'openai',
+      endpoint: 'https://api.example.com/v1/chat/completions',
+      apiKey: 'key',
+      model: 'model',
+      cleanupFillers: false,
+    });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(result.cleanup.state).toBe('skipped');
   });
 });
