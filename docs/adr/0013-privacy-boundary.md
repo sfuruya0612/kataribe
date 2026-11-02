@@ -2,7 +2,7 @@
 
 Created: 2026-10-28
 Model: DeepSeek V4.1 Flash 1017
-Status: Accepted (音声の扱いの一部を ADR-0024 で改訂)
+Status: Accepted
 
 ## 背景
 

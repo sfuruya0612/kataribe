@@ -979,4 +979,55 @@ describe('ProcessingCoordinator transcription engine metadata', () => {
     expect(meta.transcription?.model).toBe('openai/whisper-1');
     expect(meta.error).toContain('OpenAI');
   });
+
+  it('req_trans_001_saves_a_partial_openai_transcription', async () => {
+    const setup = await createDiarizationMeeting();
+    const partialOutcome: TranscriptionOutcome = {
+      state: 'partial',
+      segments: [{ startSeconds: 1, endSeconds: 2, text: '前半です。' }],
+      language: 'ja',
+      lastEndSeconds: 2,
+      durationSeconds: 4,
+      elapsedSeconds: 1,
+      errorCode: 'openai-server',
+      error: 'server error',
+      resumed: false,
+    };
+    const runner = {
+      run: async (runOptions: {
+        onPartial?: (outcome: TranscriptionOutcome) => void | Promise<void>;
+      }) => {
+        await runOptions.onPartial?.(partialOutcome);
+        return {
+          outcome: partialOutcome,
+          resolution: {
+            engine: 'openai' as const,
+            modelLabel: 'openai/whisper-1',
+            fallbackReason: null,
+          },
+        };
+      },
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.status).toBe('error');
+    expect(meta.transcription?.state).toBe('partial');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.partial).toBe(true);
+    const transcript = await readFile(
+      join(setup.meetingDir, 'transcript.md'),
+      'utf8',
+    );
+    expect(transcript).toContain('partial: true');
+    expect(transcript).toContain('前半です。');
+  });
 });

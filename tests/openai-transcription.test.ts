@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   OpenAiTranscriptionService,
+  OPENAI_MAX_REQUEST_BYTES,
   buildMultipartBody,
 } from '../src/main/openai-transcription';
 import { encodeWavMono16 } from '../src/main/wav';
@@ -102,6 +103,8 @@ describe('OpenAI transcription helpers', () => {
     expect(estimateOpenAiChunkCount(0)).toBe(1);
     expect(estimateOpenAiChunkCount(60)).toBe(1);
     expect(estimateOpenAiChunkCount(601)).toBe(2);
+    expect(estimateOpenAiChunkCount(3600)).toBe(6);
+    expect(OPENAI_MAX_REQUEST_BYTES).toBe(25 * 1024 * 1024);
   });
 
   it('req_trans_001_parses_verbose_json_with_offsets', () => {
