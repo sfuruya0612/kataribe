@@ -136,6 +136,8 @@
   - @shoichi.furuya
 - [FIX] WAV の fmt / data チャンクを解析して、波形と長さを正しく取得する
   - @shoichi.furuya
+- [FIX] 文字起こし前の音声強調に失敗したとき、理由を会議詳細に表示し、生の文字起こしを残す
+  - @shoichi.furuya
 
 ### misc
 
