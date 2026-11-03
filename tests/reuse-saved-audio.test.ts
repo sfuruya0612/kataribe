@@ -81,15 +81,29 @@ async function createWorkspace(failEnhancement = false) {
     modelsDir,
     definitions: [definition],
   });
-  const ffmpeg = join(process.cwd(), 'resources', 'bin', 'arm64', 'ffmpeg');
+  const bundledFfmpeg = join(
+    process.cwd(),
+    'resources',
+    'bin',
+    process.arch,
+    'ffmpeg',
+  );
+  // CI のランナーは同梱バイナリの対象外なので、PATH の ffmpeg を使う。
+  const useBundledFfmpeg =
+    process.env.CI !== 'true' &&
+    process.platform === 'darwin' &&
+    process.arch === 'arm64';
   const mediaEncoder = new MediaEncoder({
     locator: new BinaryLocator({
       isPackaged: false,
       resourcesPath: root,
-      appPath: process.cwd(),
+      appPath: useBundledFfmpeg ? process.cwd() : root,
       platform: process.platform,
       arch: process.arch,
-      env: { KATARIBE_FFMPEG_PATH: ffmpeg },
+      env: useBundledFfmpeg
+        ? { KATARIBE_FFMPEG_PATH: bundledFfmpeg }
+        : {},
+      pathEnv: process.env.PATH,
     }),
   });
   const sourceWav = join(meetingDir, 'audio.wav');
