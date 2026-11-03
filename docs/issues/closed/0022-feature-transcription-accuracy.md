@@ -191,5 +191,5 @@ OpenAI の文字起こし API を Whisper の代わりに選べるようにし�
 - 設定画面の追加 UI は `TranscriptionEngineSettings.tsx` と `SummaryCleanupSetting.tsx` に分けた。既存の CSS クラスで足りたため、`styles.css` は変更していない。
 - テストは `src/main/wav.test.ts`、`tests/openai-transcription.test.ts`、`tests/transcription-runner.test.ts`、`tests/summary.test.ts`、`tests/processing.test.ts`、`tests/settings.test.ts`、`src/renderer/src/SettingsPanel.test.tsx`、`src/renderer/src/TranscriptionEngineSettings.test.tsx`、`src/renderer/src/SummaryCleanupWarning.test.tsx` に追加した。
 - `npm run typecheck`、`npm test` (462 件)、`npm run build` が通る。
-- RE-USE の検証は `docs/testing/reuse-speech-enhancement.md` と ADR-0026 に記録し、入力時にも文字起こしの前処理にも採用しない判断にした。
+- RE-USE の検証は `docs/testing/reuse-speech-enhancement.md` と ADR-0026 に記録し、入力時にも文字起こしの前処理にも採用しない判断にした。先行モデルの `nvidia/RE-USE` も同じ移植先で動くが、NSCLv1 が非商用の研究・教育目的に限るため、アプリの選択肢にしない。
 - 計画との差分: `wav` のテストは既存の `src/main/wav.test.ts` に追加した。`styles.css` は変更していない。設定画面の UI は `SettingsPanel.tsx` に直書きせず、新しい 2 つのコンポーネントに分けた。確認ダイアログの 2 回送信の警告は `SummaryCleanupWarning.tsx` に分け、テストを追加した。

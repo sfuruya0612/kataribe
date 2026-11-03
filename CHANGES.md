@@ -156,6 +156,7 @@
 - [ADD] ADR-0024、ADR-0025、ADR-0026 を追加し、OpenAI 文字起こし、相槌の除去、RE-USE の不採用を記録する
   - @shoichi.furuya
 - [ADD] RE-USE の文字起こし精度に対する検証手順と結果を記録する
+  - 先行モデルと商用利用可能なモデルのライセンスと CER の比較を含む
   - @shoichi.furuya
 - [ADD] PRD に OpenAI 文字起こしと相槌の除去の要求を追加し、README とリリースチェックリストを更新する
   - @shoichi.furuya
