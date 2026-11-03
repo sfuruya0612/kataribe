@@ -3,8 +3,9 @@
 - Requirements: REQ-ENHANCE-001, REQ-ENHANCE-002 (派生物のメタデータ、`enhancing` 状態、無効化、後始末を担う)
 - Priority: High
 - Created: 2026-11-03
+- Completed: 2026-11-03
 - Model: DeepSeek V4.1 Flash 1017
-- Branch: feature/feature-reuse-webgpu-enhancement-metadata
+- Branch: feature/feature-transcription-accuracy
 
 ## 目的
 
@@ -121,31 +122,31 @@ issue 0025 の保存音声の強調と、issue 0024 の文字起こし前の比�
 
 ## 完了条件
 
-- [ ] `enhancement.json` の schema が、保存音声と文字起こしの入力と出力のハッシュ、使用モデル、設定、処理時間、状態、エラーを持つことをテストで固定する。
-- [ ] `enhancement.json` を一時ファイルと rename で書き、書き込みに失敗したときは以前のファイルを残すことをテストで固定する。
-- [ ] `enhancement.json` の読み込みに失敗したとき、派生ファイルを削除せず、警告を返すことをテストで固定する。
-- [ ] 壊れた `enhancement.json` を会議フォルダから再構築し、再構築できないときも会議と索引を残すことをテストで固定する。
-- [ ] `meta.json` が `enhancement.json` の詳細を重複して持たず、`enhancement.json` から再生成できることをテストで固定する。
-- [ ] `enhancing` 状態を `MeetingStatus`、`ProcessingStage`、`MEETING_STATUSES`、`toStatus`、`markInterruptedMeetings`、`meta.json`、会議一覧、会議詳細、`meetingStatusLabel`、`progressLabel` に追加することをテストで固定する。
-- [ ] 起動時に `enhancing` のまま残った会議を `error` にし、`enhancement.json` の該当 state を `failed` または `interrupted` に更新することをテストで固定する。
-- [ ] `audio.16k.enhanced.wav` と mp3 からデコードした一時 WAV は、成功、失敗、キャンセルで削除される。`audio.16k.wav` と `chunks/` は ADR-0005 に従い、失敗、キャンセル、タイムアウトでは残ることをテストで固定する。
-- [ ] 起動時に、復旧データを持たない会議の tmp ディレクトリが削除され、`status` が `error` の会議、または `transcription.state` が `partial`、`failed`、`cancelled`、`interrupted` の会議では `chunks/` と `audio.16k.wav` が残ることをテストで固定する。比較セッションの生と強調のどちらかが完了していない会議でも残る。
-- [ ] 空き容量が足りないとき、音声強調を開始せず、理由を返すことをテストで固定する。
-- [ ] `audio.mp3` のハッシュが変わったとき、古い強調音声と比較用の文字起こしを削除することをテストで固定する。
-- [ ] モデルの重みの SHA-256 が変わったとき、古い強調音声と比較用の文字起こしを削除することをテストで固定する。
-- [ ] 比較セッションの入力ハッシュが変わったとき、古い比較用の文字起こしを削除することをテストで固定する。
-- [ ] 文字起こし前の強調を OFF にして再文字起こししたとき、比較用の文字起こしを削除することをテストで固定する。
-- [ ] モデルの重みを削除しても、既存の強調音声と比較用の文字起こしが残ることをテストで固定する。
-- [ ] 会議を削除したとき、`enhancement.json`、強調音声、比較用の文字起こし、一時ファイルが削除されることをテストで固定する。
-- [ ] `MeetingSummary` に `enhancedModels`、`hasRawTranscript`、`transcriptModels`、`enhancementState` を追加し、`meta.json` から再生成できることをテストで固定する。
-- [ ] `MeetingRow`、`upsert`、`rowToMeeting` に `enhanced_models`、`has_raw_transcript`、`transcript_models`、`enhancement_state` を追加し、索引を削除して再構築しても同じ結果になることをテストで固定する。
-- [ ] `MeetingDetail` に `enhancement` が返り、`EnhancementStatus` が状態、処理時間、使用モデルを表示することをテストで固定する。
-- [ ] 設定画面の使用量と削除の IPC が `enhancement.json` と `meta.json` を更新し、会議詳細の選択肢が変わることをテストで固定する。
-- [ ] 設定画面から強調音声を削除したとき、状態と会議詳細の選択肢が更新されることをテストで固定する。
-- [ ] `npm run typecheck`、`npm test`、`npm run build` が通る。
-- [ ] README、CHANGES.md、リリースチェックリストを更新する。
-- [ ] ADR-0007、ADR-0010、ADR-0012、ADR-0013、ADR-0027 の記述を、この issue の範囲に合わせて更新する。
-- [ ] テスト名または module doc に、対応する `REQ-ENHANCE-001` / `REQ-ENHANCE-002` または `共通基盤` と理由を書く。
+- [x] `enhancement.json` の schema が、保存音声と文字起こしの入力と出力のハッシュ、使用モデル、設定、処理時間、状態、エラーを持つことをテストで固定する。
+- [x] `enhancement.json` を一時ファイルと rename で書き、書き込みに失敗したときは以前のファイルを残すことをテストで固定する。
+- [x] `enhancement.json` の読み込みに失敗したとき、派生ファイルを削除せず、警告を返すことをテストで固定する。
+- [x] 壊れた `enhancement.json` を会議フォルダから再構築し、再構築できないときも会議と索引を残すことをテストで固定する。
+- [x] `meta.json` が `enhancement.json` の詳細を重複して持たず、`enhancement.json` から再生成できることをテストで固定する。
+- [x] `enhancing` 状態を `MeetingStatus`、`ProcessingStage`、`MEETING_STATUSES`、`toStatus`、`markInterruptedMeetings`、`meta.json`、会議一覧、会議詳細、`meetingStatusLabel`、`progressLabel` に追加することをテストで固定する。
+- [x] 起動時に `enhancing` のまま残った会議を `error` にし、`enhancement.json` の該当 state を `failed` または `interrupted` に更新することをテストで固定する。
+- [x] `audio.16k.enhanced.wav` と mp3 からデコードした一時 WAV は、成功、失敗、キャンセルで削除される。`audio.16k.wav` と `chunks/` は ADR-0005 に従い、失敗、キャンセル、タイムアウトでは残ることをテストで固定する。
+- [x] 起動時に、復旧データを持たない会議の tmp ディレクトリが削除され、`status` が `error` の会議、または `transcription.state` が `partial`、`failed`、`cancelled`、`interrupted` の会議では `chunks/` と `audio.16k.wav` が残ることをテストで固定する。比較セッションの生と強調のどちらかが完了していない会議でも残る。
+- [x] 空き容量が足りないとき、音声強調を開始せず、理由を返すことをテストで固定する。
+- [x] `audio.mp3` のハッシュが変わったとき、古い強調音声と比較用の文字起こしを削除することをテストで固定する。
+- [x] モデルの重みの SHA-256 が変わったとき、古い強調音声と比較用の文字起こしを削除することをテストで固定する。
+- [x] 比較セッションの入力ハッシュが変わったとき、古い比較用の文字起こしを削除することをテストで固定する。
+- [x] 文字起こし前の強調を OFF にして再文字起こししたとき、比較用の文字起こしを削除することをテストで固定する。
+- [x] モデルの重みを削除しても、既存の強調音声と比較用の文字起こしが残ることをテストで固定する。
+- [x] 会議を削除したとき、`enhancement.json`、強調音声、比較用の文字起こし、一時ファイルが削除されることをテストで固定する。
+- [x] `MeetingSummary` に `enhancedModels`、`hasRawTranscript`、`transcriptModels`、`enhancementState` を追加し、`meta.json` から再生成できることをテストで固定する。
+- [x] `MeetingRow`、`upsert`、`rowToMeeting` に `enhanced_models`、`has_raw_transcript`、`transcript_models`、`enhancement_state` を追加し、索引を削除して再構築しても同じ結果になることをテストで固定する。
+- [x] `MeetingDetail` に `enhancement` が返り、`EnhancementStatus` が状態、処理時間、使用モデルを表示することをテストで固定する。
+- [x] 設定画面の使用量と削除の IPC が `enhancement.json` と `meta.json` を更新し、会議詳細の選択肢が変わることをテストで固定する。
+- [x] 設定画面から強調音声を削除したとき、状態と会議詳細の選択肢が更新されることをテストで固定する。
+- [x] `npm run typecheck`、`npm test`、`npm run build` が通る。
+- [x] README、CHANGES.md、リリースチェックリストを更新する。
+- [x] ADR-0007、ADR-0010、ADR-0012、ADR-0013、ADR-0027 の記述を、この issue の範囲に合わせて更新する。
+- [x] テスト名または module doc に、対応する `REQ-ENHANCE-001` / `REQ-ENHANCE-002` または `共通基盤` と理由を書く。
 
 ## 解決方法
 
@@ -225,3 +226,11 @@ issue 0025 の保存音声の強調と、issue 0024 の文字起こし前の比�
 - `README.md` に、一時ファイル、ディスク使用量、`enhancing` 状態を追加し、音声強調が未実装である旨の注記を削除する。
 - `CHANGES.md` の `## develop` に、メタデータと後始末の追加を記録する。
 - `docs/release-checklist.md` に、一時ファイルの削除、`enhancing` 状態、ディスク使用量の確認を追加する。
+
+## 実施結果
+
+- `enhancement.json` の schema、読み込み失敗の区別、一時ファイルと rename の書き込み、派生物からの再構築を実装した。
+- `meta.json` の要約、`enhancing` 状態、会議一覧と会議詳細の表示、検索索引の列と migration、設定画面の使用量と削除を実装した。
+- 一時ファイルは成功、失敗、キャンセル、起動時に削除し、失敗、キャンセル、中断、比較セッションの未完了時は `chunks/` と `audio.16k.wav` を残す。
+- 空き容量の確認、入力音声、モデルの重み、比較セッションの入力が変わったときの無効化を実装した。
+- `npm run typecheck`、`npm test` (568 件)、`npm run build` が通る。

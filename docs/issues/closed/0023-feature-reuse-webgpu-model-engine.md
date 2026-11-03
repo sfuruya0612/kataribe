@@ -3,8 +3,9 @@
 - Requirements: REQ-ENHANCE-001, REQ-ENHANCE-002 (モデル、WebGPU、プロトコル、ライセンスの共通基盤)
 - Priority: High
 - Created: 2026-11-03
+- Completed: 2026-11-03
 - Model: DeepSeek V4.1 Flash 1017
-- Branch: feature/feature-reuse-webgpu-model-engine
+- Branch: feature/feature-transcription-accuracy
 
 ## 目的
 
@@ -112,27 +113,27 @@ issue 0025、0026、0024 が、この issue のモデル管理、エンジン、
 
 ライセンス、プロトコル、Range、DSP の条件は、issue 0025 と issue 0024 の受入基準を支える共通基盤として確認する。
 
-- [ ] 商用利用が可能な `nemotronlabs` だけがモデル一覧に表示され、研究および教育用のモデルが設定画面とモデル一覧に存在しないことをテストで固定する。
-- [ ] モデルの URL、SHA-256、サイズ、ライセンス、ファイル名をテストで固定する。
-- [ ] アプリメニューのライセンス項目と設定画面から、WebGPU エンジンとモデルのライセンス本文を開けることをテストで固定する。
-- [ ] `reuse:open-license` が `'engine' | 'model'` 以外を拒否することをテストで固定する。
-- [ ] ダウンロードの再開、進捗、キャンセル、削除、SHA-256 の不一致をテストで固定する。
-- [ ] サイズが同じで内容が違う既存ファイルを、別モデルとして受け入れないことをテストで固定する。
-- [ ] 強調ジョブが使っているモデルの削除を拒否することをテストで固定する。
-- [ ] WebGPU が使えない環境で、機能を無効にして理由を表示することをテストで固定する。
-- [ ] `kataribe-temp` と `kataribe-model` が `registerSchemesAsPrivileged` に登録され、CSP の `connect-src` に含まれることをテストで固定する。
-- [ ] 許可外のモデル ID、許可外のパス、期限切れのトークンを拒否することをテストで固定する。
-- [ ] Range リクエストに対して 206 と正しい範囲を返すことをテストで固定する。
-- [ ] WAV の Range 読み込み、チャンクの順序、クロスフェード、途中キャンセル、出力 WAV のヘッダーと長さをテストで固定する。
-- [ ] DSP の STFT / iSTFT のラウンドトリップと、safetensors の読み込みをテストで固定する。
-- [ ] `.js` エンジンの `.d.ts` を追加し、`npm run typecheck` が通ることを確認する。
-- [ ] Electron の WebGPU スモークテストで、短い WAV の強調が完了し、出力が入力と異なり、有限のサンプルを含むことを確認する。WebGPU が使えない環境では能力ゲートとして明示する。
+- [x] 商用利用が可能な `nemotronlabs` だけがモデル一覧に表示され、研究および教育用のモデルが設定画面とモデル一覧に存在しないことをテストで固定する。
+- [x] モデルの URL、SHA-256、サイズ、ライセンス、ファイル名をテストで固定する。
+- [x] アプリメニューのライセンス項目と設定画面から、WebGPU エンジンとモデルのライセンス本文を開けることをテストで固定する。
+- [x] `reuse:open-license` が `'engine' | 'model'` 以外を拒否することをテストで固定する。
+- [x] ダウンロードの再開、進捗、キャンセル、削除、SHA-256 の不一致をテストで固定する。
+- [x] サイズが同じで内容が違う既存ファイルを、別モデルとして受け入れないことをテストで固定する。
+- [x] 強調ジョブが使っているモデルの削除を拒否することをテストで固定する。
+- [x] WebGPU が使えない環境で、機能を無効にして理由を表示することをテストで固定する。
+- [x] `kataribe-temp` と `kataribe-model` が `registerSchemesAsPrivileged` に登録され、CSP の `connect-src` に含まれることをテストで固定する。
+- [x] 許可外のモデル ID、許可外のパス、期限切れのトークンを拒否することをテストで固定する。
+- [x] Range リクエストに対して 206 と正しい範囲を返すことをテストで固定する。
+- [x] WAV の Range 読み込み、チャンクの順序、クロスフェード、途中キャンセル、出力 WAV のヘッダーと長さをテストで固定する。
+- [x] DSP の STFT / iSTFT のラウンドトリップと、safetensors の読み込みをテストで固定する。
+- [x] `.js` エンジンの `.d.ts` を追加し、`npm run typecheck` が通ることを確認する。
+- [x] Electron の WebGPU スモークテストで、短い WAV の強調が完了し、出力が入力と異なり、有限のサンプルを含むことを確認する。WebGPU が使えない環境では能力ゲートとして明示する。
 - [ ] 短い WAV で 16 kHz と 44.1 kHz / 48 kHz の処理時間を測り、60 分への線形外挿を `docs/testing/reuse-speech-enhancement.md` に記録する。M1 と M3 で PRD の目標値を満たすか確認する。
-- [ ] `npm run typecheck`、`npm test`、`npm run build` が通る。
-- [ ] README、CHANGES.md、リリースチェックリストを更新する。
-- [ ] ADR-0027、ADR-0010、ADR-0013、ADR-0005 の記述を、この issue の範囲に合わせて更新する。
-- [ ] 実行時の npm 依存を追加しない。`@webgpu/types` だけを devDependency に追加する場合は、その理由を記録する。
-- [ ] テスト名または module doc に `REQ-ENHANCE-001` を書く。共通基盤だけを確かめるテストは `共通基盤` と理由を書く。
+- [x] `npm run typecheck`、`npm test`、`npm run build` が通る。
+- [x] README、CHANGES.md、リリースチェックリストを更新する。
+- [x] ADR-0027、ADR-0010、ADR-0013、ADR-0005 の記述を、この issue の範囲に合わせて更新する。
+- [x] 実行時の npm 依存を追加しない。`@webgpu/types` だけを devDependency に追加する場合は、その理由を記録する。
+- [x] テスト名または module doc に `REQ-ENHANCE-001` を書く。共通基盤だけを確かめるテストは `共通基盤` と理由を書く。
 
 ## 解決方法
 
@@ -230,3 +231,13 @@ issue 0025、0026、0024 が、この issue のモデル管理、エンジン、
 - `docs/testing/reuse-speech-enhancement.md` に、WebGPU の処理時間と再検証の結果を追加する。
 - `CHANGES.md` の `## develop` に、モデル管理と WebGPU エンジンの追加を記録する。
 - `docs/release-checklist.md` に、モデルのダウンロード、WebGPU の可用性、ライセンス表示の確認を追加する。
+
+## 実施結果
+
+- 商用モデル `nemotronlabs` のダウンロード、HTTP Range による再開、SHA-256 の照合、進捗、キャンセル、削除を実装した。
+- `geronimi73/re-use-demo` の commit `0d54dca074597b111a8e8c78f6067a6fa0231f75` の WebGPU エンジンを同梱し、専用 Worker、`kataribe-temp` と `kataribe-model` のプロトコル、Range 応答、ライセンス表示を追加した。
+- `npm run smoke:reuse -- /tmp/reuse-model.safetensors` で 16 kHz、44.1 kHz、48 kHz の 2 秒音声を処理し、出力が入力と異なり、長さとサンプルレートが一致することを確認した。
+- M4 Pro (48 GB)、macOS 27.2 の実測は 16 kHz 455 ms、44.1 kHz 708 ms、48 kHz 747 ms で、60 分への線形外挿は 13.7 分、21.2 分、22.4 分だった。
+- M1 と M3 の実機確認は未実施である。`docs/testing/reuse-speech-enhancement.md` に未検証として記録した。
+- `npm run typecheck`、`npm test` (568 件)、`npm run build` が通る。
+- 計画との差分: `@webgpu/types` を devDependency に追加した。カスタムプロトコルは Worker からの fetch に `corsEnabled` が必要だったため、4 つの privilege に追加した。
