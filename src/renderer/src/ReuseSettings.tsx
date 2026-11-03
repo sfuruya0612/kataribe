@@ -24,10 +24,12 @@ type ReuseSettingsViewProps = {
   models: ReuseModelList | null;
   gpu: ReuseGpuStatus;
   savedAudioEnabled: boolean;
+  transcriptionEnabled: boolean;
   busy: ReuseModel | null;
   error: string | null;
   notice: string | null;
   onToggleSavedAudio: (enabled: boolean) => void;
+  onToggleTranscription: (enabled: boolean) => void;
   onDownload: (model: ReuseModel) => void;
   onCancel: (model: ReuseModel) => void;
   onDelete: (model: ReuseModel) => void;
@@ -58,10 +60,12 @@ export function ReuseSettingsView({
   models,
   gpu,
   savedAudioEnabled,
+  transcriptionEnabled,
   busy,
   error,
   notice,
   onToggleSavedAudio,
+  onToggleTranscription,
   onDownload,
   onCancel,
   onDelete,
@@ -85,6 +89,28 @@ export function ReuseSettingsView({
             type="checkbox"
             checked={savedAudioEnabled}
             onChange={(event) => onToggleSavedAudio(event.target.checked)}
+          />
+        </label>
+      </div>
+      <div className="setting-card">
+        <label className="setting-row">
+          <span>
+            <strong>{t('文字起こし前の音声を強調する')}</strong>
+            <span className="muted">
+              {t(
+                '文字起こしの前に RE-USE を適用し、生と強調の文字起こしを保存して比較できます。既定は OFF です。',
+              )}
+            </span>
+            <span className="muted">
+              {t(
+                'OpenAI の文字起こし API を選んだ場合は比較せず、強調に成功した音声または生の音声を 1 回だけ送ります。',
+              )}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={transcriptionEnabled}
+            onChange={(event) => onToggleTranscription(event.target.checked)}
           />
         </label>
       </div>
@@ -363,11 +389,15 @@ export function ReuseSettings({
       models={models}
       gpu={gpu}
       savedAudioEnabled={settings.enhanceSavedAudio}
+      transcriptionEnabled={settings.enhanceBeforeTranscription}
       busy={busy}
       error={error}
       notice={notice}
       onToggleSavedAudio={(enabled) => {
         void onUpdateSettings({ enhanceSavedAudio: enabled });
+      }}
+      onToggleTranscription={(enabled) => {
+        void onUpdateSettings({ enhanceBeforeTranscription: enabled });
       }}
       onDownload={(model) => void download(model)}
       onCancel={(model) => void cancel(model)}

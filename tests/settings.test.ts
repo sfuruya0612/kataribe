@@ -291,6 +291,7 @@ describe('transcription and summary preprocessing settings', () => {
     expect(settings.openaiTranscriptionProfileId).toBe('');
     expect(settings.removeFillersBeforeSummary).toBe(true);
     expect(settings.enhanceSavedAudio).toBe(false);
+    expect(settings.enhanceBeforeTranscription).toBe(false);
   });
 
   it('req_trans_001_selects_a_chatgpt_profile_and_ignores_other_providers', () => {
@@ -325,10 +326,12 @@ describe('transcription and summary preprocessing settings', () => {
       openaiTranscriptionModel: 'unknown' as never,
       removeFillersBeforeSummary: false,
       enhanceSavedAudio: true,
+      enhanceBeforeTranscription: true,
     });
     expect(settings.transcriptionEngine).toBe('whisper-cpp');
     expect(settings.openaiTranscriptionModel).toBe('whisper-1');
     expect(settings.removeFillersBeforeSummary).toBe(false);
     expect(settings.enhanceSavedAudio).toBe(true);
+    expect(settings.enhanceBeforeTranscription).toBe(true);
   });
 });

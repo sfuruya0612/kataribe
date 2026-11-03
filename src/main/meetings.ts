@@ -368,10 +368,29 @@ export class MeetingStore {
             diarizationCache !== null,
           );
     const enhancement = await this.readEnhancement(meeting.meetingDir, meta);
+    const transcriptComparisons = transcript
+      ? {
+          raw: await this.readTranscriptFile(meeting, 'transcript.raw.md'),
+          models: Object.fromEntries(
+            (
+              await Promise.all(
+                REUSE_MODELS.map(async (model) => [
+                  model,
+                  await this.readTranscriptFile(
+                    meeting,
+                    `transcript.${model}.md`,
+                  ),
+                ] as const),
+              )
+            ).filter(([, document]) => document !== null),
+          ),
+        }
+      : { raw: null, models: {} };
     return {
       meeting,
       recordingError,
       transcript,
+      transcriptComparisons,
       summary: await this.readSummary(meeting),
       translations,
       speakers,
@@ -442,7 +461,14 @@ export class MeetingStore {
   async readTranscript(
     meeting: MeetingSummary,
   ): Promise<TranscriptDocument | null> {
-    const path = join(meeting.meetingDir, 'transcript.md');
+    return this.readTranscriptFile(meeting, 'transcript.md');
+  }
+
+  private async readTranscriptFile(
+    meeting: MeetingSummary,
+    fileName: string,
+  ): Promise<TranscriptDocument | null> {
+    const path = join(meeting.meetingDir, fileName);
     let markdown: string;
     try {
       markdown = await readFile(path, 'utf8');
@@ -455,7 +481,9 @@ export class MeetingStore {
       body: parsed.body,
       language: frontMatterString(parsed, 'language'),
       model: frontMatterString(parsed, 'model'),
-      partial: asBoolean(parsed.frontMatter.partial) || meeting.transcriptPartial,
+      partial:
+        asBoolean(parsed.frontMatter.partial) ||
+        (fileName === 'transcript.md' && meeting.transcriptPartial),
       updatedAt: await fileUpdatedAt(path),
     };
   }

@@ -593,6 +593,7 @@ export default function App({
               defaultSummaryLanguage={settings.summaryLanguage}
               whisperModel={settings.whisperModel}
               transcriptionEngine={settings.transcriptionEngine}
+              enhanceBeforeTranscription={settings.enhanceBeforeTranscription}
               initialSeekSeconds={detailSeekSeconds}
               onUpdateSettings={(patch) => updateSettings(patch)}
               onBack={() => setView('meetings')}

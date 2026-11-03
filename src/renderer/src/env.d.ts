@@ -141,6 +141,9 @@ declare global {
         names: string[],
       ) => Promise<MeetingDetail>;
       retryTranscription: (meetingId: string) => Promise<ProcessingState>;
+      retryTranscriptionComparison: (
+        meetingId: string,
+      ) => Promise<ProcessingState>;
       getMeetingWaveform: (meetingId: string) => Promise<MeetingWaveform>;
       openMeetingFolder: (meetingId: string) => Promise<void>;
       getProcessingState: () => Promise<ProcessingState>;

@@ -26,6 +26,17 @@ export type CloudTranscriptionConfirmation = {
   model: string;
   durationSeconds: number;
   chunkCount: number;
+  audioVariant: 'raw' | 'enhanced';
+};
+
+export type TranscriptionPlan = {
+  resolution: TranscriptionResolution;
+  failure: TranscriptionOutcome | null;
+  localModel: WhisperModel | null;
+  localModelPath: string | null;
+  openAiModel: OpenAiTranscriptionModel | null;
+  openAiEndpoint: string | null;
+  openAiApiKey: string | null;
 };
 
 export type TranscriptionResolution = {
@@ -55,6 +66,7 @@ export type TranscriptionRunOptions = {
   onPartial?: (outcome: TranscriptionOutcome) => void | Promise<void>;
   onHardLimitExceeded?: TranscribeOptions['onHardLimitExceeded'];
   onResolved?: (resolution: TranscriptionResolution) => void;
+  preferredAudio?: 'raw' | 'enhanced';
 };
 
 export type TranscriptionRunResult = {
@@ -136,68 +148,96 @@ export class TranscriptionRunner {
     this.confirmCloudTranscription = options.confirmCloudTranscription;
   }
 
-  async run(options: TranscriptionRunOptions): Promise<TranscriptionRunResult> {
+  async plan(options: {
+    durationSeconds: number;
+    preferredAudio?: 'raw' | 'enhanced';
+  }): Promise<TranscriptionPlan> {
     const resolution = await this.resolve(options);
     if (resolution.kind === 'failure') {
-      options.onResolved?.(resolution.resolution);
-      return { outcome: resolution.outcome, resolution: resolution.resolution };
+      return {
+        resolution: resolution.resolution,
+        failure: resolution.outcome,
+        localModel: null,
+        localModelPath: null,
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      };
     }
-    options.onResolved?.({
-      engine: resolution.kind === 'openai' ? 'openai' : 'whisper-cpp',
-      modelLabel: resolution.modelLabel,
-      fallbackReason:
-        resolution.kind === 'local' ? resolution.fallbackReason : null,
-    });
+    return {
+      resolution: {
+        engine: resolution.kind === 'openai' ? 'openai' : 'whisper-cpp',
+        modelLabel: resolution.modelLabel,
+        fallbackReason:
+          resolution.kind === 'local' ? resolution.fallbackReason : null,
+      },
+      failure: null,
+      localModel: resolution.kind === 'local' ? resolution.model : null,
+      localModelPath: resolution.kind === 'local' ? resolution.modelPath : null,
+      openAiModel: resolution.kind === 'openai' ? resolution.model : null,
+      openAiEndpoint:
+        resolution.kind === 'openai' ? resolution.endpoint : null,
+      openAiApiKey: resolution.kind === 'openai' ? resolution.apiKey : null,
+    };
+  }
 
-    if (resolution.kind === 'openai') {
+  async run(
+    options: TranscriptionRunOptions,
+    existingPlan?: TranscriptionPlan,
+  ): Promise<TranscriptionRunResult> {
+    const plan =
+      existingPlan ??
+      (await this.plan({
+        durationSeconds: options.durationSeconds,
+        preferredAudio: options.preferredAudio,
+      }));
+    options.onResolved?.(plan.resolution);
+    if (plan.failure) {
+      return { outcome: plan.failure, resolution: plan.resolution };
+    }
+
+    if (plan.openAiModel && plan.openAiEndpoint && plan.openAiApiKey) {
       const outcome = await this.openAiService.transcribe({
         audioWavPath: options.audioWavPath,
         tempDir: options.tempDir,
         durationSeconds: options.durationSeconds,
-        model: resolution.model,
-        endpoint: resolution.endpoint,
-        apiKey: resolution.apiKey,
+        model: plan.openAiModel,
+        endpoint: plan.openAiEndpoint,
+        apiKey: plan.openAiApiKey,
         initialPrompt: this.settings().whisperInitialPrompt,
         signal: options.signal,
         onUpdate: options.onUpdate,
         onPartial: options.onPartial,
       });
-      return {
-        outcome,
-        resolution: {
-          engine: 'openai',
-          modelLabel: resolution.modelLabel,
-          fallbackReason: null,
-        },
-      };
+      return { outcome, resolution: plan.resolution };
     }
 
+    if (!plan.localModel || !plan.localModelPath) {
+      throw new Error('transcription plan has no engine');
+    }
     const settings = this.settings();
     const outcome = await this.localService.transcribe({
       meetingId: options.meetingId,
       tempDir: options.tempDir,
       audioWavPath: options.audioWavPath,
-      model: resolution.model,
-      modelPath: resolution.modelPath,
+      model: plan.localModel,
+      modelPath: plan.localModelPath,
       durationSeconds: options.durationSeconds,
-      predictedSpeedRatio: settings.whisperSpeedRatios[resolution.model] ?? 0.2,
+      predictedSpeedRatio:
+        settings.whisperSpeedRatios[plan.localModel] ?? 0.2,
       initialPrompt: settings.whisperInitialPrompt,
       signal: options.signal,
       onUpdate: options.onUpdate,
       onPartial: options.onPartial,
       onHardLimitExceeded: options.onHardLimitExceeded,
     });
-    return {
-      outcome,
-      resolution: {
-        engine: 'whisper-cpp',
-        modelLabel: resolution.modelLabel,
-        fallbackReason: resolution.fallbackReason,
-      },
-    };
+    return { outcome, resolution: plan.resolution };
   }
 
-  private async resolve(options: TranscriptionRunOptions): Promise<Resolution> {
+  private async resolve(options: {
+    durationSeconds: number;
+    preferredAudio?: 'raw' | 'enhanced';
+  }): Promise<Resolution> {
     const settings = this.settings();
     if (settings.transcriptionEngine === 'openai') {
       return this.resolveOpenAi(settings, options);
@@ -207,7 +247,10 @@ export class TranscriptionRunner {
 
   private async resolveOpenAi(
     settings: AppSettings,
-    options: TranscriptionRunOptions,
+    options: {
+      durationSeconds: number;
+      preferredAudio?: 'raw' | 'enhanced';
+    },
   ): Promise<Resolution> {
     const profile = findLlmProfile(settings, settings.openaiTranscriptionProfileId);
     if (!profile || profile.provider !== 'chatgpt') {
@@ -265,6 +308,7 @@ export class TranscriptionRunner {
       model: settings.openaiTranscriptionModel,
       durationSeconds: options.durationSeconds,
       chunkCount: estimateOpenAiChunkCount(options.durationSeconds),
+      audioVariant: options.preferredAudio ?? 'raw',
     });
     if (!confirmed) {
       return this.resolveLocal(settings, options.durationSeconds, 'cloud-declined');

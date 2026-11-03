@@ -177,6 +177,10 @@ const api = {
     ipcRenderer.invoke('meetings:rename-speakers', meetingId, names),
   retryTranscription: (meetingId: string): Promise<ProcessingState> =>
     ipcRenderer.invoke('meetings:retry-transcription', meetingId),
+  retryTranscriptionComparison: (
+    meetingId: string,
+  ): Promise<ProcessingState> =>
+    ipcRenderer.invoke('meetings:retry-comparison', meetingId),
   getMeetingWaveform: (meetingId: string): Promise<MeetingWaveform> =>
     ipcRenderer.invoke('meetings:waveform', meetingId),
   openMeetingFolder: (meetingId: string): Promise<void> =>

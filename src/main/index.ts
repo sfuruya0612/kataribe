@@ -1279,6 +1279,23 @@ function registerIpc(
     return processing.getState();
   });
 
+  ipcMain.handle(
+    'meetings:retry-comparison',
+    (_event, meetingId: unknown) => {
+      if (typeof meetingId !== 'string') {
+        throw new Error('invalid meeting id');
+      }
+      void processing
+        .requestTranscriptionComparison(meetingId)
+        .catch((error: unknown) => {
+          console.error(
+            `failed to retry transcription comparison: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return processing.getState();
+    },
+  );
+
   ipcMain.handle('summary:preview', (_event, meetingId: string, profileId?: string) => {
     return processing.createSummaryPreview(
       meetingId,
@@ -1845,17 +1862,22 @@ if (!app.requestSingleInstanceLock()) {
       localService: transcriptionService,
       openAiService: openAiTranscriptionService,
       confirmCloudTranscription: async (details) => {
+        const audioLabel =
+          details.audioVariant === 'enhanced'
+            ? t('強調した音声（失敗したときは生の音声）')
+            : t('生の音声');
         const result = await showMessageDialog({
           type: 'warning',
           title: t('OpenAI 文字起こしの確認'),
           message: t('音声を OpenAI に送信しますか？'),
           detail: t(
-            '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。',
+            '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n音声: {audio}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。',
             {
               host: details.host || 'OpenAI',
               model: details.model,
               minutes: Math.max(1, Math.round(details.durationSeconds / 60)),
               chunks: details.chunkCount,
+              audio: audioLabel,
             },
           ),
           buttons: [t('送信'), t('ローカルで続ける')],
@@ -1887,6 +1909,7 @@ if (!app.requestSingleInstanceLock()) {
       diarizationService,
       llmClient,
       reuseSavedAudio,
+      reuseEnhancement,
       settings: () => settingsStore.get(),
       onStateChange: (state) => {
         broadcast('processing:state', state);

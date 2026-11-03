@@ -118,6 +118,7 @@ describe('TranscriptionRunner', () => {
       model: 'whisper-1',
       durationSeconds: 600,
       chunkCount: 1,
+      audioVariant: 'raw',
     });
     expect(local).not.toHaveBeenCalled();
     expect(openai).toHaveBeenCalledTimes(1);
@@ -134,6 +135,30 @@ describe('TranscriptionRunner', () => {
     expect(resolved).toEqual([
       { engine: 'openai', modelLabel: 'openai/whisper-1', fallbackReason: null },
     ]);
+  });
+
+  it('req_trans_001_reuses_one_plan_without_confirming_twice', async () => {
+    const confirm = vi.fn(async () => true);
+    const { runner, openai } = createRunner({
+      settings: settings({ transcriptionEngine: 'openai' }),
+      confirm,
+    });
+    const plan = await runner.plan({
+      durationSeconds: 600,
+      preferredAudio: 'enhanced',
+    });
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith({
+      host: 'api.openai.com',
+      model: 'whisper-1',
+      durationSeconds: 600,
+      chunkCount: 1,
+      audioVariant: 'enhanced',
+    });
+    expect(plan.resolution.engine).toBe('openai');
+    await runner.run(baseOptions, plan);
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(openai).toHaveBeenCalledTimes(1);
   });
 
   it('req_trans_001_falls_back_to_local_when_the_upload_is_declined', async () => {

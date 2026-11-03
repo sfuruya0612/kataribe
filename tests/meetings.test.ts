@@ -145,6 +145,29 @@ describe('MeetingStore', () => {
     expect(await store.enhancedAudioPath(id, 'nemotronlabs')).toBe(enhancedPath);
   });
 
+  it('returns the raw and enhanced transcript comparisons', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000e2';
+    const meetingDir = await createMeeting(root, id);
+    await writeFile(join(meetingDir, 'transcript.md'), '# current transcript');
+    await writeFile(join(meetingDir, 'transcript.raw.md'), '# raw transcript');
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      '# enhanced transcript',
+    );
+    const detail = await store.detail(id);
+    expect(detail?.transcriptComparisons.raw?.body).toContain('raw transcript');
+    expect(
+      detail?.transcriptComparisons.models.nemotronlabs?.body,
+    ).toContain('enhanced transcript');
+    await rm(join(meetingDir, 'transcript.md'), { force: true });
+    const withoutTranscript = await store.detail(id);
+    expect(withoutTranscript?.transcriptComparisons).toEqual({
+      raw: null,
+      models: {},
+    });
+  });
+
   it('returns null when audio.wav is missing', async () => {
     const { root, store } = await createStore();
     const meetingDir = await createMeeting(
@@ -650,6 +673,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -718,6 +744,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -770,6 +799,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -799,6 +831,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,

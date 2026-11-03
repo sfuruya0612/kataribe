@@ -1,5 +1,10 @@
 import { availableParallelism } from 'node:os';
-import type { DiarizationModelProgress, SpeakerCount } from '../shared/types';
+import type {
+  DiarizationModelProgress,
+  EnhancementSettings,
+  ReuseModel,
+  SpeakerCount,
+} from '../shared/types';
 import type { TranscriptSegment } from '../shared/markdown';
 import { speakerLabel } from '../shared/speakers';
 import { hashFile } from './asset-download';
@@ -9,6 +14,7 @@ import {
   type DiarizationCache,
   type DiarizationCacheKey,
   type DiarizationCacheTurn,
+  type DiarizationInputKind,
 } from './diarization-cache';
 import type {
   DiarizationModelManager,
@@ -37,6 +43,9 @@ export type DiarizationOptions = {
   onProgress?: (progress: DiarizationProgress) => void;
   cache?: DiarizationCache | null;
   audioSha256?: string;
+  inputKind?: DiarizationInputKind;
+  enhancementModelSha256?: string | null;
+  enhancementSettings?: EnhancementSettings | null;
 };
 
 export type DiarizationModels = Pick<
@@ -321,6 +330,9 @@ export function buildDiarizationCacheKey(input: {
   audioSha256: string;
   segmentationSha256: string;
   embeddingSha256: string;
+  inputKind: DiarizationInputKind;
+  enhancementModelSha256: string | null;
+  enhancementSettings: EnhancementSettings | null;
   speakerCount: SpeakerCount;
   clusterThreshold: number;
   threads: number;
@@ -329,6 +341,9 @@ export function buildDiarizationCacheKey(input: {
     audio_sha256: input.audioSha256,
     segmentation_sha256: input.segmentationSha256,
     embedding_sha256: input.embeddingSha256,
+    input_kind: input.inputKind,
+    enhancement_model_sha256: input.enhancementModelSha256,
+    enhancement_settings: input.enhancementSettings,
     speaker_count: input.speakerCount,
     cluster_threshold: input.clusterThreshold,
     threads: input.threads,
@@ -427,6 +442,9 @@ export class DiarizationService {
       audioSha256,
       segmentationSha256: modelHashes.segmentation,
       embeddingSha256: modelHashes.embedding,
+      inputKind: options.inputKind ?? 'raw',
+      enhancementModelSha256: options.enhancementModelSha256 ?? null,
+      enhancementSettings: options.enhancementSettings ?? null,
       speakerCount: options.numSpeakers,
       clusterThreshold: this.clusterThreshold,
       threads: this.threads,

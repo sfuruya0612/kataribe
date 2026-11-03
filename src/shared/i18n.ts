@@ -844,6 +844,11 @@ export const EN_MESSAGES = {
   '音声を OpenAI に送信しますか？': 'Send the audio to OpenAI?',
   '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。':
     'Destination: {host}\nModel: {model}\nAudio duration: {minutes} min\nChunks: {chunks}\n\nThe audio file leaves this device. Only the transcription audio is sent; the meeting title and save path are not sent.',
+  '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n音声: {audio}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。':
+    'Destination: {host}\nModel: {model}\nAudio duration: {minutes} min\nChunks: {chunks}\nAudio: {audio}\n\nThe audio file leaves this device. Only the transcription audio is sent; the meeting title and save path are not sent.',
+  '強調した音声（失敗したときは生の音声）':
+    'Enhanced audio (raw audio if enhancement fails)',
+  '生の音声': 'Raw audio',
   '送信': 'Send',
   'ローカルで続ける': 'Continue locally',
   'OpenAI への送信を取りやめ、ローカルの whisper で文字起こしをしています。':
@@ -945,6 +950,35 @@ export const EN_MESSAGES = {
   '前回の音声強調が中断されました。会議詳細から再実行してください。':
     'The previous speech enhancement was interrupted. Run it again from the meeting detail.',
   '録音停止後の保存音声の強調': 'Enhance saved audio after recording',
+  '文字起こし前の音声を強調する': 'Enhance audio before transcription',
+  '文字起こしの準備に失敗しました。': 'Could not prepare transcription.',
+  '文字起こし前の強調が OFF のため再実行できません。':
+    'The comparison cannot run because pre-transcription enhancement is off.',
+  '文字起こし前の音声を強調しています': 'Enhancing audio before transcription',
+  '文字起こしの比較': 'Transcript comparison',
+  '現在の文字起こし': 'Current transcript',
+  '生の文字起こし': 'Raw transcript',
+  '強調した文字起こし': 'Enhanced transcript',
+  '比較用の文字起こしです。読み取り専用で、検索、翻訳、要約、ToDo の入力には使いません。':
+    'This is a comparison transcript. It is read-only and is not used for search, translation, summary, or ToDo input.',
+  '比較用の文字起こしを表示している間は、編集、翻訳、話者名の変更はできません。':
+    'Editing, translation, and speaker changes are disabled while viewing a comparison transcript.',
+  'この要約と翻訳は以前の文字起こしに基づいています。要約と翻訳を再生成してください。':
+    'This summary and translation are based on an earlier transcript. Regenerate them.',
+  '文字起こし前の強調を再実行': 'Run pre-transcription enhancement again',
+  '既存の transcript.md を transcript.previous.md にコピーして上書きします。よろしいですか？':
+    'Copy the existing transcript.md to transcript.previous.md and replace it?',
+  '文字起こし前の強調を開始できませんでした: {error}':
+    'Could not start pre-transcription enhancement: {error}',
+  '文字起こし前の強調の再実行に失敗しました。以前の文字起こしを残しました。':
+    'Pre-transcription enhancement failed. The previous transcript was kept.',
+  '文字起こし前の強調が完了しました。': 'Pre-transcription enhancement completed.',
+  '生の音声で文字起こししています': 'Transcribing the raw audio',
+  '強調した音声で文字起こししています': 'Transcribing the enhanced audio',
+  '文字起こしの前に RE-USE を適用し、生と強調の文字起こしを保存して比較できます。既定は OFF です。':
+    'Apply RE-USE before transcription and keep the raw and enhanced transcripts for comparison. The default is off.',
+  'OpenAI の文字起こし API を選んだ場合は比較せず、強調に成功した音声または生の音声を 1 回だけ送ります。':
+    'With the OpenAI transcription API, Kataribe does not compare and sends either the enhanced audio or the raw audio once.',
   '録音停止後に保存する音声へ RE-USE を適用し、生の audio.mp3 と強調した audio.enhanced.nemotronlabs.mp3 を保存します。既定は OFF です。':
     'Apply RE-USE to the audio saved after recording and keep both the raw audio.mp3 and the enhanced audio.enhanced.nemotronlabs.mp3. The default is off.',
   '保存音声を強調しています': 'Enhancing the saved audio',

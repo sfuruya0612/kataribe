@@ -72,6 +72,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   summaryPromptTemplate: '',
   removeFillersBeforeSummary: true,
   enhanceSavedAudio: false,
+  enhanceBeforeTranscription: false,
   clippingConfig: { ...DEFAULT_CLIPPING_CONFIG },
   silenceConfig: { ...DEFAULT_SILENCE_CONFIG },
 };
@@ -200,6 +201,10 @@ export function normalizeAppSettings(
     typeof input?.enhanceSavedAudio === 'boolean'
       ? input.enhanceSavedAudio
       : DEFAULT_APP_SETTINGS.enhanceSavedAudio;
+  const enhanceBeforeTranscription =
+    typeof input?.enhanceBeforeTranscription === 'boolean'
+      ? input.enhanceBeforeTranscription
+      : DEFAULT_APP_SETTINGS.enhanceBeforeTranscription;
 
   return {
     inputSource,
@@ -221,6 +226,7 @@ export function normalizeAppSettings(
     summaryPromptTemplate,
     removeFillersBeforeSummary,
     enhanceSavedAudio,
+    enhanceBeforeTranscription,
     clippingConfig: normalizeClippingConfig(
       (input?.clippingConfig as ClippingConfig | undefined) ??
         DEFAULT_APP_SETTINGS.clippingConfig,

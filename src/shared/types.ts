@@ -160,6 +160,11 @@ export type RecordingErrorInfo = {
   at: string;
 };
 
+export type TranscriptComparison = {
+  raw: TranscriptDocument | null;
+  models: Partial<Record<ReuseModel, TranscriptDocument>>;
+};
+
 export type MeetingDetail = {
   meeting: MeetingSummary;
   recordingError: RecordingErrorInfo | null;
@@ -169,6 +174,7 @@ export type MeetingDetail = {
   speakers: string[];
   diarizationError: string | null;
   enhancement: EnhancementFile | null;
+  transcriptComparisons: TranscriptComparison;
   enhancementWarning: string | null;
 };
 export type MeetingSearchKind =
@@ -325,6 +331,7 @@ export type AppSettings = {
   summaryPromptTemplate: string;
   removeFillersBeforeSummary: boolean;
   enhanceSavedAudio: boolean;
+  enhanceBeforeTranscription: boolean;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };

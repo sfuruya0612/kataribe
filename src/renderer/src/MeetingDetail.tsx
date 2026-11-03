@@ -12,8 +12,13 @@ import type {
 import { AudioPlayer } from './AudioPlayer';
 import { EnhancementStatus } from './EnhancementStatus';
 import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
+import { StaleTranscriptNotice } from './StaleTranscriptNotice';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
+import {
+  TranscriptComparison,
+  type TranscriptView,
+} from './TranscriptComparison';
 import { useI18n, type I18nValue } from './i18n';
 import {
   errorText,
@@ -32,6 +37,7 @@ type MeetingDetailProps = {
   defaultSummaryLanguage: SummaryLanguage;
   whisperModel: 'large-v3-turbo' | 'medium' | 'small';
   transcriptionEngine: TranscriptionEngine;
+  enhanceBeforeTranscription: boolean;
   initialSeekSeconds: number | null;
   onUpdateSettings: (patch: {
     whisperModel?: 'large-v3-turbo' | 'medium' | 'small';
@@ -92,6 +98,7 @@ export function MeetingDetail({
   defaultSummaryLanguage,
   whisperModel,
   transcriptionEngine,
+  enhanceBeforeTranscription,
   initialSeekSeconds,
   onUpdateSettings,
   onBack,
@@ -124,6 +131,8 @@ export function MeetingDetail({
   const [transcriptLanguage, setTranscriptLanguage] = useState<
     'source' | SummaryLanguage
   >('source');
+  const [transcriptView, setTranscriptView] =
+    useState<TranscriptView>('current');
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
@@ -187,6 +196,7 @@ export function MeetingDetail({
     setPreview(null);
     setTranslationPreview(null);
     setTranscriptLanguage('source');
+    setTranscriptView('current');
     setTitleEditing(false);
     setSpeakerEditing(false);
     setSpeakerError(null);
@@ -284,8 +294,38 @@ export function MeetingDetail({
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
   const translations = detail?.translations ?? {};
+  const rawComparison = detail?.transcriptComparisons.raw ?? null;
+  const enhancedComparison =
+    detail?.transcriptComparisons.models.nemotronlabs ?? null;
+  const comparisonDocument =
+    transcriptView === 'raw'
+      ? rawComparison
+      : transcriptView === 'enhanced'
+        ? enhancedComparison
+        : null;
+  const comparisonReadOnly = comparisonDocument !== null;
+  const displayedTranscript = comparisonDocument ?? transcript;
   const displayedTranslation =
-    transcriptLanguage === 'source' ? null : translations[transcriptLanguage] ?? null;
+    comparisonReadOnly || transcriptLanguage === 'source'
+      ? null
+      : translations[transcriptLanguage] ?? null;
+  const transcriptForRender =
+    (comparisonReadOnly ? comparisonDocument : displayedTranslation ?? transcript) ??
+    { body: '' };
+  const staleSummary =
+    summary?.generatedAt !== null &&
+    summary?.generatedAt !== undefined &&
+    transcript?.updatedAt !== null &&
+    transcript?.updatedAt !== undefined &&
+    summary.generatedAt < transcript.updatedAt;
+  const staleTranslation = Object.values(translations).some(
+    (translation) =>
+      translation?.generatedAt !== null &&
+      translation?.generatedAt !== undefined &&
+      transcript?.updatedAt !== null &&
+      transcript?.updatedAt !== undefined &&
+      translation.generatedAt < transcript.updatedAt,
+  );
   const activeHere = processing.meetingId === meeting.id && processing.stage !== null;
   const processingError =
     processing.meetingId === meeting.id ? processing.error : null;
@@ -653,6 +693,30 @@ export function MeetingDetail({
     }
   };
 
+  const runTranscriptionComparison = async () => {
+    if (
+      !window.confirm(
+        t(
+          '既存の transcript.md を transcript.previous.md にコピーして上書きします。よろしいですか？',
+        ),
+      )
+    ) {
+      return;
+    }
+    try {
+      await window.kataribe.retryTranscriptionComparison(current.id);
+      setTranscriptView('current');
+      setNotice(null);
+      setError(null);
+    } catch (reason: unknown) {
+      setError(
+        t('文字起こし前の強調を開始できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    }
+  };
+
   const savedAudioBusy = activeHere && processing.stage === 'enhancing';
 
   const runSavedAudioEnhancement = async () => {
@@ -858,6 +922,16 @@ export function MeetingDetail({
               {t('文字起こしを再実行')}
             </button>
           ) : null}
+          {enhanceBeforeTranscription && transcript ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={activeHere}
+              onClick={() => void runTranscriptionComparison()}
+            >
+              {t('文字起こし前の強調を再実行')}
+            </button>
+          ) : null}
         </div>
         <SavedAudioEnhancementControls
           enabled={current.audioUrl !== null && !activeHere}
@@ -904,6 +978,10 @@ export function MeetingDetail({
       </div>
 
       <div className="detail-body">
+        <StaleTranscriptNotice
+          summaryStale={Boolean(staleSummary)}
+          translationStale={staleTranslation}
+        />
         <section className="transcript-pane" aria-labelledby="transcript-title">
           <div className="transcript-bar">
             <div className="seg" role="tablist" aria-label={t('会議の表示')}>
@@ -927,7 +1005,9 @@ export function MeetingDetail({
               </button>
             </div>
             <span className="detail-toolbar-spacer" />
-            {tab === 'transcript' && Object.keys(translations).length > 0 ? (
+            {tab === 'transcript' &&
+            !comparisonReadOnly &&
+            Object.keys(translations).length > 0 ? (
               <select
                 className="setting-input transcript-language-select"
                 value={transcriptLanguage}
@@ -944,7 +1024,7 @@ export function MeetingDetail({
                 ) : null}
               </select>
             ) : null}
-            {tab === 'transcript' && transcript
+            {tab === 'transcript' && !comparisonReadOnly && transcript
               ? translationCandidates.map((target) => (
                   <button
                     type="button"
@@ -965,6 +1045,7 @@ export function MeetingDetail({
               : null}
             {tab === 'transcript' &&
             !editing &&
+            !comparisonReadOnly &&
             transcript !== null &&
             (detail?.speakers.length ?? 0) >= 2 ? (
               <button
@@ -1000,7 +1081,12 @@ export function MeetingDetail({
                 <button
                   type="button"
                   className="link-button"
-                  disabled={!transcript || Boolean(displayedTranslation) || processing.stage !== null}
+                  disabled={
+                    !transcript ||
+                    Boolean(displayedTranslation) ||
+                    comparisonReadOnly ||
+                    processing.stage !== null
+                  }
                   onClick={startEditing}
                 >
                   {t('編集')}
@@ -1037,21 +1123,30 @@ export function MeetingDetail({
             )}
           </div>
 
+          {tab === 'transcript' ? (
+            <TranscriptComparison
+              value={transcriptView}
+              hasRaw={rawComparison !== null}
+              hasEnhanced={enhancedComparison !== null}
+              onChange={setTranscriptView}
+            />
+          ) : null}
+
           {loading ? (
             <div className="transcript-empty">
               <p className="muted">{t('読み込み中です...')}</p>
             </div>
           ) : tab === 'transcript' ? (
-            editing ? (
+            editing && !comparisonReadOnly ? (
               <textarea
                 className="transcript-editor"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 spellCheck={false}
               />
-            ) : transcript ? (
+            ) : displayedTranscript ? (
               <div className="transcript-scroll">
-                {(displayedTranslation?.partial ?? transcript.partial) ? (
+                {(displayedTranslation?.partial ?? displayedTranscript.partial) ? (
                   <p className="alert alert-warning">
                     {displayedTranslation
                       ? t('部分的な翻訳です。原文と対応していない行があります。')
@@ -1068,7 +1163,7 @@ export function MeetingDetail({
                       : ''}
                   </p>
                 ) : null}
-                {renderTranscript(displayedTranslation ?? transcript)}
+                {renderTranscript(transcriptForRender)}
               </div>
             ) : (
               <div className="transcript-empty">

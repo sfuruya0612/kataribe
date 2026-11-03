@@ -28,6 +28,7 @@ import {
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
 import type { ReuseSavedAudioService } from '../src/main/reuse-saved-audio';
+import type { ReuseEnhancementService } from '../src/main/reuse-enhancement';
 import type {
   TranscribeOptions,
   TranscriptionOutcome,
@@ -98,6 +99,9 @@ function createCoordinator(options: {
   complete: ReturnType<typeof vi.fn>;
   settings?: Partial<AppSettings>;
   reuseSavedAudio?: ReuseSavedAudioService;
+  reuseEnhancement?: ReuseEnhancementService;
+  mediaEncoder?: MediaEncoder;
+  transcriptionRunner?: TranscriptionRunner;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const states: string[] = [];
@@ -115,12 +119,14 @@ function createCoordinator(options: {
       hostMatches: () => true,
       getKey: async () => 'sk-test',
     } as unknown as ApiKeyStore,
-    mediaEncoder: {} as MediaEncoder,
+    mediaEncoder: options.mediaEncoder ?? ({} as MediaEncoder),
     transcriptionService: {} as TranscriptionService,
-    transcriptionRunner: {} as TranscriptionRunner,
+    transcriptionRunner:
+      options.transcriptionRunner ?? ({} as TranscriptionRunner),
     diarizationService: {} as DiarizationService,
     llmClient: { complete: options.complete } as unknown as LlmClient,
     reuseSavedAudio: options.reuseSavedAudio,
+    reuseEnhancement: options.reuseEnhancement,
     settings: () =>
       normalizeAppSettings({
         llmProfiles: [
@@ -549,6 +555,217 @@ describe('saved audio enhancement queue', () => {
   });
 });
 
+describe('transcription comparison flow', () => {
+  it('saves raw and enhanced snapshots and makes the enhanced result primary', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const outcome = (text: string): TranscriptionOutcome => ({
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    });
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: outcome(
+          options.audioWavPath.includes('enhanced')
+            ? 'enhanced text'
+            : 'raw text',
+        ),
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+    expect(
+      (await readFile(join(meetingDir, 'transcript.md'), 'utf8')).includes(
+        'enhanced text',
+      ),
+    ).toBe(true);
+    expect(
+      (await readFile(join(meetingDir, 'transcript.raw.md'), 'utf8')).includes(
+        'raw text',
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await readFile(join(meetingDir, 'transcript.nemotronlabs.md'), 'utf8')
+      ).includes('enhanced text'),
+    ).toBe(true);
+    const read = await readEnhancementFile(meetingDir);
+    expect(read.state).toBe('ok');
+    expect(
+      read.state === 'ok' ? read.file.transcription.raw.state : null,
+    ).toBe('succeeded');
+    expect(
+      read.state === 'ok'
+        ? read.file.transcription.models.nemotronlabs?.state
+        : null,
+    ).toBe('succeeded');
+    expect(
+      read.state === 'ok' ? read.file.transcription.primary : null,
+    ).toEqual({
+      source: 'nemotronlabs',
+      path: 'transcript.md',
+    });
+    const meta = await readMeetingMeta(join(meetingDir, 'meta.json'));
+    expect(meta.status).toBe('transcribed');
+    expect(meta.enhancement?.hasRawTranscript).toBe(true);
+    expect(meta.enhancement?.transcriptModels).toEqual(['nemotronlabs']);
+    expect(runner.plan).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the previous transcript when a re-run fails on one side', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    await writeFile(join(meetingDir, 'transcript.md'), 'OLD TRANSCRIPT');
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: options.audioWavPath.includes('enhanced')
+          ? {
+              state: 'failed' as const,
+              segments: [],
+              language: 'ja',
+              lastEndSeconds: 0,
+              durationSeconds: 1,
+              elapsedSeconds: 0.5,
+              errorCode: 'process-failed' as const,
+              error: 'enhanced failed',
+              resumed: false,
+            }
+          : {
+              state: 'completed' as const,
+              segments: [{ startSeconds: 0, endSeconds: 1, text: 'raw text' }],
+              language: 'ja',
+              lastEndSeconds: 1,
+              durationSeconds: 1,
+              elapsedSeconds: 0.5,
+              errorCode: null,
+              error: null,
+              resumed: false,
+            },
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscriptionComparison(meetingId);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toBe(
+      'OLD TRANSCRIPT',
+    );
+    expect(
+      await readFile(join(meetingDir, 'transcript.previous.md'), 'utf8'),
+    ).toBe('OLD TRANSCRIPT');
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+  });
+});
+
 describe('runDiarization', () => {
   const segments = [
     { startSeconds: 0, endSeconds: 1, text: 'one' },
@@ -573,6 +790,9 @@ describe('runDiarization', () => {
           audio_sha256: 'a'.repeat(64),
           segmentation_sha256: 'b'.repeat(64),
           embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
           speaker_count: 'auto',
           cluster_threshold: 0.9,
           threads: 4,
@@ -595,11 +815,14 @@ describe('runDiarization', () => {
     expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
     expect(result.cacheHit).toBe(true);
     expect(result.cache).toEqual({
-      schema_version: 1,
+      schema_version: 2,
       key: {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -711,6 +934,9 @@ function diarizationResult(
       audio_sha256: options.audioSha256 ?? 'a'.repeat(64),
       segmentation_sha256: 'b'.repeat(64),
       embedding_sha256: 'c'.repeat(64),
+      input_kind: options.inputKind ?? 'raw',
+      enhancement_model_sha256: options.enhancementModelSha256 ?? null,
+      enhancement_settings: options.enhancementSettings ?? null,
       speaker_count: options.numSpeakers,
       cluster_threshold: 0.9,
       threads: 4,
@@ -753,6 +979,9 @@ async function createDiarizationMeeting() {
       audio_sha256: audioHash,
       segmentation_sha256: 'b'.repeat(64),
       embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
       speaker_count: 'auto',
       cluster_threshold: 0.9,
       threads: 4,

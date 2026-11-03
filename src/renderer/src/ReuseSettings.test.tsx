@@ -32,6 +32,7 @@ function render(
   gpu: ReuseGpuStatus = availableGpu,
   locale: 'ja' | 'en' = 'ja',
   savedAudioEnabled = false,
+  transcriptionEnabled = false,
 ): string {
   return renderToStaticMarkup(
     createElement(I18nProvider, {
@@ -40,10 +41,12 @@ function render(
         models,
         gpu,
         savedAudioEnabled,
+        transcriptionEnabled,
         busy: null,
         error: null,
         notice: null,
         onToggleSavedAudio: () => undefined,
+        onToggleTranscription: () => undefined,
         onDownload: () => undefined,
         onCancel: () => undefined,
         onDelete: () => undefined,
@@ -79,6 +82,18 @@ describe('req_enhance_001_reuse_settings', () => {
     const html = render(modelList, availableGpu, 'ja', true);
     expect(html).toMatch(
       /<strong>録音停止後の保存音声の強調<\/strong>[\s\S]*?type="checkbox" checked=""/,
+    );
+  });
+
+  it('renders the pre-transcription enhancement setting', () => {
+    const off = render(modelList);
+    expect(off).toContain('文字起こし前の音声を強調する');
+    expect(off).toMatch(
+      /<strong>文字起こし前の音声を強調する<\/strong>[\s\S]*?type="checkbox"\/>/,
+    );
+    const on = render(modelList, availableGpu, 'ja', false, true);
+    expect(on).toMatch(
+      /<strong>文字起こし前の音声を強調する<\/strong>[\s\S]*?type="checkbox" checked=""/,
     );
   });
 
