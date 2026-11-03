@@ -17,6 +17,7 @@ GitHub のリポジトリ名もアプリ名と同じ `kataribe` にします。
 M0 のシステム音声検証は完了しています。
 会議一覧、会議詳細の波形プレイヤー、設定画面のタブと設定値の保存は実装済みです。
 録音停止後の mp3 変換、16 kHz WAV の生成、whisper.cpp による文字起こし、whisper モデルのダウンロード、API キーの Keychain 保存、LLM による要約を実装済みです。
+RE-USE の商用モデルのダウンロードと WebGPU 音声強調エンジンも実装済みです。
 OpenAI の文字起こし API をローカルの whisper.cpp と切り替えて使えます。要約の前に相槌と擬音を除く前処理にも対応しています。
 文字起こしの翻訳、話者分離（2〜10 人）、全文検索、保存先の変更、会議タイトルの編集、Multi-Output Device の自動作成も実装済みです。
 mp3 のビットレート設定、会議ごとの要約言語、検索結果からの音声ジャンプ、処理速度の学習、既存音声の取り込み、要約プロンプトの編集にも対応しています。
@@ -49,6 +50,7 @@ GitHub Releases で署名なしの開発版 DMG（arm64）を配布していま�
 
 - macOS 14.2 Sonoma 以降を目標
 - Apple Silicon
+- 音声強調を使う場合は WebGPU と約 38.6 MB のモデル
 - 検証済み: macOS 26.7.1 (25G241)、arm64
 - Intel Mac は対象外
 - BlackHole 2ch 0.7.1 で検証済み
@@ -196,6 +198,7 @@ npm run typecheck
 npm test
 npm run build
 npm run smoke
+npm run smoke:reuse -- /path/to/model.safetensors
 npm run test:window
 npm run package
 npm run verify:mac
@@ -286,7 +289,7 @@ BlackHole 2ch のセットアップ手順は、設定画面から README を開�
 
 1. 「一般」タブで保存先、外観（システム / ライト / ダーク）、UI の言語（日本語 / English）を変更できます。外観の既定はシステムで、macOS の設定に追従します。UI の言語の既定は日本語で、変更すると画面、メニューバー、アプリケーションメニュー、確認ダイアログ、エラーメッセージにすぐ反映されます。保存先の変更後、既存の会議は新しい一覧に表示されません。
 2. 「録音」タブで話者分離の有無、話者数、話者分離モデルのダウンロード、mp3 のビットレート（64 / 128 kbps）、Multi-Output Device の自動作成を設定できます。
-3. 「文字起こし」タブで文字起こしエンジンを選びます。既定はローカルの whisper.cpp です。ローカルを選んだ場合はモデルをダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。用語集を initial prompt として指定できます。OpenAI API を選んだ場合は ChatGPT のプロファイルとモデルを選びます。API キーは「要約」タブの ChatGPT プロファイルに保存します。
+3. 「文字起こし」タブで文字起こしエンジンを選びます。既定はローカルの whisper.cpp です。ローカルを選んだ場合はモデルをダウンロードします。large-v3-turbo は約 1.6 GB です。ダウンロードは `.part` ファイルに書き、HTTP Range で再開できます。SHA-256 を照合してから保存します。用語集を initial prompt として指定できます。OpenAI API を選んだ場合は ChatGPT のプロファイルとモデルを選びます。API キーは「要約」タブの ChatGPT プロファイルに保存します。「音声強調 (RE-USE)」から商用モデルをダウンロードできます。WebGPU が使えない環境では理由が表示され、音声強調は無効になります。ライセンス本文はアプリメニューの「ライセンス」から開けます。
 4. 「要約」タブで LLM プロファイルを追加します。ID（一意の名前）、Provider、エンドポイント URL、モデル、API キーを 1 つの組み合わせとして保存し、ID ごとに保持します。プリセットは Claude、ChatGPT、Gemini、Ollama Cloud、Fireworks AI、カスタムです。プロファイルごとに API キーを保存できます。要約プロンプトと、要約の前に相槌と擬音を除くかどうかを設定できます。
 5. プロファイルの左のラジオボタンで、既定として使用するプロファイルを選びます。プロファイルが 1 つだけの場合は自動的に既定になります。
 6. API キーは macOS Keychain に保護された鍵で暗号化し、設定ファイルに平文を残しません。エンドポイントのホストを変更した場合は再入力が必要です。
@@ -329,7 +332,7 @@ OpenAI の文字起こし API を選んだ場合だけ、送信のたびに確�
 - `gpt-4o-transcribe` と `gpt-4o-mini-transcribe` は区間のタイムスタンプを返さないため、文字起こしの時刻は分割した区間の単位になります。音声位置への移動と検索の精度は `whisper-1` より粗くなります。
 - 相槌と擬音の除去は LLM の判断に依存します。文脈を持つ「なるほど」「はい」まで削除する場合があります。除去に失敗した区間は元の文字起こしを使います。
 - NVIDIA の RE-USE は、既定の文字起こし処理には採用していません。日本語の会議風音声では文字起こしの CER が改善せず、低い SNR では悪化しました。検証には商用利用が可能な `nvidia/NVIDIA-NemotronLabs-RE-USE` を使いました。先行モデルの `nvidia/RE-USE` は NSCLv1 が非商用の研究および教育目的に限るため、アプリの選択肢にしません。2 つのモデルの比較は、配布物の外で `docs/testing/reuse-speech-enhancement.md` の手順に従って行います。
-- 商用利用が可能なモデルを使う音声強調は、ADR-0027 で追加を決定しており、まだ実装されていません。実装後は、録音停止後の保存音声と文字起こし前の 2 点で ON/OFF でき、生の音声と文字起こしを残して比較できます。文字起こし前の強調を再実行するときは `transcript.md` を `transcript.previous.md` にコピーし、生と強調の両方が成功したときだけ `transcript.md` を置き換え、失敗またはキャンセルしたときは以前の結果を残します。OpenAI の文字起こし API では、強調の設定と成否に応じて強調音声または生音声を 1 回だけ送ります。処理中は会議一覧と会議詳細に音声強調中 (`enhancing`) が表示されます。
+- 商用利用が可能なモデルを使う音声強調は、ADR-0027 に従う。モデルのダウンロード、SHA-256 照合、WebGPU エンジン、音声の読み込みプロトコルを実装済みである。保存音声と文字起こし前の ON/OFF は issue 0025 と issue 0024 で追加する。処理中は会議一覧と会議詳細に音声強調中 (`enhancing`) が表示される。WebGPU が使えない環境では理由を表示し、音声強調を無効にする。
 
 ## トラブルシューティング
 
@@ -395,7 +398,7 @@ OpenAI の文字起こし API を選んだ場合だけ、送信のたびに確�
 - BlackHole 2ch の公式配布元: <https://existential.audio/blackhole/>
 - 同梱する whisper.cpp、sherpa-onnx、ONNX Runtime、FFmpeg、LAME のライセンスと著作権表示を `resources/licenses/` に置き、アプリの配布物の `Contents/Resources/licenses/` に含めます。
 - 話者分離モデルは初回利用時にダウンロードし、pyannote segmentation 3.0 (MIT) と 3D-Speaker ERes2Net Base (Apache-2.0) のライセンス表示を `resources/licenses/` に含めます。
-- RE-USE モデルは OpenMDW-1.1、WebGPU エンジンは MIT のライセンスに従います。実装時に `resources/licenses/` に追加し、アプリメニューと設定画面から開けるようにします。
+- RE-USE モデルは OpenMDW-1.1、WebGPU エンジンは MIT のライセンスに従います。`resources/licenses/` にライセンス本文を置き、アプリメニューと設定画面から開けます。
 - ビルドに含める外部ライブラリのライセンスも確認します。
 
 ## 開発

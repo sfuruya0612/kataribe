@@ -50,6 +50,9 @@ Kataribe は、会議 1 件を 1 つのフォルダにまとめ、mp3、文字�
 - 録音チャンクを結合した `audio.wav` は、処理中だけ会議フォルダに置き、保存音声の強調と、OFF のときの 16 kHz WAV の生成後に削除する。
   保存先がクラウド同期の対象の場合、処理中は `audio.wav` が同期され得る。
 - `enhancement.json` を音声強調の状態の正本とし、`meta.json` は会議一覧に必要な状態の要約だけを持つ。
+- 音声強調モデルの重みは、アプリに同梱せず、`~/Library/Application Support/Kataribe/models/reuse/nemotronlabs.safetensors` に置く。
+  初回利用時に Hugging Face から HTTPS でダウンロードし、SHA-256 を照合してから使う。
+  会議フォルダには置かない。
 - ファイルを会議データの **正本** とする。
   `meta.json`、`transcript.md`、`summary.md`、`diarization.json`、`enhancement.json` の内容が正であり、SQLite はそこから作る索引である。
   SQLite を削除しても、会議フォルダから索引を再構築できる。

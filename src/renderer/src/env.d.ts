@@ -1,6 +1,11 @@
 /// <reference types="vite/client" />
 
 import type { ClippingConfig } from '../../shared/clipping';
+import type {
+  EnhancementCancelMessage,
+  EnhancementStartMessage,
+  ReuseLicenseKind,
+} from '../../shared/reuse';
 import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
@@ -36,6 +41,9 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseModel,
+  ReuseModelList,
+  ReuseModelProgress,
   SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
@@ -181,6 +189,40 @@ declare global {
         model: WhisperModel,
       ) => Promise<WhisperModelList>;
       deleteWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
+      listReuseModels: () => Promise<ReuseModelList>;
+      downloadReuseModel: (model: ReuseModel) => Promise<ReuseModelList>;
+      cancelReuseModelDownload: (
+        model: ReuseModel,
+      ) => Promise<ReuseModelList>;
+      deleteReuseModel: (model: ReuseModel) => Promise<ReuseModelList>;
+      openReuseLicense: (kind: ReuseLicenseKind) => Promise<void>;
+      onReuseModelProgress: (
+        listener: (progress: ReuseModelProgress) => void,
+      ) => () => void;
+      onReuseModelsChanged: (
+        listener: (list: ReuseModelList) => void,
+      ) => () => void;
+      onEnhancementStart: (
+        listener: (message: EnhancementStartMessage) => void,
+      ) => () => void;
+      onEnhancementCancel: (
+        listener: (message: EnhancementCancelMessage) => void,
+      ) => () => void;
+      reportEnhancementProgress: (
+        requestId: string,
+        progress: number,
+      ) => Promise<void>;
+      sendEnhancementChunk: (
+        requestId: string,
+        index: number,
+        samples: Float32Array,
+      ) => Promise<void>;
+      reportEnhancementDone: (requestId: string) => Promise<void>;
+      reportEnhancementReady: () => Promise<void>;
+      reportEnhancementError: (
+        requestId: string,
+        message: string,
+      ) => Promise<void>;
       getDiarizationModelStatus: () => Promise<DiarizationModelStatus>;
       downloadDiarizationModels: () => Promise<DiarizationModelStatus>;
       cancelDiarizationModelDownload: () => Promise<DiarizationModelStatus>;

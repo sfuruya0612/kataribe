@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { access, mkdir, rm } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -48,6 +48,7 @@ import type {
   ThemeMode,
   WhisperModel,
 } from '../shared/types';
+import type { ReuseLicenseKind } from '../shared/reuse';
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
 import { ChildProcessRegistry } from './child-registry';
 import { DiarizationService } from './diarization';
@@ -65,6 +66,22 @@ import { configureChildProcessRegistry } from './process';
 import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
+import { ReuseEnhancementService } from './reuse-enhancement';
+import { runReuseSmokeTest } from './reuse-smoke';
+import {
+  REUSE_MODEL_DEFINITIONS,
+  ReuseModelManager,
+  isReuseModel,
+} from './reuse-models';
+import { reuseLicenseMenuItems } from './reuse-menu';
+import {
+  REUSE_PROTOCOL_PRIVILEGES,
+  REUSE_PROTOCOL_SCHEMES,
+  ReuseTempTokenStore,
+  isReuseLicenseKind,
+  registerReuseProtocols,
+  reuseLicensePath,
+} from './reuse-protocol';
 import { MeetingSearchIndex } from './search-index';
 import { SettingsStore } from './settings';
 import { listMeetingTodos, setMeetingTodoChecked } from './todos';
@@ -78,6 +95,8 @@ import { TrayController } from './tray';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
 const isWindowTest = process.env.KATARIBE_WINDOW_TEST === '1';
+const isReuseSmokeTest = process.env.KATARIBE_REUSE_SMOKE_TEST === '1';
+const reuseSmokeModelPath = process.env.KATARIBE_REUSE_SMOKE_MODEL_PATH;
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 const BLACKHOLE_URL = 'https://existential.audio/blackhole/';
 
@@ -89,8 +108,26 @@ let isQuitting = false;
 let shutdownInProgress = false;
 let stateTimer: NodeJS.Timeout | null = null;
 let processingCoordinator: ProcessingCoordinator | null = null;
+let reuseEnhancementService: ReuseEnhancementService | null = null;
 let activeMeetingIndex: MeetingSearchIndex | null = null;
 let meetingIndexRoot = '';
+let enhancementBridgeReady = false;
+const enhancementBridgeWaiters: Array<() => void> = [];
+
+function waitForEnhancementBridge(): Promise<void> {
+  if (enhancementBridgeReady) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolveBridge, rejectBridge) => {
+    const timer = setTimeout(() => {
+      rejectBridge(new Error('the enhancement bridge did not become ready'));
+    }, 5000);
+    enhancementBridgeWaiters.push(() => {
+      clearTimeout(timer);
+      resolveBridge();
+    });
+  });
+}
 
 const electronFetch: typeof fetch = (input, init) => {
   const value =
@@ -131,6 +168,10 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  ...REUSE_PROTOCOL_SCHEMES.map((scheme) => ({
+    scheme,
+    privileges: REUSE_PROTOCOL_PRIVILEGES,
+  })),
 ]);
 
 const stateStore = new RecordingStateStore({
@@ -175,6 +216,34 @@ async function broadcastModelList(modelManager: ModelManager): Promise<void> {
     console.error(
       `failed to broadcast model list: ${error instanceof Error ? error.message : String(error)}`,
     );
+  }
+}
+
+async function broadcastReuseModelList(
+  modelManager: ReuseModelManager,
+): Promise<void> {
+  try {
+    broadcast('reuse:models-changed', await modelManager.list());
+  } catch (error) {
+    console.error(
+      `failed to broadcast reuse model list: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function openReuseLicense(kind: ReuseLicenseKind): Promise<void> {
+  if (!isReuseLicenseKind(kind)) {
+    throw new Error('invalid reuse license kind');
+  }
+  const error = await shell.openPath(
+    reuseLicensePath(kind, {
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
+  );
+  if (error) {
+    throw new Error(error);
   }
 }
 
@@ -294,6 +363,17 @@ function registerAppMenu(): void {
           click: () => app.showAboutPanel(),
         },
         { type: 'separator' },
+        {
+          label: t('ライセンス'),
+          submenu: reuseLicenseMenuItems((kind) => {
+            void openReuseLicense(kind).catch((error: unknown) => {
+              console.error(
+                `failed to open the ${kind} license: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
+          }),
+        },
+        { type: 'separator' },
         { role: 'hide', label: t('Kataribe を隠す') },
         { role: 'hideOthers', label: t('ほかのアプリを隠す') },
         { role: 'unhide', label: t('すべてを表示') },
@@ -375,6 +455,7 @@ function createWindow(): BrowserWindow {
     console.log('main window closed');
     mainWindow = null;
     rendererReady = false;
+    void reuseEnhancementService?.cancel();
     const status = stateStore.getStatus();
     if (
       !isQuitting &&
@@ -393,6 +474,7 @@ function createWindow(): BrowserWindow {
     if (!hasLoadedRenderer || isQuitting) {
       return;
     }
+    void reuseEnhancementService?.cancel();
     const status = stateStore.getStatus();
     if (status !== 'starting' && status !== 'recording' && status !== 'stopping') {
       return;
@@ -411,6 +493,7 @@ function createWindow(): BrowserWindow {
 
   window.webContents.on('render-process-gone', (_event, details) => {
     rendererReady = false;
+    void reuseEnhancementService?.cancel();
     if (isQuitting) {
       return;
     }
@@ -525,6 +608,8 @@ function registerIpc(
   processing: ProcessingCoordinator,
   modelManager: ModelManager,
   diarizationModelManager: DiarizationModelManager,
+  reuseModelManager: ReuseModelManager,
+  reuseEnhancement: ReuseEnhancementService,
   llmProfileManager: LlmProfileManager,
   multiOutput: MultiOutputController,
 ): void {
@@ -988,6 +1073,99 @@ function registerIpc(
     return list;
   });
 
+  ipcMain.handle('reuse:list-models', () => reuseModelManager.list());
+
+  ipcMain.handle('reuse:download-model', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    void reuseModelManager
+      .download(model)
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        console.error(
+          `reuse model download failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        void broadcastReuseModelList(reuseModelManager);
+      });
+    return reuseModelManager.list();
+  });
+
+  ipcMain.handle('reuse:cancel-download', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    reuseModelManager.cancel(model);
+    return reuseModelManager.list();
+  });
+
+  ipcMain.handle('reuse:delete-model', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    await reuseModelManager.delete(model);
+    const list = await reuseModelManager.list();
+    broadcast('reuse:models-changed', list);
+    return list;
+  });
+
+  ipcMain.handle('reuse:open-license', async (_event, kind: unknown) => {
+    if (!isReuseLicenseKind(kind)) {
+      throw new Error('invalid reuse license kind');
+    }
+    await openReuseLicense(kind);
+  });
+
+  ipcMain.handle(
+    'enhancement:progress',
+    (_event, requestId: unknown, progress: unknown) => {
+      if (typeof requestId !== 'string' || typeof progress !== 'number') {
+        throw new Error('invalid enhancement progress');
+      }
+      reuseEnhancement.handleProgress(requestId, progress);
+    },
+  );
+
+  ipcMain.handle(
+    'enhancement:chunk',
+    async (
+      _event,
+      requestId: unknown,
+      index: unknown,
+      samples: unknown,
+    ) => {
+      if (
+        typeof requestId !== 'string' ||
+        typeof index !== 'number' ||
+        !(samples instanceof Float32Array)
+      ) {
+        throw new Error('invalid enhancement chunk');
+      }
+      await reuseEnhancement.handleChunk(requestId, index, samples);
+    },
+  );
+
+  ipcMain.handle('enhancement:done', async (_event, requestId: unknown) => {
+    if (typeof requestId !== 'string') {
+      throw new Error('invalid enhancement request');
+    }
+    await reuseEnhancement.handleDone(requestId);
+  });
+
+  ipcMain.handle(
+    'enhancement:error',
+    (_event, requestId: unknown, message: unknown) => {
+      if (typeof requestId !== 'string' || typeof message !== 'string') {
+        throw new Error('invalid enhancement error');
+      }
+      reuseEnhancement.handleError(requestId, message);
+    },
+  );
+
   ipcMain.handle('diarization:model-status', () => diarizationModelManager.status());
 
   ipcMain.handle('diarization:model-download', async () => {
@@ -1410,8 +1588,42 @@ function registerIpc(
     shell.showItemInFolder(meetingDir);
   });
 
+  ipcMain.handle('enhancement:ready', () => {
+    enhancementBridgeReady = true;
+    for (const resolveBridge of enhancementBridgeWaiters.splice(0)) {
+      resolveBridge();
+    }
+  });
+
   ipcMain.on('app:renderer-ready', () => {
     rendererReady = true;
+    if (isReuseSmokeTest) {
+      void runReuseSmokeTest({
+        service: reuseEnhancement,
+        modelManager: reuseModelManager,
+        outputDir: join(app.getPath('userData'), 'tmp'),
+        model: 'nemotronlabs',
+        waitForBridge: waitForEnhancementBridge,
+      })
+        .then((result) => {
+          console.log(
+            `KATARIBE_REUSE_SMOKE_TEST_OK ${JSON.stringify(result)}`,
+          );
+          app.exit(0);
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (/webgpu|gpu|adapter|buffer/iu.test(message)) {
+            console.log(`KATARIBE_REUSE_SMOKE_TEST_SKIPPED ${message}`);
+            app.exit(0);
+            return;
+          }
+          console.error(`KATARIBE_REUSE_SMOKE_TEST_FAILED ${message}`);
+          app.exit(1);
+        });
+      return;
+    }
     if (!isSmokeTest) {
       return;
     }
@@ -1455,6 +1667,7 @@ if (!app.requestSingleInstanceLock()) {
     trayController = null;
     activeMeetingIndex?.close();
     activeMeetingIndex = null;
+    void reuseEnhancementService?.cancel();
     const coordinator = processingCoordinator;
     processingCoordinator = null;
     if (coordinator) {
@@ -1514,6 +1727,39 @@ if (!app.requestSingleInstanceLock()) {
         broadcast('diarization:models-changed', null);
       },
     });
+    const reuseModelManager = new ReuseModelManager({
+      modelsDir: reuseSmokeModelPath
+        ? dirname(reuseSmokeModelPath)
+        : join(app.getPath('userData'), 'models', 'reuse'),
+      definitions: reuseSmokeModelPath
+        ? [{ ...REUSE_MODEL_DEFINITIONS[0], fileName: basename(reuseSmokeModelPath) }]
+        : undefined,
+      fetch: electronFetch,
+      onProgress: (progress) => {
+        broadcast('reuse:model-progress', progress);
+      },
+      onChange: () => {
+        void broadcastReuseModelList(reuseModelManager);
+      },
+    });
+    const reuseTempTokens = new ReuseTempTokenStore();
+    const reuseEnhancement = new ReuseEnhancementService({
+      tempTokens: reuseTempTokens,
+      modelManager: reuseModelManager,
+      sendStart: (message) => {
+        if (!mainWindow || mainWindow.isDestroyed() || !rendererReady) {
+          return false;
+        }
+        mainWindow.webContents.send('enhancement:start', message);
+        return true;
+      },
+      sendCancel: (message) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('enhancement:cancel', message);
+        }
+      },
+    });
+    reuseEnhancementService = reuseEnhancement;
     const secretCrypto: SecretCrypto = {
       isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
       encrypt: (plainText) => safeStorage.encryptStringAsync(plainText),
@@ -1652,6 +1898,11 @@ if (!app.requestSingleInstanceLock()) {
     });
     activeRecordingManager = recordingManager;
     registerAudioProtocol(meetingStore);
+    registerReuseProtocols({
+      protocol,
+      tempTokens: reuseTempTokens,
+      modelManager: reuseModelManager,
+    });
     registerIpc(
       recordingManager,
       meetingStore,
@@ -1659,6 +1910,8 @@ if (!app.requestSingleInstanceLock()) {
       processing,
       modelManager,
       diarizationModelManager,
+      reuseModelManager,
+      reuseEnhancement,
       llmProfileManager,
       multiOutput,
     );

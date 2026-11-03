@@ -135,6 +135,33 @@ export type ProcessingState = {
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
 
+export const REUSE_MODELS = ['nemotronlabs'] as const;
+
+export type ReuseModel = (typeof REUSE_MODELS)[number];
+
+export type ReuseModelInfo = {
+  id: ReuseModel;
+  label: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+  downloading: boolean;
+  progress: number | null;
+  error: string | null;
+};
+
+export type ReuseModelList = {
+  models: ReuseModelInfo[];
+  modelsDir: string;
+};
+
+export type ReuseModelProgress = {
+  id: ReuseModel;
+  downloadedBytes: number;
+  totalBytes: number;
+  progress: number;
+};
+
 export type TranscriptionEngine = 'whisper-cpp' | 'openai';
 
 export type OpenAiTranscriptionModel =

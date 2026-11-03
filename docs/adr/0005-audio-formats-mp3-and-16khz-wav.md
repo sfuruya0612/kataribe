@@ -46,6 +46,9 @@ mp3 は非可逆圧縮なので、mp3 から作り直した wav は最初の wav
   会議のタイトルや日付はフォルダ名と `meta.json` に持たせ、音声ファイル名には入れない。
 - 録音停止後の保存音声の強調を ON にした会議では、派生音声として `audio.enhanced.nemotronlabs.mp3` を追加する (ADR-0027)。
   生の `audio.mp3` を正とし、`audio.enhanced.nemotronlabs.mp3` は派生ファイルとして扱う。
+- 音声強調は、入力のサンプルレートを保った 16-bit PCM モノラルの WAV を出力する。
+  ステレオの入力は左右を平均してモノラルにする。
+  強調の入力と出力は一時ファイルに置き、成功、失敗、キャンセルのいずれでも削除する。
 - 音声ファイルに ID3 タグは付けない。
   会議の情報は `meta.json` と `transcript.md`、`summary.md` の front matter に持たせる。
 

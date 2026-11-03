@@ -23,6 +23,7 @@ import { TopBar } from './TopBar';
 import { errorText } from './recording-utils';
 import { createLatestRequest } from './latest-request';
 import { useI18n } from './i18n';
+import { startEnhancementBridge } from './reuse/enhancement-client';
 import { useRecorder } from './use-recorder';
 
 type View = 'meetings' | 'detail' | 'todos' | 'recording' | 'settings' | 'search';
@@ -79,6 +80,8 @@ export default function App({
   useEffect(() => {
     setLocale(settings.uiLanguage);
   }, [setLocale, settings.uiLanguage]);
+
+  useEffect(() => startEnhancementBridge(), []);
 
   const refreshMeetings = useCallback(async () => {
     setMeetingsLoading(true);

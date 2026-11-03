@@ -3,6 +3,11 @@ import type { IpcRendererEvent } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
+  EnhancementCancelMessage,
+  EnhancementStartMessage,
+  ReuseLicenseKind,
+} from '../shared/reuse';
+import type {
   AppInfo,
   AppSettings,
   DiarizationModelProgress,
@@ -36,6 +41,9 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseModel,
+  ReuseModelList,
+  ReuseModelProgress,
   SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
@@ -231,6 +239,48 @@ const api = {
     ipcRenderer.invoke('models:cancel', model),
   deleteWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
     ipcRenderer.invoke('models:delete', model),
+  listReuseModels: (): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:list-models'),
+  downloadReuseModel: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:download-model', model),
+  cancelReuseModelDownload: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:cancel-download', model),
+  deleteReuseModel: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:delete-model', model),
+  openReuseLicense: (kind: ReuseLicenseKind): Promise<void> =>
+    ipcRenderer.invoke('reuse:open-license', kind),
+  onReuseModelProgress: (
+    listener: (progress: ReuseModelProgress) => void,
+  ): (() => void) => subscribe('reuse:model-progress', listener),
+  onReuseModelsChanged: (
+    listener: (list: ReuseModelList) => void,
+  ): (() => void) => subscribe('reuse:models-changed', listener),
+  onEnhancementStart: (
+    listener: (message: EnhancementStartMessage) => void,
+  ): (() => void) => subscribe('enhancement:start', listener),
+  onEnhancementCancel: (
+    listener: (message: EnhancementCancelMessage) => void,
+  ): (() => void) => subscribe('enhancement:cancel', listener),
+  reportEnhancementProgress: (
+    requestId: string,
+    progress: number,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:progress', requestId, progress),
+  sendEnhancementChunk: (
+    requestId: string,
+    index: number,
+    samples: Float32Array,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:chunk', requestId, index, samples),
+  reportEnhancementDone: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('enhancement:done', requestId),
+  reportEnhancementReady: (): Promise<void> =>
+    ipcRenderer.invoke('enhancement:ready'),
+  reportEnhancementError: (
+    requestId: string,
+    message: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:error', requestId, message),
   getDiarizationModelStatus: (): Promise<DiarizationModelStatus> =>
     ipcRenderer.invoke('diarization:model-status'),
   downloadDiarizationModels: (): Promise<DiarizationModelStatus> =>

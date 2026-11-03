@@ -26,6 +26,7 @@ import type {
 import { DiarizationSettings } from './DiarizationSettings';
 import { useI18n } from './i18n';
 import { errorText, formatBytes, type InputDevice } from './recording-utils';
+import { ReuseSettings } from './ReuseSettings';
 import { SummaryCleanupSetting } from './SummaryCleanupSetting';
 import { TranscriptionEngineSettings } from './TranscriptionEngineSettings';
 import type { PermissionState } from './use-recorder';
@@ -1115,6 +1116,8 @@ export function SettingsPanel({
             onUpdateSettings={onUpdateSettings}
             onOpenSummary={() => setTab('summary')}
           />
+
+          <ReuseSettings />
 
           <section className="settings-section">
             <p className="settings-label">{t('whisper.cpp モデル')}</p>

@@ -885,6 +885,34 @@ export const EN_MESSAGES = {
   '相槌と擬音を除いています': 'Removing fillers and interjections',
   '相槌と擬音を除いています（{index}/{total}）':
     'Removing fillers and interjections ({index}/{total})',
+  'ライセンス': 'License',
+  'WebGPU エンジン': 'WebGPU engine',
+  '音声強調モデル': 'Speech enhancement model',
+  '音声強調 (RE-USE)': 'Speech enhancement (RE-USE)',
+  'WebGPU': 'WebGPU',
+  '音声強調を実行できます。': 'Speech enhancement is available.',
+  'この環境は WebGPU に対応していません。':
+    'This environment does not support WebGPU.',
+  'WebGPU を利用できる GPU が見つかりません。':
+    'No GPU that supports WebGPU was found.',
+  'この GPU は音声強調モデルに必要な容量を満たしません。':
+    'This GPU does not meet the memory requirements for the speech enhancement model.',
+  'WebGPU の可用性を確認しています。': 'Checking WebGPU availability.',
+  '音声強調は端末内の WebGPU で実行し、音声を外部に送りません。WebGPU が使えないときは音声強調を無効にします。':
+    'Speech enhancement runs on the local WebGPU and never sends audio off the device. When WebGPU is unavailable, speech enhancement is disabled.',
+  'WebGPU エンジンのライセンス': 'WebGPU engine license',
+  '音声強調モデルのライセンス': 'Speech enhancement model license',
+  '商用利用が可能な NVIDIA NemotronLabs RE-USE だけを使います。モデルは初回利用時にダウンロードし、SHA-256 を照合してから使います。':
+    'Kataribe uses only the commercially usable NVIDIA NemotronLabs RE-USE model. The model is downloaded on first use and verified with SHA-256 before use.',
+  'モデル一覧を読み込んでいます...': 'Loading models...',
+  'ダウンロード中': 'Downloading',
+  'ダウンロード中 ({percent}%)': 'Downloading ({percent}%)',
+  '未取得 ({size})': 'Not downloaded ({size})',
+  '研究および教育用のモデルは、モデル一覧、設定、ダウンロードのいずれにも含めません。':
+    'Research and education models are not included in the model list, settings, or downloads.',
+  '音声強調モデルの状態を取得できませんでした: {error}':
+    'Could not load the speech enhancement model status: {error}',
+  'ライセンスを開けませんでした: {error}': 'Could not open the license: {error}',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;
@@ -899,6 +927,15 @@ export const INPUT_SOURCE_MESSAGE_KEYS: Record<InputSource, MessageKey> = {
   microphone: 'マイク',
   system: 'システム音声',
   both: 'マイク + システム音声',
+};
+
+export const REUSE_GPU_REASON_MESSAGE_KEYS: Record<
+  'no-api' | 'no-adapter' | 'limits',
+  MessageKey
+> = {
+  'no-api': 'この環境は WebGPU に対応していません。',
+  'no-adapter': 'WebGPU を利用できる GPU が見つかりません。',
+  limits: 'この GPU は音声強調モデルに必要な容量を満たしません。',
 };
 
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;

@@ -165,3 +165,7 @@
   - PRD に録音停止後と文字起こし前の音声強調の要求を追加し、データ設計、リスク、README を更新する
   - ADR-0005、0007、0010、0012、0013、0021 に、派生音声、`enhancing` 状態、一時ファイル、キャッシュキーを反映する
   - @shoichi.furuya
+- [ADD] RE-USE の商用モデルのダウンロード、SHA-256 検証、WebGPU 音声強調エンジン、専用 Worker、カスタムプロトコル、設定画面を追加する
+  - モデル一覧には商用利用が可能な `nemotronlabs` だけを表示し、研究および教育用モデルを含めない
+  - Range リクエストに対応した `kataribe-temp` と `kataribe-model` で音声とモデルを読む
+  - @shoichi.furuya

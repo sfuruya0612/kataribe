@@ -102,10 +102,10 @@ RE-USE は双方向 Mamba を使うオフラインモデルで、入力中の音
 モデルカードも、重なった発話では主話者を保持し、他の話者を抑制すると述べている。
 会議の音声は重なった発話を含むため、録音の入力時に適用するのは危険である。
 
-## WebGPU 実装での再検証の計画
+## WebGPU 実装での処理時間
 
-アプリには、`geronimi73/re-use-demo` の MIT ライセンスの WebGPU エンジンを同梱する計画である (ADR-0027)。
-この文書の数値は macOS の PyTorch 移植で測ったものであり、WebGPU エンジンでは同じ音声を使って再検証する予定である。
+アプリは `geronimi73/re-use-demo` の commit `0d54dca074597b111a8e8c78f6067a6fa0231f75` の WebGPU エンジンを同梱する (ADR-0027)。
+エンジンは 5 秒のチャンク、2.5 秒のホップ、0.5 秒のクロスフェードで音声を処理し、WAV を Range リクエストで読み、強調した PCM を逐次書き出す。
 
 配布物の外での再検証では、次の 2 つの重みを使う。
 どちらも同じ 9.6M パラメータの構成で、重みだけが異なる。
@@ -116,8 +116,27 @@ RE-USE は双方向 Mamba を使うオフラインモデルで、入力中の音
 | `nvidia/NVIDIA-NemotronLabs-RE-USE` | `https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE/resolve/31f82f2efad1095034492f236e8dac9239ba713b/model.safetensors` | `06badaf4029b297f97f7fe48d62990b48d5482608210df577354e0d4e0ed70e1` |
 | `nvidia/RE-USE` | `https://huggingface.co/nvidia/RE-USE/resolve/85575b770bcbe0da944f38d34feb390ec9e1a2b7/model.safetensors` | `87a4a970ce9aa79d5d92e71899ab034defcf13d93e5e4393ec0dc7db6d4ec048` |
 
-WebGPU エンジンは 44.1 kHz の音声で 2 秒あたり約 0.5 秒 (M3、非公式デモの実測) と報告されている。
-アプリでは 5 秒程度のチャンクに分け、16 kHz の文字起こし前強調と、44.1 kHz または 48 kHz の保存音声強調の両方を測る予定である。
+M4 Pro (48 GB)、macOS 27.2 で、2 秒の合成音声を 3 つのサンプルレートで処理した。
+値はモデルの初回読み込みを含まない処理時間である。
+60 分への線形外挿は、2 秒の処理時間を 1,800 倍した値である。
+
+| サンプルレート | 2 秒の処理時間 | 60 分への線形外挿 | PRD の目標 | 判定 |
+| --- | --- | --- | --- | --- |
+| 16 kHz | 455 ms | 13.7 分 | 15 分以内 | 目標内 |
+| 44.1 kHz | 708 ms | 21.2 分 | 25 分以内 | 目標内 |
+| 48 kHz | 747 ms | 22.4 分 | 25 分以内 | 目標内 |
+
+M1 と M3 では未測定である。
+同じ手順を次のコマンドで実行できる。
+引数には商用モデルの `model.safetensors` を渡す。
+
+```bash
+node scripts/reuse-smoke.cjs /path/to/model.safetensors
+```
+
+スクリプトは 3 つのサンプルレートで 2 秒の音声を強調し、出力が入力と異なること、サンプル数とサンプルレートが一致することを確認する。
+WebGPU を使えない環境では `KATARIBE_REUSE_SMOKE_TEST_SKIPPED` を表示し、能力ゲートとして終了する。
+
 アプリでは、保存音声の強調と文字起こし前の強調を別々に設定する。
 アプリでは商用モデルの結果を `audio.enhanced.nemotronlabs.mp3` と `transcript.nemotronlabs.md` に残し、生の音声と文字起こしも保存する。
 保存音声の強調を再実行すると、録音直後の結果は新しい結果で置き換わる。録音直後の結果と比べるときは、同じ `audio.mp3` から再実行する。
@@ -129,8 +148,8 @@ WebGPU エンジンは 44.1 kHz の音声で 2 秒あたり約 0.5 秒 (M3、非
 - 日本語の 1 種類の音声だけで検証した。英語や多言語の会議は含まない。
 - 知覚品質 (DNSMOS、PESQ、STOI) は計測していない。文字起こしの CER だけを比較した。
 - whisper.cpp の large-v3-turbo だけを比較した。small や medium では結果が変わる可能性がある。
-- macOS の非公式移植を使った。公式の NVIDIA GPU 実装や WebGPU 実装とは出力が異なる可能性がある。
-- WebGPU エンジンはまだアプリに同梱しておらず、アプリでの処理速度と出力は未検証である。
+- macOS の非公式移植と WebGPU エンジンで検証した。公式の NVIDIA GPU 実装とは出力が異なる可能性がある。
+- WebGPU エンジンの処理時間は M4 Pro で測った。M1 と M3 では未測定である。
 
 ## 再現手順
 
@@ -151,7 +170,7 @@ whisper-cli -m ggml-large-v3-turbo.bin -f enhanced/noisy.wav -l ja -oj -of asr
 `noisy.wav` は 16 kHz、モノラルの WAV を使う。
 長い音声は `--max-full-seconds` と `--chunk-seconds` で分割方法を変える。
 44.1 kHz または 48 kHz の音声を使う場合は、強調した後に 16 kHz へ変換してから whisper.cpp に渡す。
-WebGPU エンジンの再現手順は、エンジンをアプリに同梱した後にこの節へ追加する。
+WebGPU エンジンの処理時間は、上の `scripts/reuse-smoke.cjs` で再測定する。
 
 ## 再検討の条件
 

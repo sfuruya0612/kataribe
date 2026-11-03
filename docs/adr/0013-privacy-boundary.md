@@ -55,6 +55,8 @@ ADR と UI では「音声は端末外に出ない。文字起こしは、要約
 - Renderer では外部の Web コンテンツを読み込まない。
   CSP を設定し、開発時の Vite のサーバー以外の接続を許可しない。
   音声強調のモデルと一時ファイルは、許可したモデル ID とトークンだけを返すカスタムプロトコルで読み、CSP の `connect-src` に `kataribe-model:` と `kataribe-temp:` を追加する。
+  プロトコルは Range リクエストに対応し、期限切れのトークンと許可外のモデル ID を拒否する。
+  Worker から fetch するため、両スキームの `corsEnabled` を有効にする。
   Markdown の描画は raw HTML を無効にしたレンダラーとサニタイズを使い、`dangerouslySetInnerHTML` を使わない。
   外部画像と `javascript:`、`file:` のリンクを拒否し、CSP に `script-src 'self'`、`object-src 'none'`、`base-uri 'none'` を入れる。
   `will-navigate` と `setWindowOpenHandler` でアプリ内 URL 以外の遷移を拒否し、`shell.openExternal` は `http:` と `https:` だけを許可する。

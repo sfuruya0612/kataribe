@@ -55,3 +55,21 @@ Kataribe は、文字起こし、音声変換、話者分離のために次の�
 - ライセンス: LGPL
 - 著作権表示: `lame-LICENSE.txt`
 - 配布元: https://lame.sourceforge.io/
+
+## RE-USE の WebGPU エンジン
+
+- 出典: https://github.com/geronimi73/re-use-demo
+- Commit: 0d54dca074597b111a8e8c78f6067a6fa0231f75
+- 対象: STFT と iSTFT、safetensors の読み込み、重みのパッキング、WGSL カーネル、モデルの実行、チャンク処理
+- ライセンス: MIT
+- 著作権表示: `reuse-webgpu-engine-LICENSE.txt`
+
+## 音声強調モデル
+
+音声強調モデルは初回利用時にダウンロードし、アプリには同梱しません。
+
+- NVIDIA NemotronLabs RE-USE
+  - 配布元: https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE
+  - ライセンス: OpenMDW-1.1
+  - 著作権表示: `nvidia-nemotronlabs-re-use-LICENSE.txt`
+  - アプリが扱うのは商用利用が可能なこのモデルだけであり、研究および教育用の `nvidia/RE-USE` は含めない
