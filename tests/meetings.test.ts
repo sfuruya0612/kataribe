@@ -413,6 +413,30 @@ describe('MeetingStore', () => {
     await writeFile(join(meetingDir, 'transcript.md'), transcript);
     await writeFile(join(meetingDir, 'transcript.en.md'), translation);
     await writeFile(join(meetingDir, 'summary.md'), summary);
+    await writeFile(
+      join(meetingDir, 'transcript.raw.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '生の本文' }],
+      }),
+    );
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '強調の本文' }],
+      }),
+    );
 
     const updated = await store.updateTitle(id, '新しい 会議/タイトル');
     expect(updated.title).toBe('新しい 会議_タイトル');
@@ -427,6 +451,24 @@ describe('MeetingStore', () => {
     expect(await readFile(join(updated.meetingDir, 'summary.md'), 'utf8')).toContain(
       'title: 新しい 会議_タイトル',
     );
+    expect(
+      await readFile(join(updated.meetingDir, 'transcript.raw.md'), 'utf8'),
+    ).toContain('title: 新しい 会議_タイトル');
+    expect(
+      await readFile(join(updated.meetingDir, 'transcript.raw.md'), 'utf8'),
+    ).toContain('生の本文');
+    expect(
+      await readFile(
+        join(updated.meetingDir, 'transcript.nemotronlabs.md'),
+        'utf8',
+      ),
+    ).toContain('title: 新しい 会議_タイトル');
+    expect(
+      await readFile(
+        join(updated.meetingDir, 'transcript.nemotronlabs.md'),
+        'utf8',
+      ),
+    ).toContain('強調の本文');
     await expect(readFile(join(meetingDir, 'meta.json'), 'utf8')).rejects.toThrow();
   });
 
@@ -467,6 +509,18 @@ describe('MeetingStore', () => {
     await writeFile(join(meetingDir, 'transcript.md'), transcript);
     await writeFile(join(meetingDir, 'transcript.en.md'), translation);
     await writeFile(join(meetingDir, 'summary.md'), summary);
+    await writeFile(
+      join(meetingDir, 'transcript.raw.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '比較専用語' }],
+      }),
+    );
 
     const transcriptHit = await store.search('キャッシュ');
     expect(transcriptHit.hits[0]).toMatchObject({
@@ -486,6 +540,11 @@ describe('MeetingStore', () => {
     expect(titleHit.hits[0]).toMatchObject({ kind: 'title' });
     expect(await store.search('x')).toEqual({
       query: 'x',
+      hits: [],
+      truncated: false,
+    });
+    expect(await store.search('比較専用語')).toEqual({
+      query: '比較専用語',
       hits: [],
       truncated: false,
     });

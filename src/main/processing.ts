@@ -1415,15 +1415,16 @@ export class ProcessingCoordinator {
         }
       }
 
-      const selectedWav =
+      const enhancedForOpenAi =
         plan?.resolution.engine === 'openai' && comparisonRequested
-          ? (await this.enhanceTranscriptionWav(
+          ? await this.enhanceTranscriptionWav(
               meetingId,
               tempDir,
               transcriptionWav,
               controller,
-            )) ?? transcriptionWav
-          : transcriptionWav;
+            )
+          : { outputPath: null, error: null };
+      const selectedWav = enhancedForOpenAi.outputPath ?? transcriptionWav;
       if (plan?.resolution.engine === 'openai' && comparisonRequested) {
         await invalidateEnhancement(
           meeting.meetingDir,
@@ -1616,9 +1617,9 @@ export class ProcessingCoordinator {
     tempDir: string,
     transcriptionWav: string,
     controller: AbortController,
-  ): Promise<string | null> {
+  ): Promise<{ outputPath: string | null; error: string | null }> {
     if (!this.reuseEnhancement) {
-      return null;
+      return { outputPath: null, error: null };
     }
     const outputPath = join(tempDir, 'audio.16k.enhanced.wav');
     this.setState({
@@ -1640,16 +1641,15 @@ export class ProcessingCoordinator {
           this.setState({ ...this.state, progress });
         },
       });
-      return outputPath;
+      return { outputPath, error: null };
     } catch (error) {
       if (controller.signal.aborted) {
         throw error;
       }
-      console.error(
-        `pre-transcription enhancement failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`pre-transcription enhancement failed: ${message}`);
       await rm(outputPath, { force: true }).catch(() => undefined);
-      return null;
+      return { outputPath: null, error: message };
     }
   }
 
@@ -1739,17 +1739,17 @@ export class ProcessingCoordinator {
     });
     const enhancedWav = join(tempDir, 'audio.16k.enhanced.wav');
     let enhanced: TranscriptionOutcome | null = null;
-    const enhancedPath = await this.enhanceTranscriptionWav(
+    const enhancement = await this.enhanceTranscriptionWav(
       meetingId,
       tempDir,
       transcriptionWav,
       controller,
     );
-    if (enhancedPath) {
+    if (enhancement.outputPath) {
       enhanced = await this.runComparisonSnapshot({
         meetingId,
         tempDir,
-        audioWavPath: enhancedPath,
+        audioWavPath: enhancement.outputPath,
         durationSeconds: meta.duration,
         plan,
         controller,
@@ -2020,6 +2020,27 @@ export class ProcessingCoordinator {
         'transcript.nemotronlabs.md',
         true,
       );
+    } else if (enhancement.error) {
+      file.transcription.models.nemotronlabs = {
+        state: 'failed',
+        path: null,
+        input_sha256: sourceInputSha,
+        output_sha256: null,
+        model: plan.resolution.modelLabel,
+        model_sha256: getReuseModelDefinition('nemotronlabs').sha256,
+        settings: {
+          engine: 'whisper-cpp' as const,
+          whisper_model: plan.resolution.modelLabel,
+          chunk_seconds: 5,
+          hop_seconds: 2.5,
+          crossfade_seconds: 0.5,
+        },
+        chars: null,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        elapsed_seconds: null,
+        error: enhancement.error,
+      };
     } else {
       delete file.transcription.models.nemotronlabs;
     }

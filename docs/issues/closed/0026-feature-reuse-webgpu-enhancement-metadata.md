@@ -233,4 +233,4 @@ issue 0025 の保存音声の強調と、issue 0024 の文字起こし前の比�
 - `meta.json` の要約、`enhancing` 状態、会議一覧と会議詳細の表示、検索索引の列と migration、設定画面の使用量と削除を実装した。
 - 一時ファイルは成功、失敗、キャンセル、起動時に削除し、失敗、キャンセル、中断、比較セッションの未完了時は `chunks/` と `audio.16k.wav` を残す。
 - 空き容量の確認、入力音声、モデルの重み、比較セッションの入力が変わったときの無効化を実装した。
-- `npm run typecheck`、`npm test` (570 件)、`npm run build` が通る。
+- `npm run typecheck`、`npm test` (574 件)、`npm run build` が通る。
