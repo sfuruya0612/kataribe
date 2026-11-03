@@ -47,17 +47,20 @@ ADR と UI では「音声は端末外に出ない。文字起こしは、要約
 - アプリのログに残すのは、処理の種類、開始と終了の時刻、終了コード、HTTP ステータス、エラーの分類、使用したモデルとプロバイダ名とする。
   会議の本文と API キーは redaction の対象にする。
 - モデルのダウンロードは HTTPS で行い、チェックサムを照合する（ADR-0006）。
+  RE-USE の重みも Hugging Face から HTTPS で取得し、SHA-256 を照合する (ADR-0027)。
   モデルの入手元以外に、モデルの取得を目的とした接続を行わない。
+- 音声強調は端末内の WebGPU で実行し、音声を外部に送らない。
 - 自動更新を入れる場合は、更新の確認だけを行い、会議の内容を送らない。
   更新の確認の有無と、無効にする設定を提供するかは未決事項とする。
 - Renderer では外部の Web コンテンツを読み込まない。
   CSP を設定し、開発時の Vite のサーバー以外の接続を許可しない。
+  音声強調のモデルと一時ファイルは、許可したモデル ID とトークンだけを返すカスタムプロトコルで読み、CSP の `connect-src` に `kataribe-model:` と `kataribe-temp:` を追加する。
   Markdown の描画は raw HTML を無効にしたレンダラーとサニタイズを使い、`dangerouslySetInnerHTML` を使わない。
   外部画像と `javascript:`、`file:` のリンクを拒否し、CSP に `script-src 'self'`、`object-src 'none'`、`base-uri 'none'` を入れる。
   `will-navigate` と `setWindowOpenHandler` でアプリ内 URL 以外の遷移を拒否し、`shell.openExternal` は `http:` と `https:` だけを許可する。
   外部のリンクを開く場合は、アプリ内のブラウザではなく、macOS の既定のブラウザに渡す。
 - API キーは safeStorage で保存し、メインプロセスだけで復号する（ADR-0009）。
-- 保存先ルートが iCloud Drive、Dropbox、OneDrive、Google Drive、既知の Obsidian の同期フォルダなどの場合、最終成果物の音声と文字起こしが端末外に同期される。
+- 保存先ルートが iCloud Drive、Dropbox、OneDrive、Google Drive、既知の Obsidian の同期フォルダなどの場合、最終成果物の音声と文字起こし、および処理中の `audio.wav` が端末外に同期される。
   ADR-0010 の検出と警告に従い、利用者が明示的に選んだ場合だけ同期対象のルートを使う。
 - 会議データを暗号化して保存するかは未決事項とする。
   MVP では macOS の FileVault とファイルの権限に依存する。

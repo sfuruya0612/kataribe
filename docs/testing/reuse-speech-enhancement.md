@@ -2,7 +2,7 @@
 
 OpenAI の文字起こし API と相槌の除去を追加する前に、NVIDIA の音声強調モデル RE-USE を文字起こしの前処理に使う価値があるかを検証した。
 この文書は、検証の条件、結果、判断の根拠を残す。
-判断そのものは ADR-0026 が持つ。
+判断は ADR-0027 が改訂し、ADR-0026 の検証結果を維持する。
 
 ## 検証したモデル
 
@@ -11,12 +11,13 @@ NVIDIA は RE-USE の名前で 2 つのモデルを公開している。
 | モデル | ライセンス | 位置付け |
 | --- | --- | --- |
 | `nvidia/NVIDIA-NemotronLabs-RE-USE` | OpenMDW-1.1 | 商用利用が可能な公開モデル。9.6M パラメータ |
-| `nvidia/RE-USE` | NVIDIA One-Way Noncommercial License (NSCLv1) | 研究開発用の先行モデル。商用利用は不可 |
+| `nvidia/RE-USE` | NVIDIA One-Way Noncommercial License (NSCLv1) | 非商用の研究および教育用の先行モデル。商用利用は不可 |
 
-NSCLv1 の第 3.3 条は、Work とその派生作品の利用を「非商用の研究および教育目的のみ」に限る。
-個人の会議メモは、この「研究および教育目的」に含まれないと解釈するのが自然である。
-Kataribe を配布する場合に使えるのは、商用利用が可能な `NVIDIA-NemotronLabs-RE-USE` である。
-検証の中心には `NVIDIA-NemotronLabs-RE-USE` を使い、先行モデルは簡易比較だけ行った。
+NSCLv1 の第 3.3 条は、非商用を「non-commercial research and educational purposes only」と定義する。
+個人の会議メモは、この定義に含まれないと解釈するのが自然である。
+Kataribe を配布する場合に使えるのは、商用利用が可能な `nvidia/NVIDIA-NemotronLabs-RE-USE` である。
+アプリはこの商用モデルだけを扱う。先行モデルは配布物に含めず、2 つのモデルの比較はこの文書の手順で配布物の外に行う。
+検証の中心には `nvidia/NVIDIA-NemotronLabs-RE-USE` を使い、先行モデルは簡易比較だけ行った。
 
 公式の推論は Linux と NVIDIA Ampere の GPU を前提とする。
 macOS で動かすため、非公式の macOS 移植 [`yani-/re-use-mac-unofficial`](https://github.com/yani-/re-use-mac-unofficial) を commit `6d794f84097896ea0fcb36523e2fb998e23ec68d` で使った。
@@ -82,7 +83,7 @@ CER は、句読点、空白、話者ラベル、タイムスタンプ、相槌�
 | -5 dB | 0.2000 | 0.4333 | 0.4467 |
 
 先行モデルも、クリーン音声では同じで、低い SNR では文字起こしが悪化した。
-この比較は 34 秒の音声 1 本の簡易比較であり、先行モデルのライセンスは非商用の研究・教育目的に限られる。
+この比較は 34 秒の音声 1 本の簡易比較であり、先行モデルのライセンスは非商用の研究および教育目的に限られる。
 
 ## 結果の解釈
 
@@ -101,6 +102,27 @@ RE-USE は双方向 Mamba を使うオフラインモデルで、入力中の音
 モデルカードも、重なった発話では主話者を保持し、他の話者を抑制すると述べている。
 会議の音声は重なった発話を含むため、録音の入力時に適用するのは危険である。
 
+## WebGPU 実装での再検証の計画
+
+アプリには、`geronimi73/re-use-demo` の MIT ライセンスの WebGPU エンジンを同梱する計画である (ADR-0027)。
+この文書の数値は macOS の PyTorch 移植で測ったものであり、WebGPU エンジンでは同じ音声を使って再検証する予定である。
+
+配布物の外での再検証では、次の 2 つの重みを使う。
+どちらも同じ 9.6M パラメータの構成で、重みだけが異なる。
+アプリが使うのは上の商用モデルだけである。
+
+| モデル | 重みの URL | SHA-256 |
+| --- | --- | --- |
+| `nvidia/NVIDIA-NemotronLabs-RE-USE` | `https://huggingface.co/nvidia/NVIDIA-NemotronLabs-RE-USE/resolve/31f82f2efad1095034492f236e8dac9239ba713b/model.safetensors` | `06badaf4029b297f97f7fe48d62990b48d5482608210df577354e0d4e0ed70e1` |
+| `nvidia/RE-USE` | `https://huggingface.co/nvidia/RE-USE/resolve/85575b770bcbe0da944f38d34feb390ec9e1a2b7/model.safetensors` | `87a4a970ce9aa79d5d92e71899ab034defcf13d93e5e4393ec0dc7db6d4ec048` |
+
+WebGPU エンジンは 44.1 kHz の音声で 2 秒あたり約 0.5 秒 (M3、非公式デモの実測) と報告されている。
+アプリでは 5 秒程度のチャンクに分け、16 kHz の文字起こし前強調と、44.1 kHz または 48 kHz の保存音声強調の両方を測る予定である。
+アプリでは、保存音声の強調と文字起こし前の強調を別々に設定する。
+アプリでは商用モデルの結果を `audio.enhanced.nemotronlabs.mp3` と `transcript.nemotronlabs.md` に残し、生の音声と文字起こしも保存する。
+保存音声の強調を再実行すると、録音直後の結果は新しい結果で置き換わる。録音直後の結果と比べるときは、同じ `audio.mp3` から再実行する。
+モデルを切り替えた比較は、配布物の外でこの文書の手順に従って行う。
+
 ## 検証の限界
 
 - 単一話者の合成音声で検証した。複数話者、重なった発話、実会議の雑音は含まない。
@@ -108,6 +130,7 @@ RE-USE は双方向 Mamba を使うオフラインモデルで、入力中の音
 - 知覚品質 (DNSMOS、PESQ、STOI) は計測していない。文字起こしの CER だけを比較した。
 - whisper.cpp の large-v3-turbo だけを比較した。small や medium では結果が変わる可能性がある。
 - macOS の非公式移植を使った。公式の NVIDIA GPU 実装や WebGPU 実装とは出力が異なる可能性がある。
+- WebGPU エンジンはまだアプリに同梱しておらず、アプリでの処理速度と出力は未検証である。
 
 ## 再現手順
 
@@ -127,11 +150,12 @@ whisper-cli -m ggml-large-v3-turbo.bin -f enhanced/noisy.wav -l ja -oj -of asr
 
 `noisy.wav` は 16 kHz、モノラルの WAV を使う。
 長い音声は `--max-full-seconds` と `--chunk-seconds` で分割方法を変える。
-44.1 kHz の音声を使う場合は、強調した後に 16 kHz へ変換してから whisper.cpp に渡す。
+44.1 kHz または 48 kHz の音声を使う場合は、強調した後に 16 kHz へ変換してから whisper.cpp に渡す。
+WebGPU エンジンの再現手順は、エンジンをアプリに同梱した後にこの節へ追加する。
 
 ## 再検討の条件
 
-次のいずれかを満たしたときに、RE-USE の採用を再検討する。
+次のいずれかを満たしたときに、音声強調の機能を維持するか、既定の文字起こしに採用するかを再検討する。
 
 - 実際の会議音声で、強調なしより CER が小さくなることを複数の会議で確認する。
 - NVIDIA が Core ML または ONNX の公式な推論経路を提供する。
