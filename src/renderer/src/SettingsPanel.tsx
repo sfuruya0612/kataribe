@@ -24,6 +24,7 @@ import type {
   WhisperModelList,
 } from '../../shared/types';
 import { DiarizationSettings } from './DiarizationSettings';
+import { EnhancementStorage } from './EnhancementStorage';
 import { useI18n } from './i18n';
 import { errorText, formatBytes, type InputDevice } from './recording-utils';
 import { ReuseSettings } from './ReuseSettings';
@@ -1118,6 +1119,8 @@ export function SettingsPanel({
           />
 
           <ReuseSettings />
+
+          <EnhancementStorage />
 
           <section className="settings-section">
             <p className="settings-label">{t('whisper.cpp モデル')}</p>

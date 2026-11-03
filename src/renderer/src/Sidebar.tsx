@@ -33,7 +33,10 @@ export function Sidebar({
 }: SidebarProps) {
   const { locale, t } = useI18n();
   const processing = meetings.filter(
-    (meeting) => meeting.status === 'encoding' || meeting.status === 'transcribing',
+    (meeting) =>
+      meeting.status === 'encoding' ||
+      meeting.status === 'enhancing' ||
+      meeting.status === 'transcribing',
   ).length;
   const errors = meetings.filter((meeting) => meeting.status === 'error').length;
   const recording = meetings.filter((meeting) => meeting.status === 'recording').length;

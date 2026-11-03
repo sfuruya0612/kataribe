@@ -437,6 +437,8 @@ generated_at: 2026-10-26T15:05:12+09:00
 ```
 
 meta.json は処理の再開と再実行に使う。`status` は recording / encoding / enhancing / transcribing / transcribed / summarized / error のいずれかで、各段階の開始と終了の時刻、使ったモデルとプロバイダを持つ。
+音声強調の詳細は `enhancement.json` を正とし、`meta.json` の `enhancement` には、強調音声があるモデル、直近の保存音声の状態、生の比較用文字起こしの有無、比較用文字起こしがあるモデル、正にした文字起こしの種類だけを持つ。
+検索索引の会議の行には、強調音声があるモデル、生の比較用文字起こしの有無、比較用文字起こしがあるモデル、直近の音声強調の状態を持つ。
 
 ## 成功指標
 

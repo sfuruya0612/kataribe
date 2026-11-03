@@ -169,3 +169,7 @@
   - モデル一覧には商用利用が可能な `nemotronlabs` だけを表示し、研究および教育用モデルを含めない
   - Range リクエストに対応した `kataribe-temp` と `kataribe-model` で音声とモデルを読む
   - @shoichi.furuya
+- [ADD] 音声強調の状態を `enhancement.json` に集約し、`enhancing` 状態、一時ファイルの後始末、検索索引の要約列、会議詳細の状態表示、設定画面の使用量と削除を追加する
+  - 失敗、キャンセル、中断では再試行用の `chunks/` と `audio.16k.wav` を残し、強調 WAV とデコード WAV は削除する
+  - 入力音声、モデルの重み、比較セッションの入力が変わったときは古い派生物を削除する
+  - @shoichi.furuya

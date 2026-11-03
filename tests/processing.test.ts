@@ -20,6 +20,11 @@ import type { LlmClient } from '../src/main/llm';
 import type { EncodeOptions, MediaEncoder } from '../src/main/media';
 import { writeMeetingMeta, readMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
 import { MeetingStore } from '../src/main/meetings';
+import {
+  createEnhancementFile,
+  readEnhancementFile,
+  writeEnhancementFile,
+} from '../src/main/reuse-metadata';
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
 import type {
@@ -437,6 +442,50 @@ describe('ProcessingCoordinator interrupted recovery', () => {  it('marks unfini
     expect(updated.status).toBe('transcribed');
     expect(updated.transcription.state).toBe('completed');
     expect(updated.transcription.partial).toBe(false);
+  });
+
+  it('marks an interrupted enhancement and its enhancement.json entries', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.status = 'enhancing';
+    await writeFile(metaPath, JSON.stringify(meta));
+    const source = {
+      path: 'audio.mp3',
+      sha256: 'a'.repeat(64),
+      sample_rate: 48_000,
+      channels: 1,
+    };
+    const file = createEnhancementFile(source);
+    file.saved_audio.nemotronlabs = {
+      state: 'running',
+      model_sha256: 'b'.repeat(64),
+      input: source,
+      output: null,
+      settings: { chunk_seconds: 5, hop_seconds: 2.5, crossfade_seconds: 0.5 },
+      started_at: '2026-11-03T00:00:00.000Z',
+      finished_at: null,
+      elapsed_seconds: null,
+      error: null,
+    };
+    await writeEnhancementFile(meetingDir, file);
+
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    await coordinator.markInterruptedMeetings();
+
+    const updated = JSON.parse(await readFile(metaPath, 'utf8'));
+    expect(updated.status).toBe('error');
+    expect(updated.error).toContain('音声強調');
+    expect(updated.id).toBe(meetingId);
+    expect(updated.enhancement?.savedAudioState).toBe('interrupted');
+    const enhancement = await readEnhancementFile(meetingDir);
+    expect(enhancement.state).toBe('ok');
+    expect(
+      enhancement.state === 'ok'
+        ? enhancement.file.saved_audio.nemotronlabs?.state
+        : null,
+    ).toBe('interrupted');
   });
 });
 

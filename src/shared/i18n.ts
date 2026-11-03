@@ -1,4 +1,4 @@
-import type { InputSource, UiLanguage } from './types';
+import type { EnhancementState, InputSource, UiLanguage } from './types';
 
 export type MessageParams = Readonly<Record<string, string | number>>;
 
@@ -913,6 +913,37 @@ export const EN_MESSAGES = {
   '音声強調モデルの状態を取得できませんでした: {error}':
     'Could not load the speech enhancement model status: {error}',
   'ライセンスを開けませんでした: {error}': 'Could not open the license: {error}',
+  '音声強調中': 'Enhancing audio',
+  '音声強調をしています': 'Enhancing the audio',
+  '音声強調の状態': 'Speech enhancement status',
+  '保存音声の強調': 'Saved audio enhancement',
+  '文字起こし前の強調': 'Pre-transcription enhancement',
+  '実行中': 'Running',
+  '成功': 'Succeeded',
+  '失敗': 'Failed',
+  'キャンセル済み': 'Cancelled',
+  '中断': 'Interrupted',
+  '処理時間 {seconds} 秒': '{seconds} s processing time',
+  '使用モデル {model}': 'Model: {model}',
+  '音声強調はまだ実行されていません。':
+    'Speech enhancement has not run yet.',
+  '音声強調の状態を読み込めませんでした。':
+    'Could not load the speech enhancement status.',
+  '音声強調の状態を読み込めませんでした: {error}':
+    'Could not load the speech enhancement status: {error}',
+  '音声強調のディスク使用量': 'Speech enhancement disk usage',
+  '強調音声を削除': 'Delete enhanced audio',
+  '強調音声を削除します。よろしいですか？':
+    'Delete the enhanced audio files?',
+  '強調音声を削除しました。': 'Deleted the enhanced audio files.',
+  '強調音声を削除できませんでした: {error}':
+    'Could not delete the enhanced audio files: {error}',
+  '音声強調の使用量を取得できませんでした: {error}':
+    'Could not load the speech enhancement disk usage: {error}',
+  '{size} を使用しています。': 'Using {size}.',
+  '使用量を確認中...': 'Checking disk usage...',
+  '前回の音声強調が中断されました。会議詳細から再実行してください。':
+    'The previous speech enhancement was interrupted. Run it again from the meeting detail.',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;
@@ -927,6 +958,18 @@ export const INPUT_SOURCE_MESSAGE_KEYS: Record<InputSource, MessageKey> = {
   microphone: 'マイク',
   system: 'システム音声',
   both: 'マイク + システム音声',
+};
+
+export const ENHANCEMENT_STATE_MESSAGE_KEYS: Record<
+  EnhancementState,
+  MessageKey
+> = {
+  pending: '待機中',
+  running: '実行中',
+  succeeded: '成功',
+  failed: '失敗',
+  cancelled: 'キャンセル済み',
+  interrupted: '中断',
 };
 
 export const REUSE_GPU_REASON_MESSAGE_KEYS: Record<

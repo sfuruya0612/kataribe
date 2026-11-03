@@ -12,6 +12,7 @@ import type {
   AppSettings,
   DiarizationModelProgress,
   DiarizationModelStatus,
+  EnhancementFile,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -41,6 +42,7 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseDiskUsage,
   ReuseModel,
   ReuseModelList,
   ReuseModelProgress,
@@ -247,6 +249,12 @@ const api = {
     ipcRenderer.invoke('reuse:cancel-download', model),
   deleteReuseModel: (model: ReuseModel): Promise<ReuseModelList> =>
     ipcRenderer.invoke('reuse:delete-model', model),
+  getReuseEnhancement: (meetingId: string): Promise<EnhancementFile | null> =>
+    ipcRenderer.invoke('reuse:get-enhancement', meetingId),
+  getReuseDiskUsage: (): Promise<ReuseDiskUsage> =>
+    ipcRenderer.invoke('reuse:disk-usage'),
+  deleteReuseSavedAudio: (): Promise<ReuseDiskUsage> =>
+    ipcRenderer.invoke('reuse:delete-saved-audio'),
   openReuseLicense: (kind: ReuseLicenseKind): Promise<void> =>
     ipcRenderer.invoke('reuse:open-license', kind),
   onReuseModelProgress: (

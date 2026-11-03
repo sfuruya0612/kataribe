@@ -10,10 +10,81 @@ export type AppInfo = {
 export type MeetingStatus =
   | 'recording'
   | 'encoding'
+  | 'enhancing'
   | 'transcribing'
   | 'transcribed'
   | 'summarized'
   | 'error';
+
+export type EnhancementState =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+
+export type EnhancementAudioSource = {
+  path: string;
+  sha256: string;
+  sample_rate: number;
+  channels: number;
+};
+
+export type EnhancementSettings = {
+  chunk_seconds: number;
+  hop_seconds: number;
+  crossfade_seconds: number;
+};
+
+export type EnhancementSavedAudio = {
+  state: EnhancementState;
+  model_sha256: string;
+  input: EnhancementAudioSource;
+  output: { path: string; sha256: string } | null;
+  settings: EnhancementSettings;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  error: string | null;
+};
+
+export type EnhancementTranscriptionSettings = {
+  engine: TranscriptionEngine;
+  whisper_model: string;
+  chunk_seconds: number | null;
+  hop_seconds: number | null;
+  crossfade_seconds: number | null;
+};
+
+export type EnhancementTranscriptionEntry = {
+  state: EnhancementState;
+  path: string | null;
+  input_sha256: string;
+  output_sha256: string | null;
+  model: string | null;
+  model_sha256: string | null;
+  settings: EnhancementTranscriptionSettings;
+  chars: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  error: string | null;
+};
+
+export type EnhancementTranscription = {
+  source_input_sha256: string | null;
+  raw: EnhancementTranscriptionEntry;
+  models: Partial<Record<ReuseModel, EnhancementTranscriptionEntry>>;
+  primary: { source: 'raw' | ReuseModel; path: string | null };
+};
+
+export type EnhancementFile = {
+  schema_version: number;
+  source: EnhancementAudioSource;
+  saved_audio: Partial<Record<ReuseModel, EnhancementSavedAudio>>;
+  transcription: EnhancementTranscription;
+};
 
 export type MeetingSummary = {
   id: string;
@@ -32,6 +103,10 @@ export type MeetingSummary = {
   translationLanguages: SummaryLanguage[];
   summaryLanguage: SummaryLanguage | null;
   pinned: boolean;
+  enhancedModels: ReuseModel[];
+  hasRawTranscript: boolean;
+  transcriptModels: ReuseModel[];
+  enhancementState: EnhancementState | null;
 };
 
 /** 全会議の ToDo 一覧に表示する項目。 */
@@ -93,6 +168,8 @@ export type MeetingDetail = {
   translations: Partial<Record<SummaryLanguage, TranscriptTranslation>>;
   speakers: string[];
   diarizationError: string | null;
+  enhancement: EnhancementFile | null;
+  enhancementWarning: string | null;
 };
 export type MeetingSearchKind =
   | 'title'
@@ -119,6 +196,7 @@ export type MeetingSearchResult = {
 
 export type ProcessingStage =
   | 'encoding'
+  | 'enhancing'
   | 'transcribing'
   | 'translating'
   | 'summarizing';
@@ -160,6 +238,11 @@ export type ReuseModelProgress = {
   downloadedBytes: number;
   totalBytes: number;
   progress: number;
+};
+
+export type ReuseDiskUsage = {
+  bytes: number;
+  meetings: number;
 };
 
 export type TranscriptionEngine = 'whisper-cpp' | 'openai';

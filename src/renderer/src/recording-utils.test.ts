@@ -225,6 +225,7 @@ describe('meeting status helpers', () => {
   it('labels every meeting status', () => {
     expect(meetingStatusLabel('recording')).toBe('録音中');
     expect(meetingStatusLabel('encoding')).toBe('変換中');
+    expect(meetingStatusLabel('enhancing')).toBe('音声強調中');
     expect(meetingStatusLabel('transcribing')).toBe('文字起こし中');
     expect(meetingStatusLabel('transcribed')).toBe('文字起こし済み');
     expect(meetingStatusLabel('summarized')).toBe('要約済み');
@@ -234,6 +235,7 @@ describe('meeting status helpers', () => {
   it('req_ui_001_labels_every_meeting_status_in_english', () => {
     expect(meetingStatusLabel('recording', 'en')).toBe('Recording');
     expect(meetingStatusLabel('encoding', 'en')).toBe('Encoding');
+    expect(meetingStatusLabel('enhancing', 'en')).toBe('Enhancing audio');
     expect(meetingStatusLabel('transcribing', 'en')).toBe('Transcribing');
     expect(meetingStatusLabel('transcribed', 'en')).toBe('Transcribed');
     expect(meetingStatusLabel('summarized', 'en')).toBe('Summarized');

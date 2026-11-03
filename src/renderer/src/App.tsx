@@ -310,7 +310,9 @@ export default function App({
       case 'processing':
         return meetings.filter(
           (meeting) =>
-            meeting.status === 'encoding' || meeting.status === 'transcribing',
+            meeting.status === 'encoding' ||
+            meeting.status === 'enhancing' ||
+            meeting.status === 'transcribing',
         );
       case 'error':
         return meetings.filter((meeting) => meeting.status === 'error');

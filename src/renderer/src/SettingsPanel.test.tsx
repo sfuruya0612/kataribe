@@ -114,6 +114,21 @@ describe('req_trans_001_settings_panel_transcription_engine', () => {
   });
 });
 
+describe('req_enhance_001_settings_storage', () => {
+  it('renders the enhancement storage section in the transcription tab', () => {
+    const html = renderSettings('ja', {}, 'transcription');
+    expect(html).toContain('>音声強調のディスク使用量</p>');
+    expect(html).toContain('>使用量を確認中...</span>');
+    expect(html).toContain('>強調音声を削除</button>');
+  });
+
+  it('renders the English storage labels', () => {
+    const html = renderSettings('en', { uiLanguage: 'en' }, 'transcription');
+    expect(html).toContain('>Speech enhancement disk usage</p>');
+    expect(html).toContain('>Delete enhanced audio</button>');
+  });
+});
+
 describe('req_summary_002_settings_panel_cleanup', () => {
   it('renders the cleanup option checked by default', () => {
     const html = renderSettings('ja', {}, 'summary');

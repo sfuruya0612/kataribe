@@ -15,6 +15,10 @@ import {
   type DiarizationCache,
 } from '../src/main/diarization-cache';
 import { MeetingStore } from '../src/main/meetings';
+import {
+  createEnhancementFile,
+  writeEnhancementFile,
+} from '../src/main/reuse-metadata';
 import { listMeetingTodos, setMeetingTodoChecked } from '../src/main/todos';
 import { setUiLanguage } from '../src/main/i18n';
 import {
@@ -101,6 +105,41 @@ describe('MeetingStore', () => {
       chunkCount: 1,
     });
     expect(meetings[0].audioUrl).toContain('kataribe-audio://meeting/');
+  });
+
+  it('returns the enhancing status and the enhancement summary', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000e1';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'enhancing',
+      enhancement: {
+        savedAudioModels: ['nemotronlabs'],
+        savedAudioState: 'succeeded',
+        hasRawTranscript: true,
+        transcriptModels: ['nemotronlabs'],
+        primarySource: 'nemotronlabs',
+      },
+    });
+    const source = {
+      path: 'audio.mp3',
+      sha256: 'a'.repeat(64),
+      sample_rate: 48_000,
+      channels: 1,
+    };
+    await writeEnhancementFile(meetingDir, createEnhancementFile(source));
+
+    const meetings = await store.list();
+    expect(meetings[0]).toMatchObject({
+      id,
+      status: 'enhancing',
+      enhancedModels: ['nemotronlabs'],
+      hasRawTranscript: true,
+      transcriptModels: ['nemotronlabs'],
+      enhancementState: 'succeeded',
+    });
+    const detail = await store.detail(id);
+    expect(detail?.enhancement?.source).toEqual(source);
+    expect(detail?.enhancementWarning).toBeNull();
   });
 
   it('returns null when audio.wav is missing', async () => {

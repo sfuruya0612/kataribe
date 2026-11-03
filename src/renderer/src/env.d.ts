@@ -12,6 +12,7 @@ import type {
   AppSettings,
   DiarizationModelProgress,
   DiarizationModelStatus,
+  EnhancementFile,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -41,6 +42,7 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseDiskUsage,
   ReuseModel,
   ReuseModelList,
   ReuseModelProgress,
@@ -195,6 +197,11 @@ declare global {
         model: ReuseModel,
       ) => Promise<ReuseModelList>;
       deleteReuseModel: (model: ReuseModel) => Promise<ReuseModelList>;
+      getReuseEnhancement: (
+        meetingId: string,
+      ) => Promise<EnhancementFile | null>;
+      getReuseDiskUsage: () => Promise<ReuseDiskUsage>;
+      deleteReuseSavedAudio: () => Promise<ReuseDiskUsage>;
       openReuseLicense: (kind: ReuseLicenseKind) => Promise<void>;
       onReuseModelProgress: (
         listener: (progress: ReuseModelProgress) => void,

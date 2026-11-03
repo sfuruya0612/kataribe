@@ -22,6 +22,9 @@ import {
   type DiarizationCache,
 } from './diarization-cache';
 import type {
+  EnhancementAudioSource,
+  EnhancementFile,
+  EnhancementState,
   MeetingDetail,
   MeetingSearchHit,
   MeetingSearchResult,
@@ -29,11 +32,13 @@ import type {
   MeetingSummary,
   MeetingWaveform,
   RecordingErrorInfo,
+  ReuseModel,
   SummaryDocument,
   SummaryLanguage,
   TranscriptDocument,
   TranscriptTranslation,
 } from '../shared/types';
+import { REUSE_MODELS } from '../shared/types';
 import {
   readMeetingMeta,
   recordingErrorFromMeta,
@@ -41,16 +46,32 @@ import {
   writeMeetingMeta,
   type MeetingMeta,
 } from './meeting-meta';
+import { hashFile } from './asset-download';
+import {
+  readEnhancementFile,
+  rebuildEnhancementFile,
+  updateMetaEnhancement,
+  writeEnhancementFile,
+} from './reuse-metadata';
 import { getUiLanguage, t } from './i18n';
 import { readWavInfo } from './wav';
 
 const MEETING_STATUSES: MeetingStatus[] = [
   'recording',
   'encoding',
+  'enhancing',
   'transcribing',
   'transcribed',
   'summarized',
   'error',
+];
+const ENHANCEMENT_STATES: EnhancementState[] = [
+  'pending',
+  'running',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'interrupted',
 ];
 const INPUT_SOURCES = ['microphone', 'system', 'both'] as const;
 export const TRANSLATION_FILES: Array<{ language: SummaryLanguage; file: string }> = [
@@ -81,6 +102,19 @@ function toStatus(value: unknown): MeetingStatus {
   return MEETING_STATUSES.includes(value as MeetingStatus)
     ? (value as MeetingStatus)
     : 'error';
+}
+
+function reuseModelsFrom(value: unknown): ReuseModel[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return REUSE_MODELS.filter((model) => value.includes(model));
+}
+
+function enhancementStateFrom(value: unknown): EnhancementState | null {
+  return ENHANCEMENT_STATES.includes(value as EnhancementState)
+    ? (value as EnhancementState)
+    : null;
 }
 
 function toInputSource(value: unknown): MeetingSummary['inputSource'] {
@@ -179,9 +213,11 @@ function audioCandidate(meta: MeetingMeta, name: string): string | null {
 
 export class MeetingStore {
   private saveRoot: string;
+  private readonly tempRoot: string | null;
 
-  constructor(saveRoot: string) {
+  constructor(saveRoot: string, tempRoot?: string) {
     this.saveRoot = resolve(saveRoot);
+    this.tempRoot = tempRoot ? resolve(tempRoot) : null;
   }
 
   getSaveRoot(): string {
@@ -268,6 +304,10 @@ export class MeetingStore {
                 ? meta.summary_language
                 : null,
             pinned: meta.pinned === true,
+            enhancedModels: reuseModelsFrom(meta.enhancement?.savedAudioModels),
+            hasRawTranscript: meta.enhancement?.hasRawTranscript === true,
+            transcriptModels: reuseModelsFrom(meta.enhancement?.transcriptModels),
+            enhancementState: enhancementStateFrom(meta.enhancement?.savedAudioState),
           });
         } catch {
           // Ignore folders without a readable meta.json.
@@ -327,6 +367,7 @@ export class MeetingStore {
             cacheLabels,
             diarizationCache !== null,
           );
+    const enhancement = await this.readEnhancement(meeting.meetingDir, meta);
     return {
       meeting,
       recordingError,
@@ -338,7 +379,64 @@ export class MeetingStore {
         meta?.diarization?.state === 'failed'
           ? meta.diarization.error ?? t('話者分離に失敗しました。')
           : null,
+      enhancement: enhancement.file,
+      enhancementWarning: enhancement.warning,
     };
+  }
+
+  private async readEnhancement(
+    meetingDir: string,
+    meta: MeetingMeta | null,
+  ): Promise<{ file: EnhancementFile | null; warning: string | null }> {
+    const read = await readEnhancementFile(meetingDir);
+    if (read.state === 'ok') {
+      if (meta && !meta.enhancement) {
+        await updateMeetingMeta(join(meetingDir, 'meta.json'), (value) => {
+          updateMetaEnhancement(value, read.file);
+        }).catch(() => undefined);
+      }
+      return { file: read.file, warning: null };
+    }
+    if (read.state === 'missing' || !meta) {
+      return { file: null, warning: null };
+    }
+    const audioName =
+      typeof meta.audio_path === 'string' && meta.audio_path.length > 0
+        ? meta.audio_path
+        : 'audio.mp3';
+    let source: EnhancementAudioSource | null = null;
+    try {
+      source = {
+        path: audioName,
+        sha256: await hashFile(join(meetingDir, audioName)),
+        sample_rate: meta.sample_rate,
+        channels: 1,
+      };
+    } catch {
+      source = null;
+    }
+    if (!source) {
+      return {
+        file: null,
+        warning: `enhancement.json is broken and the source audio is missing: ${read.error}`,
+      };
+    }
+    const rebuilt = await rebuildEnhancementFile(meetingDir, source);
+    if (!rebuilt) {
+      return {
+        file: null,
+        warning: `enhancement.json is broken and could not be rebuilt: ${read.error}`,
+      };
+    }
+    await writeEnhancementFile(meetingDir, rebuilt).catch((error: unknown) => {
+      console.error(
+        `failed to rebuild enhancement.json: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    await updateMeetingMeta(join(meetingDir, 'meta.json'), (value) => {
+      updateMetaEnhancement(value, rebuilt);
+    }).catch(() => undefined);
+    return { file: rebuilt, warning: null };
   }
 
   async readTranscript(
@@ -586,6 +684,12 @@ export class MeetingStore {
       throw new Error(t('会議フォルダが保存先の外にあります。'));
     }
     await rm(meeting.meetingDir, { recursive: true, force: true });
+    if (this.tempRoot) {
+      await rm(join(this.tempRoot, meetingId), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+    }
   }
 
   async setSummaryLanguage(
@@ -646,6 +750,9 @@ export class MeetingStore {
       });
       for (const name of [
         'transcript.md',
+        'transcript.raw.md',
+        'transcript.nemotronlabs.md',
+        'transcript.previous.md',
         'transcript.ja.md',
         'transcript.en.md',
         'summary.md',

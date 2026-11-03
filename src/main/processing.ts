@@ -54,11 +54,17 @@ import {
   type MeetingMetaDiarization,
 } from './meeting-meta';
 import { TRANSLATION_FILES, type MeetingStore } from './meetings';
+import {
+  readEnhancementFile,
+  updateMetaEnhancement,
+  writeEnhancementFile,
+} from './reuse-metadata';
 import { generateSummary } from './summary';
 import { generateMeetingTitle } from './summary';
 import type { TranscriptionOutcome, TranscriptionService } from './transcription';
 import type { TranscriptionRunner } from './transcription-runner';
 import { translateTranscript } from './translation';
+import { cleanupMeetingTemp } from './reuse-cleanup';
 import { readWavInfo } from './wav';
 
 export type ProcessingCoordinatorOptions = {
@@ -353,13 +359,58 @@ export class ProcessingCoordinator {
   async markInterruptedMeetings(): Promise<void> {
     const meetings = await this.meetingStore.list();
     for (const meeting of meetings) {
-      if (meeting.status !== 'encoding' && meeting.status !== 'transcribing') {
+      if (
+        meeting.status !== 'encoding' &&
+        meeting.status !== 'enhancing' &&
+        meeting.status !== 'transcribing'
+      ) {
         continue;
       }
       const metaPath = join(meeting.meetingDir, 'meta.json');
       try {
         let completed = false;
-        await updateMeetingMeta(metaPath, (meta) => {
+        await updateMeetingMeta(metaPath, async (meta) => {
+          if (meta.status === 'enhancing') {
+            meta.status = 'error';
+            meta.error = t(
+              '前回の音声強調が中断されました。会議詳細から再実行してください。',
+            );
+            const read = await readEnhancementFile(meeting.meetingDir);
+            if (read.state === 'ok') {
+              const finishedAt = new Date().toISOString();
+              for (const entry of Object.values(read.file.saved_audio)) {
+                if (entry?.state === 'pending' || entry?.state === 'running') {
+                  entry.state = 'interrupted';
+                  entry.finished_at = finishedAt;
+                  entry.error = 'interrupted';
+                }
+              }
+              for (const entry of Object.values(read.file.transcription.models)) {
+                if (entry?.state === 'pending' || entry?.state === 'running') {
+                  entry.state = 'interrupted';
+                  entry.finished_at = finishedAt;
+                  entry.error = 'interrupted';
+                }
+              }
+              if (
+                read.file.transcription.raw.state === 'pending' ||
+                read.file.transcription.raw.state === 'running'
+              ) {
+                read.file.transcription.raw.state = 'interrupted';
+                read.file.transcription.raw.finished_at = finishedAt;
+                read.file.transcription.raw.error = 'interrupted';
+              }
+              try {
+                await writeEnhancementFile(meeting.meetingDir, read.file);
+              } catch (error) {
+                console.error(
+                  `failed to update enhancement.json after interruption: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
+              updateMetaEnhancement(meta, read.file);
+            }
+            return;
+          }
           if (meta.status === 'transcribing') {
             const lastEnd = meta.transcription?.last_segment_end ?? 0;
             if (lastEnd >= Math.max(0, meta.duration - 15)) {
@@ -1264,6 +1315,15 @@ export class ProcessingCoordinator {
       throw error;
     } finally {
       this.active = null;
+      await cleanupMeetingTemp(
+        this.tempRoot,
+        meetingId,
+        meeting.meetingDir,
+      ).catch((error: unknown) => {
+        console.error(
+          `failed to clean meeting temp files: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     }
   }
 

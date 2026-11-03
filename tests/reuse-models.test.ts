@@ -3,7 +3,7 @@
  * 対応する要求: REQ-ENHANCE-001
  */
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -222,6 +222,25 @@ describe('ReuseModelManager', () => {
     const list = await manager.list();
     expect(list.models[0].installed).toBe(false);
     expect(list.models[0].error).toContain('checksum mismatch');
+  });
+
+  it('deleting the model leaves existing meeting derivatives', async () => {
+    const data = Buffer.from('meeting model');
+    const fetchImpl = vi.fn(async () =>
+      streamResponse(data, 200, { 'content-length': String(data.length) }),
+    );
+    const { root, manager } = await createManager(
+      data,
+      {},
+      fetchImpl as unknown as typeof fetch,
+    );
+    await manager.download('nemotronlabs');
+    const meetingDir = join(root, 'meeting');
+    await mkdir(meetingDir, { recursive: true });
+    const enhanced = join(meetingDir, 'audio.enhanced.nemotronlabs.mp3');
+    await writeFile(enhanced, 'enhanced');
+    await manager.delete('nemotronlabs');
+    expect(await readFile(enhanced, 'utf8')).toBe('enhanced');
   });
 
   it('rejects an unknown model id', async () => {

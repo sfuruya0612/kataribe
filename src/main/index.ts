@@ -82,6 +82,11 @@ import {
   registerReuseProtocols,
   reuseLicensePath,
 } from './reuse-protocol';
+import {
+  cleanupOrphanedTempDirs,
+  deleteAllSavedAudio,
+  scanSavedAudioUsage,
+} from './reuse-cleanup';
 import { MeetingSearchIndex } from './search-index';
 import { SettingsStore } from './settings';
 import { listMeetingTodos, setMeetingTodoChecked } from './todos';
@@ -1120,6 +1125,29 @@ function registerIpc(
     await openReuseLicense(kind);
   });
 
+  ipcMain.handle('reuse:get-enhancement', async (_event, meetingId: string) => {
+    if (typeof meetingId !== 'string') {
+      throw new Error('invalid meeting id');
+    }
+    const detail = await meetingStore.detail(meetingId);
+    return detail?.enhancement ?? null;
+  });
+
+  ipcMain.handle('reuse:disk-usage', () => scanSavedAudioUsage(meetingStore));
+
+  ipcMain.handle('reuse:delete-saved-audio', async () => {
+    const usage = await deleteAllSavedAudio(meetingStore);
+    try {
+      await activeMeetingIndex?.rebuild(meetingStore);
+    } catch (error) {
+      console.error(
+        `failed to rebuild the meeting index after deleting enhanced audio: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    broadcast('meetings:changed', await meetingStore.list());
+    return usage;
+  });
+
   ipcMain.handle(
     'enhancement:progress',
     (_event, requestId: unknown, progress: unknown) => {
@@ -1700,9 +1728,10 @@ if (!app.requestSingleInstanceLock()) {
     registerAppMenu();
     applyThemeMode(storedSettings.theme);
     const saveRoot = storedSettings.saveRoot;
-    const meetingStore = new MeetingStore(saveRoot);
+    const tempRoot = join(app.getPath('userData'), 'tmp');
+    const meetingStore = new MeetingStore(saveRoot, tempRoot);
     const childRegistry = new ChildProcessRegistry(
-      join(app.getPath('userData'), 'tmp', 'children'),
+      join(tempRoot, 'children'),
     );
     await childRegistry.cleanupOrphaned();
     configureChildProcessRegistry(childRegistry);
@@ -1827,7 +1856,7 @@ if (!app.requestSingleInstanceLock()) {
     const llmClient = new LlmClient({ fetch: electronFetch });
     const multiOutput = new MultiOutputController({ locator });
     const processing = new ProcessingCoordinator({
-      tempRoot: join(app.getPath('userData'), 'tmp'),
+      tempRoot,
       meetingStore,
       apiKeyStore,
       mediaEncoder,
@@ -1868,6 +1897,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     processingCoordinator = processing;
     await processing.markInterruptedMeetings();
+    await cleanupOrphanedTempDirs(tempRoot, meetingStore).catch(
+      (error: unknown) => {
+        console.error(
+          `failed to clean orphaned temp directories: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
     meetingIndexRoot = join(app.getPath('userData'), 'index');
     try {
       activeMeetingIndex = await MeetingSearchIndex.open(meetingIndexRoot, saveRoot);
@@ -1882,7 +1918,7 @@ if (!app.requestSingleInstanceLock()) {
 
     const recordingManager = new RecordingManager({
       saveRoot,
-      tempRoot: join(app.getPath('userData'), 'tmp'),
+      tempRoot,
       appVersion: app.getVersion(),
       blocker: {
         start: () => {

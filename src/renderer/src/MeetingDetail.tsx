@@ -10,6 +10,7 @@ import type {
   TranslationPreview,
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
+import { EnhancementStatus } from './EnhancementStatus';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
 import { useI18n, type I18nValue } from './i18n';
@@ -71,6 +72,8 @@ function progressLabel(processing: ProcessingState, t: I18nValue['t']): string {
   switch (processing.stage) {
     case 'encoding':
       return t('音声を変換しています');
+    case 'enhancing':
+      return t('音声強調をしています');
     case 'transcribing':
       return t('文字起こしをしています');
     case 'translating':
@@ -770,6 +773,10 @@ export function MeetingDetail({
             {detail.diarizationError}
           </p>
         ) : null}
+        <EnhancementStatus
+          enhancement={detail?.enhancement ?? null}
+          warning={detail?.enhancementWarning ?? null}
+        />
         <div className="detail-player-row">
           <AudioPlayer
             src={current.audioUrl}

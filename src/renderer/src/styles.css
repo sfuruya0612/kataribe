@@ -365,7 +365,8 @@ ul {
   background: var(--danger-soft);
 }
 
-.status-transcribing {
+.status-transcribing,
+.status-enhancing {
   color: var(--accent-strong);
   background: var(--accent-soft);
 }

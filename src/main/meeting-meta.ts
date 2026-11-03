@@ -3,11 +3,13 @@ import { dirname } from 'node:path';
 import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
+  EnhancementState,
   InputSource,
   MeetingStatus,
   RecordingCaptureStats,
   RecordingErrorInfo,
   RecordingEvent,
+  ReuseModel,
   SummaryLanguage,
   TranscriptionCleanupState,
   TranscriptionEngine,
@@ -102,6 +104,14 @@ export type MeetingMetaDiarization = {
   error?: string;
 };
 
+export type MeetingMetaEnhancement = {
+  savedAudioModels?: ReuseModel[];
+  savedAudioState?: EnhancementState;
+  hasRawTranscript?: boolean;
+  transcriptModels?: ReuseModel[];
+  primarySource?: 'raw' | ReuseModel;
+};
+
 export type MeetingMeta = {
   schema_version: typeof MEETING_META_SCHEMA_VERSION;
   id: string;
@@ -132,6 +142,7 @@ export type MeetingMeta = {
   encoding?: MeetingMetaEncoding;
   transcription?: MeetingMetaTranscription;
   diarization?: MeetingMetaDiarization;
+  enhancement?: MeetingMetaEnhancement;
   speakers?: string[];
   summary?: MeetingMetaSummary;
   translations?: Partial<Record<SummaryLanguage, MeetingMetaTranslation>>;

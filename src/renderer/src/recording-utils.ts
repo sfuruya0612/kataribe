@@ -181,6 +181,8 @@ export function meetingStatusLabel(
       return translate(locale, '録音中');
     case 'encoding':
       return translate(locale, '変換中');
+    case 'enhancing':
+      return translate(locale, '音声強調中');
     case 'transcribing':
       return translate(locale, '文字起こし中');
     case 'transcribed':
