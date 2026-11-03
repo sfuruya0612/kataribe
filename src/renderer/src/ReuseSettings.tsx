@@ -5,6 +5,7 @@ import {
 } from '../../shared/i18n';
 import type { ReuseLicenseKind } from '../../shared/reuse';
 import type {
+  AppSettings,
   ReuseModel,
   ReuseModelList,
   ReuseModelInfo,
@@ -22,9 +23,11 @@ export type ReuseGpuStatus = {
 type ReuseSettingsViewProps = {
   models: ReuseModelList | null;
   gpu: ReuseGpuStatus;
+  savedAudioEnabled: boolean;
   busy: ReuseModel | null;
   error: string | null;
   notice: string | null;
+  onToggleSavedAudio: (enabled: boolean) => void;
   onDownload: (model: ReuseModel) => void;
   onCancel: (model: ReuseModel) => void;
   onDelete: (model: ReuseModel) => void;
@@ -54,9 +57,11 @@ function modelStateLabel(
 export function ReuseSettingsView({
   models,
   gpu,
+  savedAudioEnabled,
   busy,
   error,
   notice,
+  onToggleSavedAudio,
   onDownload,
   onCancel,
   onDelete,
@@ -66,6 +71,23 @@ export function ReuseSettingsView({
   return (
     <section className="settings-section">
       <p className="settings-label">{t('音声強調 (RE-USE)')}</p>
+      <div className="setting-card">
+        <label className="setting-row">
+          <span>
+            <strong>{t('録音停止後の保存音声の強調')}</strong>
+            <span className="muted">
+              {t(
+                '録音停止後に保存する音声へ RE-USE を適用し、生の audio.mp3 と強調した audio.enhanced.nemotronlabs.mp3 を保存します。既定は OFF です。',
+              )}
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={savedAudioEnabled}
+            onChange={(event) => onToggleSavedAudio(event.target.checked)}
+          />
+        </label>
+      </div>
       <div className="setting-card">
         <div className="setting-row">
           <span>
@@ -195,7 +217,13 @@ export function ReuseSettingsView({
 /**
  * 音声強調のモデル管理を Main と接続する。
  */
-export function ReuseSettings() {
+export function ReuseSettings({
+  settings,
+  onUpdateSettings,
+}: {
+  settings: AppSettings;
+  onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
+}) {
   const { t } = useI18n();
   const [models, setModels] = useState<ReuseModelList | null>(null);
   const [gpu, setGpu] = useState<ReuseGpuStatus>({
@@ -334,9 +362,13 @@ export function ReuseSettings() {
     <ReuseSettingsView
       models={models}
       gpu={gpu}
+      savedAudioEnabled={settings.enhanceSavedAudio}
       busy={busy}
       error={error}
       notice={notice}
+      onToggleSavedAudio={(enabled) => {
+        void onUpdateSettings({ enhanceSavedAudio: enabled });
+      }}
       onDownload={(model) => void download(model)}
       onCancel={(model) => void cancel(model)}
       onDelete={(model) => void remove(model)}

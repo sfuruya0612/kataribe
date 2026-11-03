@@ -65,6 +65,7 @@ import type { TranscriptionOutcome, TranscriptionService } from './transcription
 import type { TranscriptionRunner } from './transcription-runner';
 import { translateTranscript } from './translation';
 import { cleanupMeetingTemp } from './reuse-cleanup';
+import type { ReuseSavedAudioService } from './reuse-saved-audio';
 import { readWavInfo } from './wav';
 
 export type ProcessingCoordinatorOptions = {
@@ -76,6 +77,7 @@ export type ProcessingCoordinatorOptions = {
   transcriptionRunner: TranscriptionRunner;
   diarizationService: DiarizationService;
   llmClient: LlmClient;
+  reuseSavedAudio?: ReuseSavedAudioService;
   settings: () => AppSettings;
   now?: () => Date;
   onStateChange: (state: ProcessingState) => void;
@@ -266,6 +268,7 @@ export class ProcessingCoordinator {
   private readonly transcriptionRunner: TranscriptionRunner;
   private readonly diarizationService: DiarizationService;
   private readonly llmClient: LlmClient;
+  private readonly reuseSavedAudio?: ReuseSavedAudioService;
   private readonly settings: () => AppSettings;
   private readonly now: () => Date;
   private readonly onStateChange: (state: ProcessingState) => void;
@@ -296,6 +299,7 @@ export class ProcessingCoordinator {
     this.transcriptionRunner = options.transcriptionRunner;
     this.diarizationService = options.diarizationService;
     this.llmClient = options.llmClient;
+    this.reuseSavedAudio = options.reuseSavedAudio;
     this.settings = options.settings;
     this.now = options.now ?? (() => new Date());
     this.onStateChange = options.onStateChange;
@@ -337,6 +341,18 @@ export class ProcessingCoordinator {
 
   requestTranscription(meetingId: string): Promise<void> {
     return this.enqueue(meetingId, () => this.processMeeting(meetingId));
+  }
+
+  requestSavedAudioEnhancement(
+    meetingId: string,
+    model: 'nemotronlabs',
+  ): Promise<void> {
+    if (!this.reuseSavedAudio) {
+      return Promise.reject(new Error('speech enhancement is not available'));
+    }
+    return this.enqueue(meetingId, () =>
+      this.enhanceSavedAudioOnly(meetingId, model),
+    );
   }
 
   cancel(): boolean {
@@ -1204,6 +1220,47 @@ export class ProcessingCoordinator {
         });
       }
 
+      if (this.settings().enhanceSavedAudio && this.reuseSavedAudio) {
+        await updateMeetingMeta(metaPath, (value) => {
+          value.status = 'enhancing';
+          delete value.error;
+        });
+        this.setState({
+          stage: 'enhancing',
+          meetingId,
+          progress: 0,
+          etaSeconds: null,
+          message: t('保存音声を強調しています'),
+          cancellable: true,
+          error: null,
+        });
+        try {
+          await this.reuseSavedAudio.enhance({
+            meetingId,
+            meetingDir: meeting.meetingDir,
+            audioPath: mp3Path,
+            sourceWavPath: hasSourceWav ? sourceWav : null,
+            model: 'nemotronlabs',
+            bitrateKbps: this.settings().mp3BitrateKbps,
+            signal: controller.signal,
+            onProgress: (progress) => {
+              this.setState({
+                ...this.state,
+                progress,
+              });
+            },
+          });
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw error;
+          }
+          console.error(
+            `saved audio enhancement failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        this.onMeetingUpdated(meetingId);
+      }
+
       if (!(await exists(transcriptionWav))) {
         this.setState({
           ...this.state,
@@ -1324,6 +1381,74 @@ export class ProcessingCoordinator {
           `failed to clean meeting temp files: ${error instanceof Error ? error.message : String(error)}`,
         );
       });
+    }
+  }
+
+  private async enhanceSavedAudioOnly(
+    meetingId: string,
+    model: 'nemotronlabs',
+  ): Promise<void> {
+    if (!this.reuseSavedAudio) {
+      throw new Error('speech enhancement is not available');
+    }
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error(t('会議が見つかりません。'));
+    }
+    const metaPath = join(meeting.meetingDir, 'meta.json');
+    const meta = await readMeetingMeta(metaPath);
+    const audioPath = join(meeting.meetingDir, 'audio.mp3');
+    if (!(await exists(audioPath))) {
+      throw new Error(t('変換できる音声ファイルがありません。'));
+    }
+    const previousStatus = meta.status;
+    const controller = new AbortController();
+    this.active = { meetingId, controller };
+    this.setState({
+      stage: 'enhancing',
+      meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: t('保存音声を強調しています'),
+      cancellable: true,
+      error: null,
+    });
+    await updateMeetingMeta(metaPath, (value) => {
+      value.status = 'enhancing';
+      delete value.error;
+    });
+    try {
+      await this.reuseSavedAudio.enhance({
+        meetingId,
+        meetingDir: meeting.meetingDir,
+        audioPath,
+        sourceWavPath: null,
+        model,
+        bitrateKbps: this.settings().mp3BitrateKbps,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          this.setState({ ...this.state, progress });
+        },
+      });
+      await updateMeetingMeta(metaPath, (value) => {
+        if (value.status === 'enhancing') {
+          value.status =
+            previousStatus === 'enhancing' ? 'transcribed' : previousStatus;
+        }
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+    } catch (error) {
+      await updateMeetingMeta(metaPath, (value) => {
+        if (value.status === 'enhancing') {
+          value.status =
+            previousStatus === 'enhancing' ? 'transcribed' : previousStatus;
+        }
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      throw error;
+    } finally {
+      this.active = null;
+      this.setState({ ...IDLE_STATE });
     }
   }
 

@@ -913,6 +913,24 @@ export class MeetingStore {
     return audio?.path ?? null;
   }
 
+  async enhancedAudioPath(
+    meetingId: string,
+    model: ReuseModel,
+  ): Promise<string | null> {
+    const meeting = await this.find(meetingId);
+    if (!meeting) {
+      return null;
+    }
+    const path = join(
+      meeting.meetingDir,
+      `audio.enhanced.${model}.mp3`,
+    );
+    if (!isInside(this.saveRoot, path) || !(await fileExists(path))) {
+      return null;
+    }
+    return path;
+  }
+
   async waveform(meetingId: string, bars = 96): Promise<MeetingWaveform> {
     const meeting = await this.find(meetingId);
     if (!meeting) {

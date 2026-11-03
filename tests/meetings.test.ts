@@ -140,6 +140,9 @@ describe('MeetingStore', () => {
     const detail = await store.detail(id);
     expect(detail?.enhancement?.source).toEqual(source);
     expect(detail?.enhancementWarning).toBeNull();
+    const enhancedPath = join(meetingDir, 'audio.enhanced.nemotronlabs.mp3');
+    await writeFile(enhancedPath, 'enhanced');
+    expect(await store.enhancedAudioPath(id, 'nemotronlabs')).toBe(enhancedPath);
   });
 
   it('returns null when audio.wav is missing', async () => {

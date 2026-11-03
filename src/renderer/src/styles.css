@@ -1321,6 +1321,17 @@ ul {
   display: none;
 }
 
+.audio-variant-selector {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.audio-variant-selector .link-button.is-active {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
 .play-button {
   display: inline-flex;
   align-items: center;

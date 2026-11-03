@@ -27,6 +27,7 @@ import {
 } from '../src/main/reuse-metadata';
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
+import type { ReuseSavedAudioService } from '../src/main/reuse-saved-audio';
 import type {
   TranscribeOptions,
   TranscriptionOutcome,
@@ -96,6 +97,7 @@ function createCoordinator(options: {
   saveRoot: string;
   complete: ReturnType<typeof vi.fn>;
   settings?: Partial<AppSettings>;
+  reuseSavedAudio?: ReuseSavedAudioService;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const states: string[] = [];
@@ -118,6 +120,7 @@ function createCoordinator(options: {
     transcriptionRunner: {} as TranscriptionRunner,
     diarizationService: {} as DiarizationService,
     llmClient: { complete: options.complete } as unknown as LlmClient,
+    reuseSavedAudio: options.reuseSavedAudio,
     settings: () =>
       normalizeAppSettings({
         llmProfiles: [
@@ -486,6 +489,63 @@ describe('ProcessingCoordinator interrupted recovery', () => {  it('marks unfini
         ? enhancement.file.saved_audio.nemotronlabs?.state
         : null,
     ).toBe('interrupted');
+  });
+});
+
+describe('saved audio enhancement queue', () => {
+  it('rejects a second enhancement for the same meeting and restores the status', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const enhance = vi.fn(async () => {
+      await gate;
+    });
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      reuseSavedAudio: { enhance } as unknown as ReuseSavedAudioService,
+    });
+    const first = coordinator.requestSavedAudioEnhancement(
+      meetingId,
+      'nemotronlabs',
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (coordinator.getState().stage === 'enhancing') {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect(coordinator.getState().stage).toBe('enhancing');
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await readMeetingMeta(join(meetingDir, 'meta.json'))).status === 'enhancing') {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'enhancing',
+    );
+    await expect(
+      coordinator.requestSavedAudioEnhancement(meetingId, 'nemotronlabs'),
+    ).rejects.toThrow(/already queued/u);
+    release();
+    await first;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (coordinator.getState().stage === null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect(coordinator.getState().stage).toBeNull();
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+    expect(enhance).toHaveBeenCalledTimes(1);
   });
 });
 

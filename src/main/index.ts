@@ -58,6 +58,7 @@ import { LlmClient } from './llm';
 import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
+import { parseMeetingAudioUrl } from './meeting-audio';
 import { ModelManager } from './models';
 import { MultiOutputController } from './multi-output';
 import { OpenAiTranscriptionService } from './openai-transcription';
@@ -67,6 +68,7 @@ import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
 import { ReuseEnhancementService } from './reuse-enhancement';
+import { ReuseSavedAudioService } from './reuse-saved-audio';
 import { runReuseSmokeTest } from './reuse-smoke';
 import {
   REUSE_MODEL_DEFINITIONS,
@@ -319,22 +321,16 @@ function configureSession(): void {
   });
 }
 
-function meetingIdFromAudioUrl(rawUrl: string): string | null {
-  const prefix = 'kataribe-audio://meeting/';
-  if (!rawUrl.startsWith(prefix)) {
-    return null;
-  }
-  const value = decodeURIComponent(rawUrl.slice(prefix.length).split('?')[0]);
-  return value.length > 0 ? value : null;
-}
-
 function registerAudioProtocol(meetingStore: MeetingStore): void {
   protocol.handle('kataribe-audio', async (request) => {
-    const meetingId = meetingIdFromAudioUrl(request.url);
-    if (!meetingId) {
+    const target = parseMeetingAudioUrl(request.url);
+    if (!target) {
       return new Response('Not found', { status: 404 });
     }
-    const audioPath = await meetingStore.audioPath(meetingId);
+    const audioPath =
+      target.variant === 'enhanced' && target.model
+        ? await meetingStore.enhancedAudioPath(target.meetingId, target.model)
+        : await meetingStore.audioPath(target.meetingId);
     if (!audioPath) {
       return new Response('Not found', { status: 404 });
     }
@@ -342,7 +338,10 @@ function registerAudioProtocol(meetingStore: MeetingStore): void {
     try {
       return await net.fetch(pathToFileURL(audioPath).toString());
     } catch (error) {
-      console.error(`failed to serve meeting audio: ${meetingId}`, error);
+      console.error(
+        `failed to serve meeting audio: ${target.meetingId}`,
+        error,
+      );
       return new Response('Not found', { status: 404 });
     }
   });
@@ -1149,6 +1148,23 @@ function registerIpc(
   });
 
   ipcMain.handle(
+    'reuse:enhance-saved-audio',
+    (_event, meetingId: unknown, model: unknown) => {
+      if (typeof meetingId !== 'string' || !isReuseModel(model)) {
+        throw new Error('invalid saved audio enhancement request');
+      }
+      void processing
+        .requestSavedAudioEnhancement(meetingId, model)
+        .catch((error: unknown) => {
+          console.error(
+            `saved audio enhancement failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return processing.getState();
+    },
+  );
+
+  ipcMain.handle(
     'enhancement:progress',
     (_event, requestId: unknown, progress: unknown) => {
       if (typeof requestId !== 'string' || typeof progress !== 'number') {
@@ -1855,6 +1871,12 @@ if (!app.requestSingleInstanceLock()) {
     });
     const llmClient = new LlmClient({ fetch: electronFetch });
     const multiOutput = new MultiOutputController({ locator });
+    const reuseSavedAudio = new ReuseSavedAudioService({
+      enhancement: reuseEnhancement,
+      modelManager: reuseModelManager,
+      mediaEncoder,
+      tempRoot,
+    });
     const processing = new ProcessingCoordinator({
       tempRoot,
       meetingStore,
@@ -1864,6 +1886,7 @@ if (!app.requestSingleInstanceLock()) {
       transcriptionRunner,
       diarizationService,
       llmClient,
+      reuseSavedAudio,
       settings: () => settingsStore.get(),
       onStateChange: (state) => {
         broadcast('processing:state', state);

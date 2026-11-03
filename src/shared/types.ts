@@ -324,6 +324,7 @@ export type AppSettings = {
   summaryLanguage: SummaryLanguage;
   summaryPromptTemplate: string;
   removeFillersBeforeSummary: boolean;
+  enhanceSavedAudio: boolean;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };

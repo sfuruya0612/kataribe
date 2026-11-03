@@ -944,6 +944,23 @@ export const EN_MESSAGES = {
   '使用量を確認中...': 'Checking disk usage...',
   '前回の音声強調が中断されました。会議詳細から再実行してください。':
     'The previous speech enhancement was interrupted. Run it again from the meeting detail.',
+  '録音停止後の保存音声の強調': 'Enhance saved audio after recording',
+  '録音停止後に保存する音声へ RE-USE を適用し、生の audio.mp3 と強調した audio.enhanced.nemotronlabs.mp3 を保存します。既定は OFF です。':
+    'Apply RE-USE to the audio saved after recording and keep both the raw audio.mp3 and the enhanced audio.enhanced.nemotronlabs.mp3. The default is off.',
+  '保存音声を強調しています': 'Enhancing the saved audio',
+  '保存音声の強調を再実行': 'Run saved audio enhancement again',
+  '生音声': 'Raw audio',
+  '強調音声': 'Enhanced audio',
+  '音声の種類': 'Audio version',
+  '再実行の入力は audio.mp3 から作るため、録音直後の強調とは入力が異なります。':
+    'A re-run decodes audio.mp3, so its input differs from the enhancement done right after recording.',
+  '同じモデルの強調音声を置き換えます。よろしいですか？':
+    'Replace the enhanced audio from the same model?',
+  '保存音声の強調が完了しました。': 'Saved audio enhancement completed.',
+  '保存音声の強調に失敗しました: {error}':
+    'Saved audio enhancement failed: {error}',
+  '音声強調を開始できませんでした: {error}':
+    'Could not start saved audio enhancement: {error}',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;

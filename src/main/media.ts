@@ -229,6 +229,30 @@ export function buildTranscriptionWavArgs(
   ];
 }
 
+export function buildDecodeWavArgs(
+  inputPath: string,
+  outputPath: string,
+): string[] {
+  return [
+    '-hide_banner',
+    '-nostdin',
+    '-y',
+    '-i',
+    inputPath,
+    '-vn',
+    '-ac',
+    '1',
+    '-c:a',
+    'pcm_s16le',
+    '-progress',
+    'pipe:1',
+    '-nostats',
+    '-f',
+    'wav',
+    outputPath,
+  ];
+}
+
 export function parseFfmpegProgressLine(
   line: string,
 ): { outTimeSeconds: number } | null {
@@ -275,6 +299,18 @@ export class MediaEncoder {
     const output = await this.prepareOutput(options.outputPath);
     await this.runFfmpeg({
       args: buildTranscriptionWavArgs(options.inputPath, output.tempPath),
+      outputPath: output.tempPath,
+      finalPath: options.outputPath,
+      durationSeconds: options.durationSeconds,
+      signal: options.signal,
+      onProgress: options.onProgress,
+    });
+  }
+
+  async decodeToWav(options: EncodeOptions): Promise<void> {
+    const output = await this.prepareOutput(options.outputPath);
+    await this.runFfmpeg({
+      args: buildDecodeWavArgs(options.inputPath, output.tempPath),
       outputPath: output.tempPath,
       finalPath: options.outputPath,
       durationSeconds: options.durationSeconds,

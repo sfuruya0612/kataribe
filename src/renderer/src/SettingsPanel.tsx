@@ -1118,7 +1118,10 @@ export function SettingsPanel({
             onOpenSummary={() => setTab('summary')}
           />
 
-          <ReuseSettings />
+          <ReuseSettings
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+          />
 
           <EnhancementStorage />
 

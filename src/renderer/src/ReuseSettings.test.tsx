@@ -31,6 +31,7 @@ function render(
   models: ReuseModelList,
   gpu: ReuseGpuStatus = availableGpu,
   locale: 'ja' | 'en' = 'ja',
+  savedAudioEnabled = false,
 ): string {
   return renderToStaticMarkup(
     createElement(I18nProvider, {
@@ -38,9 +39,11 @@ function render(
       children: createElement(ReuseSettingsView, {
         models,
         gpu,
+        savedAudioEnabled,
         busy: null,
         error: null,
         notice: null,
+        onToggleSavedAudio: () => undefined,
         onDownload: () => undefined,
         onCancel: () => undefined,
         onDelete: () => undefined,
@@ -62,6 +65,21 @@ describe('req_enhance_001_reuse_settings', () => {
     expect(html).toContain('研究および教育用のモデルは');
     expect(html).toContain('/tmp/Kataribe/models/reuse');
     expect(html).not.toContain('RE-USE (research)');
+  });
+
+  it('renders the saved audio enhancement setting as off by default', () => {
+    const html = render(modelList);
+    expect(html).toContain('録音停止後の保存音声の強調');
+    expect(html).toMatch(
+      /<strong>録音停止後の保存音声の強調<\/strong>[\s\S]*?type="checkbox"\/>/,
+    );
+  });
+
+  it('marks the saved audio enhancement setting as on', () => {
+    const html = render(modelList, availableGpu, 'ja', true);
+    expect(html).toMatch(
+      /<strong>録音停止後の保存音声の強調<\/strong>[\s\S]*?type="checkbox" checked=""/,
+    );
   });
 
   it('renders the installed state and the delete action', () => {

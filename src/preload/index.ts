@@ -255,6 +255,11 @@ const api = {
     ipcRenderer.invoke('reuse:disk-usage'),
   deleteReuseSavedAudio: (): Promise<ReuseDiskUsage> =>
     ipcRenderer.invoke('reuse:delete-saved-audio'),
+  enhanceReuseSavedAudio: (
+    meetingId: string,
+    model: ReuseModel,
+  ): Promise<ProcessingState> =>
+    ipcRenderer.invoke('reuse:enhance-saved-audio', meetingId, model),
   openReuseLicense: (kind: ReuseLicenseKind): Promise<void> =>
     ipcRenderer.invoke('reuse:open-license', kind),
   onReuseModelProgress: (

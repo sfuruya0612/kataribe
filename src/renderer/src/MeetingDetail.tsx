@@ -11,6 +11,7 @@ import type {
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
 import { EnhancementStatus } from './EnhancementStatus';
+import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
 import { useI18n, type I18nValue } from './i18n';
@@ -132,6 +133,7 @@ export function MeetingDetail({
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const previewRef = useRef<SummaryPreview | null>(null);
   const translationPreviewRef = useRef<TranslationPreview | null>(null);
+  const savedAudioWasRunning = useRef(false);
 
   previewRef.current = preview;
   translationPreviewRef.current = translationPreview;
@@ -199,6 +201,26 @@ export function MeetingDetail({
   }, [load, meeting?.status, meeting?.hasTranscript, meeting?.hasSummary]);
 
   useEffect(() => {
+    const running =
+      meetingId !== null &&
+      processing.meetingId === meetingId &&
+      processing.stage === 'enhancing';
+    if (
+      savedAudioWasRunning.current &&
+      !running &&
+      meetingId !== null &&
+      processing.meetingId === meetingId
+    ) {
+      if (processing.error) {
+        setError(processing.error);
+      } else {
+        setNotice(t('保存音声の強調が完了しました。'));
+      }
+    }
+    savedAudioWasRunning.current = running;
+  }, [meetingId, processing.error, processing.meetingId, processing.stage, t]);
+
+  useEffect(() => {
     if (!meetingId) {
       return;
     }
@@ -255,6 +277,9 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
+  const enhancedSrc = current.enhancedModels.includes('nemotronlabs')
+    ? `kataribe-audio://meeting/${encodeURIComponent(current.id)}/enhanced/nemotronlabs`
+    : null;
   const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
@@ -628,6 +653,42 @@ export function MeetingDetail({
     }
   };
 
+  const savedAudioBusy = activeHere && processing.stage === 'enhancing';
+
+  const runSavedAudioEnhancement = async () => {
+    if (
+      current.enhancedModels.includes('nemotronlabs') &&
+      !window.confirm(
+        t('同じモデルの強調音声を置き換えます。よろしいですか？'),
+      )
+    ) {
+      return;
+    }
+    try {
+      setNotice(null);
+      setError(null);
+      await window.kataribe.enhanceReuseSavedAudio(current.id, 'nemotronlabs');
+    } catch (reason: unknown) {
+      setError(
+        t('音声強調を開始できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    }
+  };
+
+  const cancelSavedAudioEnhancement = async () => {
+    try {
+      await window.kataribe.cancelProcessing();
+    } catch (reason: unknown) {
+      setError(
+        t('処理を中断できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    }
+  };
+
   const cancelProcessing = async () => {
     try {
       await window.kataribe.cancelProcessing();
@@ -780,6 +841,7 @@ export function MeetingDetail({
         <div className="detail-player-row">
           <AudioPlayer
             src={current.audioUrl}
+            enhancedSrc={enhancedSrc}
             peaks={peaks}
             duration={current.duration}
             initialTime={initialSeekSeconds}
@@ -797,6 +859,16 @@ export function MeetingDetail({
             </button>
           ) : null}
         </div>
+        <SavedAudioEnhancementControls
+          enabled={current.audioUrl !== null && !activeHere}
+          busy={savedAudioBusy}
+          progress={processing.progress}
+          error={savedAudioBusy ? null : processingError}
+          notice={null}
+          inputDiffers={current.audioUrl !== null}
+          onRun={() => void runSavedAudioEnhancement()}
+          onCancel={() => void cancelSavedAudioEnhancement()}
+        />
         {waveformError ? (
           <p className="muted">{t('波形を取得できませんでした。')}</p>
         ) : null}

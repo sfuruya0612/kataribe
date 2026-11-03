@@ -202,6 +202,10 @@ declare global {
       ) => Promise<EnhancementFile | null>;
       getReuseDiskUsage: () => Promise<ReuseDiskUsage>;
       deleteReuseSavedAudio: () => Promise<ReuseDiskUsage>;
+      enhanceReuseSavedAudio: (
+        meetingId: string,
+        model: ReuseModel,
+      ) => Promise<ProcessingState>;
       openReuseLicense: (kind: ReuseLicenseKind) => Promise<void>;
       onReuseModelProgress: (
         listener: (progress: ReuseModelProgress) => void,

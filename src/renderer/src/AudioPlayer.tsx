@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { AudioVariantSelector, type AudioVariant } from './AudioVariantSelector';
 import { useI18n } from './i18n';
 import { formatDuration } from './recording-utils';
 
 type AudioPlayerProps = {
   src: string | null;
+  enhancedSrc?: string | null;
   peaks: number[];
   duration: number;
   initialTime?: number | null;
@@ -17,7 +19,13 @@ function fallbackPeaks(): number[] {
   });
 }
 
-export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerProps) {
+export function AudioPlayer({
+  src,
+  enhancedSrc = null,
+  peaks,
+  duration,
+  initialTime,
+}: AudioPlayerProps) {
   const { t } = useI18n();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -25,6 +33,8 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
   const [mediaDuration, setMediaDuration] = useState(duration);
   const [speed, setSpeed] = useState(1);
   const [error, setError] = useState<'play' | 'load' | null>(null);
+  const [variant, setVariant] = useState<AudioVariant>('raw');
+  const selectedSrc = variant === 'enhanced' && enhancedSrc ? enhancedSrc : src;
 
   useEffect(() => {
     setPlaying(false);
@@ -47,11 +57,15 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
         }
       }
     }
-  }, [src, duration, initialTime]);
+  }, [selectedSrc, duration, initialTime]);
+
+  useEffect(() => {
+    setVariant('raw');
+  }, [src]);
 
   const toggle = async () => {
     const audio = audioRef.current;
-    if (!audio || !src) {
+    if (!audio || !selectedSrc) {
       return;
     }
     if (audio.paused) {
@@ -95,9 +109,14 @@ export function AudioPlayer({ src, peaks, duration, initialTime }: AudioPlayerPr
 
   return (
     <div className="audio-player" data-testid="audio-player">
+      <AudioVariantSelector
+        value={variant}
+        hasEnhanced={enhancedSrc !== null}
+        onChange={setVariant}
+      />
       <audio
         ref={audioRef}
-        src={src}
+        src={selectedSrc ?? undefined}
         preload="metadata"
         onLoadedMetadata={(event) => {
           const value = event.currentTarget.duration;
