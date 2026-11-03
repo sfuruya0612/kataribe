@@ -34,6 +34,9 @@ function cacheKey(overrides: Partial<DiarizationCacheKey> = {}): DiarizationCach
     audio_sha256: 'a'.repeat(64),
     segmentation_sha256: 'b'.repeat(64),
     embedding_sha256: 'c'.repeat(64),
+    input_kind: 'raw',
+    enhancement_model_sha256: null,
+    enhancement_settings: null,
     speaker_count: 'auto',
     cluster_threshold: 0.9,
     threads: 4,
@@ -72,7 +75,7 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
     await writeDiarizationCache(path, expected);
 
     expect(await readDiarizationCache(path)).toEqual(expected);
-    expect(await readFile(path, 'utf8')).toContain('"schema_version": 1');
+    expect(await readFile(path, 'utf8')).toContain('"schema_version": 2');
     expect((await stat(path)).mode & 0o777).toBe(0o600);
   });
 
@@ -94,7 +97,7 @@ describe('readDiarizationCache and writeDiarizationCache', () => {
     const path = join(root, 'diarization.json');
     await writeFile(
       path,
-      JSON.stringify({ ...cache(), schema_version: 2 }),
+      JSON.stringify({ ...cache(), schema_version: 3 }),
     );
 
     expect(await readDiarizationCache(path)).toBeNull();
@@ -184,6 +187,9 @@ describe('matchesCacheKey', () => {
       cacheKey({ audio_sha256: 'd'.repeat(64) }),
       cacheKey({ segmentation_sha256: 'd'.repeat(64) }),
       cacheKey({ embedding_sha256: 'd'.repeat(64) }),
+      cacheKey({ input_kind: 'enhanced:nemotronlabs', enhancement_model_sha256: 'd'.repeat(64), enhancement_settings: { chunk_seconds: 5, hop_seconds: 2.5, crossfade_seconds: 0.5 } }),
+      cacheKey({ input_kind: 'enhanced:nemotronlabs', enhancement_model_sha256: 'e'.repeat(64), enhancement_settings: { chunk_seconds: 5, hop_seconds: 2.5, crossfade_seconds: 0.5 } }),
+      cacheKey({ input_kind: 'enhanced:nemotronlabs', enhancement_model_sha256: 'd'.repeat(64), enhancement_settings: { chunk_seconds: 4, hop_seconds: 2, crossfade_seconds: 0.5 } }),
       cacheKey({ speaker_count: 5 }),
       cacheKey({ cluster_threshold: 0.8 }),
       cacheKey({ threads: 3 }),

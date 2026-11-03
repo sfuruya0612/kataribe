@@ -6,10 +6,19 @@ import type {
   ProcessingState,
   SummaryLanguage,
   SummaryPreview,
+  TranscriptionEngine,
   TranslationPreview,
 } from '../../shared/types';
 import { AudioPlayer } from './AudioPlayer';
+import { EnhancementStatus } from './EnhancementStatus';
+import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
+import { StaleTranscriptNotice } from './StaleTranscriptNotice';
+import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
+import {
+  TranscriptComparison,
+  type TranscriptView,
+} from './TranscriptComparison';
 import { useI18n, type I18nValue } from './i18n';
 import {
   errorText,
@@ -27,6 +36,8 @@ type MeetingDetailProps = {
   processing: ProcessingState;
   defaultSummaryLanguage: SummaryLanguage;
   whisperModel: 'large-v3-turbo' | 'medium' | 'small';
+  transcriptionEngine: TranscriptionEngine;
+  enhanceBeforeTranscription: boolean;
   initialSeekSeconds: number | null;
   onUpdateSettings: (patch: {
     whisperModel?: 'large-v3-turbo' | 'medium' | 'small';
@@ -68,6 +79,8 @@ function progressLabel(processing: ProcessingState, t: I18nValue['t']): string {
   switch (processing.stage) {
     case 'encoding':
       return t('音声を変換しています');
+    case 'enhancing':
+      return t('音声強調をしています');
     case 'transcribing':
       return t('文字起こしをしています');
     case 'translating':
@@ -84,6 +97,8 @@ export function MeetingDetail({
   processing,
   defaultSummaryLanguage,
   whisperModel,
+  transcriptionEngine,
+  enhanceBeforeTranscription,
   initialSeekSeconds,
   onUpdateSettings,
   onBack,
@@ -116,6 +131,8 @@ export function MeetingDetail({
   const [transcriptLanguage, setTranscriptLanguage] = useState<
     'source' | SummaryLanguage
   >('source');
+  const [transcriptView, setTranscriptView] =
+    useState<TranscriptView>('current');
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
@@ -125,6 +142,7 @@ export function MeetingDetail({
   const [speakerError, setSpeakerError] = useState<string | null>(null);
   const previewRef = useRef<SummaryPreview | null>(null);
   const translationPreviewRef = useRef<TranslationPreview | null>(null);
+  const savedAudioWasRunning = useRef(false);
 
   previewRef.current = preview;
   translationPreviewRef.current = translationPreview;
@@ -178,6 +196,7 @@ export function MeetingDetail({
     setPreview(null);
     setTranslationPreview(null);
     setTranscriptLanguage('source');
+    setTranscriptView('current');
     setTitleEditing(false);
     setSpeakerEditing(false);
     setSpeakerError(null);
@@ -190,6 +209,26 @@ export function MeetingDetail({
   useEffect(() => {
     void load();
   }, [load, meeting?.status, meeting?.hasTranscript, meeting?.hasSummary]);
+
+  useEffect(() => {
+    const running =
+      meetingId !== null &&
+      processing.meetingId === meetingId &&
+      processing.stage === 'enhancing';
+    if (
+      savedAudioWasRunning.current &&
+      !running &&
+      meetingId !== null &&
+      processing.meetingId === meetingId
+    ) {
+      if (processing.error) {
+        setError(processing.error);
+      } else {
+        setNotice(t('保存音声の強調が完了しました。'));
+      }
+    }
+    savedAudioWasRunning.current = running;
+  }, [meetingId, processing.error, processing.meetingId, processing.stage, t]);
 
   useEffect(() => {
     if (!meetingId) {
@@ -248,12 +287,45 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
+  const enhancedSrc = current.enhancedModels.includes('nemotronlabs')
+    ? `kataribe-audio://meeting/${encodeURIComponent(current.id)}/enhanced/nemotronlabs`
+    : null;
   const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
   const translations = detail?.translations ?? {};
+  const rawComparison = detail?.transcriptComparisons.raw ?? null;
+  const enhancedComparison =
+    detail?.transcriptComparisons.models.nemotronlabs ?? null;
+  const comparisonDocument =
+    transcriptView === 'raw'
+      ? rawComparison
+      : transcriptView === 'enhanced'
+        ? enhancedComparison
+        : null;
+  const comparisonReadOnly = comparisonDocument !== null;
+  const displayedTranscript = comparisonDocument ?? transcript;
   const displayedTranslation =
-    transcriptLanguage === 'source' ? null : translations[transcriptLanguage] ?? null;
+    comparisonReadOnly || transcriptLanguage === 'source'
+      ? null
+      : translations[transcriptLanguage] ?? null;
+  const transcriptForRender =
+    (comparisonReadOnly ? comparisonDocument : displayedTranslation ?? transcript) ??
+    { body: '' };
+  const staleSummary =
+    summary?.generatedAt !== null &&
+    summary?.generatedAt !== undefined &&
+    transcript?.updatedAt !== null &&
+    transcript?.updatedAt !== undefined &&
+    summary.generatedAt < transcript.updatedAt;
+  const staleTranslation = Object.values(translations).some(
+    (translation) =>
+      translation?.generatedAt !== null &&
+      translation?.generatedAt !== undefined &&
+      transcript?.updatedAt !== null &&
+      transcript?.updatedAt !== undefined &&
+      translation.generatedAt < transcript.updatedAt,
+  );
   const activeHere = processing.meetingId === meeting.id && processing.stage !== null;
   const processingError =
     processing.meetingId === meeting.id ? processing.error : null;
@@ -317,11 +389,13 @@ export function MeetingDetail({
   };
 
   const smallerModel =
-    whisperModel === 'large-v3-turbo'
-      ? 'medium'
-      : whisperModel === 'medium'
-        ? 'small'
-        : null;
+    transcriptionEngine === 'openai'
+      ? null
+      : whisperModel === 'large-v3-turbo'
+        ? 'medium'
+        : whisperModel === 'medium'
+          ? 'small'
+          : null;
 
   const retryWithSmallerModel = async () => {
     if (!smallerModel) {
@@ -580,10 +654,24 @@ export function MeetingDetail({
     setSummaryBusy(true);
     setError(null);
     try {
-      await window.kataribe.generateSummary(meeting.id, currentPreview.token);
+      const result = await window.kataribe.generateSummary(meeting.id, currentPreview.token);
       setPreview(null);
       setTab('summary');
-      setNotice(t('要約を生成しました。'));
+      if (result.cleanup.state === 'failed') {
+        setNotice(
+          t(
+            '相槌と擬音を除去できなかったため、元の文字起こしで要約しました。',
+          ),
+        );
+      } else if (result.cleanup.state === 'partial') {
+        setNotice(
+          t(
+            '一部の区間で相槌と擬音を除去できなかったため、元の文字起こしを混ぜて要約しました。',
+          ),
+        );
+      } else {
+        setNotice(t('要約を生成しました。'));
+      }
       await load();
     } catch (reason: unknown) {
       setError(errorText(reason));
@@ -601,6 +689,66 @@ export function MeetingDetail({
     } catch (reason: unknown) {
       setError(
         t('文字起こしを開始できませんでした: {error}', { error: errorText(reason) }),
+      );
+    }
+  };
+
+  const runTranscriptionComparison = async () => {
+    if (
+      !window.confirm(
+        t(
+          '既存の transcript.md を transcript.previous.md にコピーして上書きします。よろしいですか？',
+        ),
+      )
+    ) {
+      return;
+    }
+    try {
+      await window.kataribe.retryTranscriptionComparison(current.id);
+      setTranscriptView('current');
+      setNotice(null);
+      setError(null);
+    } catch (reason: unknown) {
+      setError(
+        t('文字起こし前の強調を開始できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    }
+  };
+
+  const savedAudioBusy = activeHere && processing.stage === 'enhancing';
+
+  const runSavedAudioEnhancement = async () => {
+    if (
+      current.enhancedModels.includes('nemotronlabs') &&
+      !window.confirm(
+        t('同じモデルの強調音声を置き換えます。よろしいですか？'),
+      )
+    ) {
+      return;
+    }
+    try {
+      setNotice(null);
+      setError(null);
+      await window.kataribe.enhanceReuseSavedAudio(current.id, 'nemotronlabs');
+    } catch (reason: unknown) {
+      setError(
+        t('音声強調を開始できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    }
+  };
+
+  const cancelSavedAudioEnhancement = async () => {
+    try {
+      await window.kataribe.cancelProcessing();
+    } catch (reason: unknown) {
+      setError(
+        t('処理を中断できませんでした: {error}', {
+          error: errorText(reason),
+        }),
       );
     }
   };
@@ -750,9 +898,14 @@ export function MeetingDetail({
             {detail.diarizationError}
           </p>
         ) : null}
+        <EnhancementStatus
+          enhancement={detail?.enhancement ?? null}
+          warning={detail?.enhancementWarning ?? null}
+        />
         <div className="detail-player-row">
           <AudioPlayer
             src={current.audioUrl}
+            enhancedSrc={enhancedSrc}
             peaks={peaks}
             duration={current.duration}
             initialTime={initialSeekSeconds}
@@ -769,7 +922,27 @@ export function MeetingDetail({
               {t('文字起こしを再実行')}
             </button>
           ) : null}
+          {enhanceBeforeTranscription && transcript ? (
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={activeHere}
+              onClick={() => void runTranscriptionComparison()}
+            >
+              {t('文字起こし前の強調を再実行')}
+            </button>
+          ) : null}
         </div>
+        <SavedAudioEnhancementControls
+          enabled={current.audioUrl !== null && !activeHere}
+          busy={savedAudioBusy}
+          progress={processing.progress}
+          error={savedAudioBusy ? null : processingError}
+          notice={null}
+          inputDiffers={current.audioUrl !== null}
+          onRun={() => void runSavedAudioEnhancement()}
+          onCancel={() => void cancelSavedAudioEnhancement()}
+        />
         {waveformError ? (
           <p className="muted">{t('波形を取得できませんでした。')}</p>
         ) : null}
@@ -805,6 +978,10 @@ export function MeetingDetail({
       </div>
 
       <div className="detail-body">
+        <StaleTranscriptNotice
+          summaryStale={Boolean(staleSummary)}
+          translationStale={staleTranslation}
+        />
         <section className="transcript-pane" aria-labelledby="transcript-title">
           <div className="transcript-bar">
             <div className="seg" role="tablist" aria-label={t('会議の表示')}>
@@ -828,7 +1005,9 @@ export function MeetingDetail({
               </button>
             </div>
             <span className="detail-toolbar-spacer" />
-            {tab === 'transcript' && Object.keys(translations).length > 0 ? (
+            {tab === 'transcript' &&
+            !comparisonReadOnly &&
+            Object.keys(translations).length > 0 ? (
               <select
                 className="setting-input transcript-language-select"
                 value={transcriptLanguage}
@@ -845,7 +1024,7 @@ export function MeetingDetail({
                 ) : null}
               </select>
             ) : null}
-            {tab === 'transcript' && transcript
+            {tab === 'transcript' && !comparisonReadOnly && transcript
               ? translationCandidates.map((target) => (
                   <button
                     type="button"
@@ -866,6 +1045,7 @@ export function MeetingDetail({
               : null}
             {tab === 'transcript' &&
             !editing &&
+            !comparisonReadOnly &&
             transcript !== null &&
             (detail?.speakers.length ?? 0) >= 2 ? (
               <button
@@ -901,7 +1081,12 @@ export function MeetingDetail({
                 <button
                   type="button"
                   className="link-button"
-                  disabled={!transcript || Boolean(displayedTranslation) || processing.stage !== null}
+                  disabled={
+                    !transcript ||
+                    Boolean(displayedTranslation) ||
+                    comparisonReadOnly ||
+                    processing.stage !== null
+                  }
                   onClick={startEditing}
                 >
                   {t('編集')}
@@ -938,21 +1123,30 @@ export function MeetingDetail({
             )}
           </div>
 
+          {tab === 'transcript' ? (
+            <TranscriptComparison
+              value={transcriptView}
+              hasRaw={rawComparison !== null}
+              hasEnhanced={enhancedComparison !== null}
+              onChange={setTranscriptView}
+            />
+          ) : null}
+
           {loading ? (
             <div className="transcript-empty">
               <p className="muted">{t('読み込み中です...')}</p>
             </div>
           ) : tab === 'transcript' ? (
-            editing ? (
+            editing && !comparisonReadOnly ? (
               <textarea
                 className="transcript-editor"
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 spellCheck={false}
               />
-            ) : transcript ? (
+            ) : displayedTranscript ? (
               <div className="transcript-scroll">
-                {(displayedTranslation?.partial ?? transcript.partial) ? (
+                {(displayedTranslation?.partial ?? displayedTranscript.partial) ? (
                   <p className="alert alert-warning">
                     {displayedTranslation
                       ? t('部分的な翻訳です。原文と対応していない行があります。')
@@ -969,7 +1163,7 @@ export function MeetingDetail({
                       : ''}
                   </p>
                 ) : null}
-                {renderTranscript(displayedTranslation ?? transcript)}
+                {renderTranscript(transcriptForRender)}
               </div>
             ) : (
               <div className="transcript-empty">
@@ -1172,6 +1366,17 @@ export function MeetingDetail({
                 </dd>
               </div>
               <div>
+                <dt>{t('相槌と擬音の除去')}</dt>
+                <dd>
+                  {preview.cleanupEnabled
+                    ? t('あり（約 {count} tokens を追加）', {
+                        count:
+                          preview.cleanupEstimatedTokens.toLocaleString(locale),
+                      })
+                    : t('なし')}
+                </dd>
+              </div>
+              <div>
                 <dt>{t('内容ハッシュ')}</dt>
                 <dd className="mono">{preview.contentHash.slice(0, 16)}...</dd>
               </div>
@@ -1179,6 +1384,7 @@ export function MeetingDetail({
             {preview.warning ? (
               <p className="alert alert-warning">{preview.warning}</p>
             ) : null}
+            <SummaryCleanupWarning enabled={preview.cleanupEnabled} />
             <SummaryRegenerationWarning summary={summary} />
             <p className="muted">
               {t(

@@ -1,11 +1,16 @@
 import { chmod, mkdir, open, readFile, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import type { SpeakerCount } from '../shared/types';
+import type { EnhancementSettings, ReuseModel, SpeakerCount } from '../shared/types';
 
-export const DIARIZATION_CACHE_SCHEMA_VERSION = 1;
+export const DIARIZATION_CACHE_SCHEMA_VERSION = 2;
 export const DIARIZATION_CACHE_FILE = 'diarization.json';
 
+export type DiarizationInputKind = 'raw' | `enhanced:${ReuseModel}`;
+
 export type DiarizationCacheKey = {
+  input_kind: DiarizationInputKind;
+  enhancement_model_sha256: string | null;
+  enhancement_settings: EnhancementSettings | null;
   audio_sha256: string;
   segmentation_sha256: string;
   embedding_sha256: string;
@@ -56,6 +61,25 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   );
 }
 
+function isEnhancementSettings(value: unknown): value is EnhancementSettings {
+  return (
+    isRecord(value) &&
+    typeof value.chunk_seconds === 'number' &&
+    Number.isFinite(value.chunk_seconds) &&
+    value.chunk_seconds >= 0 &&
+    typeof value.hop_seconds === 'number' &&
+    Number.isFinite(value.hop_seconds) &&
+    value.hop_seconds >= 0 &&
+    typeof value.crossfade_seconds === 'number' &&
+    Number.isFinite(value.crossfade_seconds) &&
+    value.crossfade_seconds >= 0
+  );
+}
+
+function isInputKind(value: unknown): value is DiarizationInputKind {
+  return value === 'raw' || value === 'enhanced:nemotronlabs';
+}
+
 function hasValidSpeakerMaps(
   names: Record<string, string>,
   labels: Record<string, string>,
@@ -80,6 +104,7 @@ function parseKey(value: unknown): DiarizationCacheKey | null {
     !isSha256(value.audio_sha256) ||
     !isSha256(value.segmentation_sha256) ||
     !isSha256(value.embedding_sha256) ||
+    !isInputKind(value.input_kind) ||
     !isSpeakerCount(value.speaker_count) ||
     typeof value.cluster_threshold !== 'number' ||
     !Number.isFinite(value.cluster_threshold) ||
@@ -91,10 +116,26 @@ function parseKey(value: unknown): DiarizationCacheKey | null {
   ) {
     return null;
   }
+  if (value.input_kind === 'raw') {
+    if (
+      value.enhancement_model_sha256 !== null ||
+      value.enhancement_settings !== null
+    ) {
+      return null;
+    }
+  } else if (
+    !isSha256(value.enhancement_model_sha256) ||
+    !isEnhancementSettings(value.enhancement_settings)
+  ) {
+    return null;
+  }
   return {
     audio_sha256: value.audio_sha256,
     segmentation_sha256: value.segmentation_sha256,
     embedding_sha256: value.embedding_sha256,
+    input_kind: value.input_kind,
+    enhancement_model_sha256: value.enhancement_model_sha256,
+    enhancement_settings: value.enhancement_settings,
     speaker_count: value.speaker_count,
     cluster_threshold: value.cluster_threshold,
     threads: value.threads,
@@ -240,6 +281,10 @@ export function matchesCacheKey(
     left.audio_sha256 === right.audio_sha256 &&
     left.segmentation_sha256 === right.segmentation_sha256 &&
     left.embedding_sha256 === right.embedding_sha256 &&
+    left.input_kind === right.input_kind &&
+    left.enhancement_model_sha256 === right.enhancement_model_sha256 &&
+    JSON.stringify(left.enhancement_settings) ===
+      JSON.stringify(right.enhancement_settings) &&
     left.speaker_count === right.speaker_count &&
     left.cluster_threshold === right.cluster_threshold &&
     left.threads === right.threads

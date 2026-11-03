@@ -7,13 +7,16 @@ import {
   parseTranscriptBody,
 } from '../shared/markdown';
 import type {
+  EnhancementState,
   MeetingDetail,
   MeetingSearchHit,
   MeetingSearchResult,
   MeetingStatus,
   MeetingSummary,
+  ReuseModel,
   SummaryLanguage,
 } from '../shared/types';
+import { REUSE_MODELS } from '../shared/types';
 import type { MeetingStore } from './meetings';
 
 function indexFileName(saveRoot: string): string {
@@ -38,7 +41,39 @@ type MeetingRow = {
   translation_languages: string;
   summary_language: string | null;
   pinned: number;
+  enhanced_models: string;
+  has_raw_transcript: number;
+  transcript_models: string;
+  enhancement_state: string | null;
 };
+
+function parseModels(value: string | null | undefined): ReuseModel[] {
+  if (!value) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return REUSE_MODELS.filter((model) => parsed.includes(model));
+  } catch {
+    return [];
+  }
+}
+
+function parseEnhancementState(
+  value: string | null,
+): EnhancementState | null {
+  return value === 'pending' ||
+    value === 'running' ||
+    value === 'succeeded' ||
+    value === 'failed' ||
+    value === 'cancelled' ||
+    value === 'interrupted'
+    ? value
+    : null;
+}
 
 function rowToMeeting(row: MeetingRow): MeetingSummary {
   let translations: SummaryLanguage[] = [];
@@ -77,6 +112,10 @@ function rowToMeeting(row: MeetingRow): MeetingSummary {
         ? row.summary_language
         : null,
     pinned: row.pinned === 1,
+    enhancedModels: parseModels(row.enhanced_models),
+    hasRawTranscript: row.has_raw_transcript === 1,
+    transcriptModels: parseModels(row.transcript_models),
+    enhancementState: parseEnhancementState(row.enhancement_state),
   };
 }
 
@@ -123,7 +162,11 @@ export class MeetingSearchIndex {
         transcript_partial INTEGER NOT NULL,
         translation_languages TEXT NOT NULL,
         summary_language TEXT,
-        pinned INTEGER NOT NULL DEFAULT 0
+        pinned INTEGER NOT NULL DEFAULT 0,
+        enhanced_models TEXT NOT NULL DEFAULT '[]',
+        has_raw_transcript INTEGER NOT NULL DEFAULT 0,
+        transcript_models TEXT NOT NULL DEFAULT '[]',
+        enhancement_state TEXT
       )
     `);
     const columns = db
@@ -131,6 +174,24 @@ export class MeetingSearchIndex {
       .all() as unknown as Array<{ name: string }>;
     if (!columns.some((column) => column.name === 'pinned')) {
       db.exec('ALTER TABLE meetings ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0');
+    }
+    if (!columns.some((column) => column.name === 'enhanced_models')) {
+      db.exec(
+        "ALTER TABLE meetings ADD COLUMN enhanced_models TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    if (!columns.some((column) => column.name === 'has_raw_transcript')) {
+      db.exec(
+        'ALTER TABLE meetings ADD COLUMN has_raw_transcript INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    if (!columns.some((column) => column.name === 'transcript_models')) {
+      db.exec(
+        "ALTER TABLE meetings ADD COLUMN transcript_models TEXT NOT NULL DEFAULT '[]'",
+      );
+    }
+    if (!columns.some((column) => column.name === 'enhancement_state')) {
+      db.exec('ALTER TABLE meetings ADD COLUMN enhancement_state TEXT');
     }
     db.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS search_entries USING fts5(
@@ -279,8 +340,9 @@ export class MeetingSearchIndex {
         `INSERT OR REPLACE INTO meetings
          (id, title, meeting_dir, started_at, duration, status, input_source,
           sample_rate, audio_url, chunk_count, has_transcript, has_summary,
-          transcript_partial, translation_languages, summary_language, pinned)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          transcript_partial, translation_languages, summary_language, pinned,
+          enhanced_models, has_raw_transcript, transcript_models, enhancement_state)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         meeting.id,
@@ -299,6 +361,10 @@ export class MeetingSearchIndex {
         JSON.stringify(meeting.translationLanguages),
         meeting.summaryLanguage,
         meeting.pinned ? 1 : 0,
+        JSON.stringify(meeting.enhancedModels),
+        meeting.hasRawTranscript ? 1 : 0,
+        JSON.stringify(meeting.transcriptModels),
+        meeting.enhancementState,
       );
 
     const insert = this.db.prepare(

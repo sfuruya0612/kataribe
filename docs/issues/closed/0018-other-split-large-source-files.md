@@ -3,8 +3,9 @@
 - Requirements: なし (構造のリファクタであり、PRD の要求ではない)
 - Priority: Low
 - Created: 2026-11-01
+- Completed: 2026-11-03
 - Model: DeepSeek V4.1 Flash 1017
-- Branch: feature/other-split-large-source-files
+- Branch: feature/feature-transcription-accuracy
 
 ## 目的
 
@@ -42,9 +43,14 @@ UI の表示言語の切り替えでは文言の置き換えが中心だった�
 
 ## 完了条件
 
-- [ ] 対象ファイルごとに子 issue を起票し、分割対象、分割後の module、完了条件を記録する。
-- [ ] 各子 issue の完了条件に、対象ファイルが 1000 行以下になること、振る舞い不変、既存テストの通過、`npm run typecheck` と `npm run build` の通過を含める。
-- [ ] この issue を closed にし、起票した子 issue の番号を記録する。
+- [x] 対象ファイルごとに子 issue を起票し、分割対象、分割後の module、完了条件を記録する。
+  - `0027-other-split-main-index.md`
+  - `0028-other-split-processing.md`
+  - `0029-other-split-settings-panel.md`
+  - `0030-other-split-meeting-detail.md`
+  - `0031-other-split-use-recorder.md`
+- [x] 各子 issue の完了条件に、対象ファイルが 1000 行以下になること、振る舞い不変、既存テストの通過、`npm run typecheck` と `npm run build` の通過を含める。
+- [x] この issue を closed にし、起票した子 issue の番号を記録する。
 
 ## 解決方法
 
@@ -54,3 +60,8 @@ UI の表示言語の切り替えでは文言の置き換えが中心だった�
 - `src/main/index.ts` を `window.ts`、`app-menu.ts`、`tray.ts`、`ipc/settings.ts`、`ipc/meetings.ts`、`ipc/recording.ts`、`ipc/processing.ts`、`ipc/llm.ts`、`ipc/multi-output.ts` に分ける。
 - `src/main/processing.ts` を変換、文字起こし、話者分離、要約、翻訳の phase module に分ける。
 - 分割ごとにテストの配置を見直し、同じ性質を複数の層で重複して検証しないようにする。
+
+## 完了時の記録
+
+2026-11-03 に、対象ファイルごとの子 issue 0027、0028、0029、0030、0031 を起票した。
+各子 issue は Open とし、対象ファイル、分割後の module、完了条件を持つ。

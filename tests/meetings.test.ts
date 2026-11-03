@@ -15,6 +15,10 @@ import {
   type DiarizationCache,
 } from '../src/main/diarization-cache';
 import { MeetingStore } from '../src/main/meetings';
+import {
+  createEnhancementFile,
+  writeEnhancementFile,
+} from '../src/main/reuse-metadata';
 import { listMeetingTodos, setMeetingTodoChecked } from '../src/main/todos';
 import { setUiLanguage } from '../src/main/i18n';
 import {
@@ -101,6 +105,67 @@ describe('MeetingStore', () => {
       chunkCount: 1,
     });
     expect(meetings[0].audioUrl).toContain('kataribe-audio://meeting/');
+  });
+
+  it('returns the enhancing status and the enhancement summary', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000e1';
+    const meetingDir = await createMeeting(root, id, {
+      status: 'enhancing',
+      enhancement: {
+        savedAudioModels: ['nemotronlabs'],
+        savedAudioState: 'succeeded',
+        hasRawTranscript: true,
+        transcriptModels: ['nemotronlabs'],
+        primarySource: 'nemotronlabs',
+      },
+    });
+    const source = {
+      path: 'audio.mp3',
+      sha256: 'a'.repeat(64),
+      sample_rate: 48_000,
+      channels: 1,
+    };
+    await writeEnhancementFile(meetingDir, createEnhancementFile(source));
+
+    const meetings = await store.list();
+    expect(meetings[0]).toMatchObject({
+      id,
+      status: 'enhancing',
+      enhancedModels: ['nemotronlabs'],
+      hasRawTranscript: true,
+      transcriptModels: ['nemotronlabs'],
+      enhancementState: 'succeeded',
+    });
+    const detail = await store.detail(id);
+    expect(detail?.enhancement?.source).toEqual(source);
+    expect(detail?.enhancementWarning).toBeNull();
+    const enhancedPath = join(meetingDir, 'audio.enhanced.nemotronlabs.mp3');
+    await writeFile(enhancedPath, 'enhanced');
+    expect(await store.enhancedAudioPath(id, 'nemotronlabs')).toBe(enhancedPath);
+  });
+
+  it('returns the raw and enhanced transcript comparisons', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000e2';
+    const meetingDir = await createMeeting(root, id);
+    await writeFile(join(meetingDir, 'transcript.md'), '# current transcript');
+    await writeFile(join(meetingDir, 'transcript.raw.md'), '# raw transcript');
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      '# enhanced transcript',
+    );
+    const detail = await store.detail(id);
+    expect(detail?.transcriptComparisons.raw?.body).toContain('raw transcript');
+    expect(
+      detail?.transcriptComparisons.models.nemotronlabs?.body,
+    ).toContain('enhanced transcript');
+    await rm(join(meetingDir, 'transcript.md'), { force: true });
+    const withoutTranscript = await store.detail(id);
+    expect(withoutTranscript?.transcriptComparisons).toEqual({
+      raw: null,
+      models: {},
+    });
   });
 
   it('returns null when audio.wav is missing', async () => {
@@ -348,6 +413,30 @@ describe('MeetingStore', () => {
     await writeFile(join(meetingDir, 'transcript.md'), transcript);
     await writeFile(join(meetingDir, 'transcript.en.md'), translation);
     await writeFile(join(meetingDir, 'summary.md'), summary);
+    await writeFile(
+      join(meetingDir, 'transcript.raw.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '生の本文' }],
+      }),
+    );
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '強調の本文' }],
+      }),
+    );
 
     const updated = await store.updateTitle(id, '新しい 会議/タイトル');
     expect(updated.title).toBe('新しい 会議_タイトル');
@@ -362,6 +451,24 @@ describe('MeetingStore', () => {
     expect(await readFile(join(updated.meetingDir, 'summary.md'), 'utf8')).toContain(
       'title: 新しい 会議_タイトル',
     );
+    expect(
+      await readFile(join(updated.meetingDir, 'transcript.raw.md'), 'utf8'),
+    ).toContain('title: 新しい 会議_タイトル');
+    expect(
+      await readFile(join(updated.meetingDir, 'transcript.raw.md'), 'utf8'),
+    ).toContain('生の本文');
+    expect(
+      await readFile(
+        join(updated.meetingDir, 'transcript.nemotronlabs.md'),
+        'utf8',
+      ),
+    ).toContain('title: 新しい 会議_タイトル');
+    expect(
+      await readFile(
+        join(updated.meetingDir, 'transcript.nemotronlabs.md'),
+        'utf8',
+      ),
+    ).toContain('強調の本文');
     await expect(readFile(join(meetingDir, 'meta.json'), 'utf8')).rejects.toThrow();
   });
 
@@ -402,6 +509,18 @@ describe('MeetingStore', () => {
     await writeFile(join(meetingDir, 'transcript.md'), transcript);
     await writeFile(join(meetingDir, 'transcript.en.md'), translation);
     await writeFile(join(meetingDir, 'summary.md'), summary);
+    await writeFile(
+      join(meetingDir, 'transcript.raw.md'),
+      formatTranscriptMarkdown({
+        title: '週次定例',
+        startedAt: '2026-10-29T05:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [{ startSeconds: 1, text: '比較専用語' }],
+      }),
+    );
 
     const transcriptHit = await store.search('キャッシュ');
     expect(transcriptHit.hits[0]).toMatchObject({
@@ -421,6 +540,11 @@ describe('MeetingStore', () => {
     expect(titleHit.hits[0]).toMatchObject({ kind: 'title' });
     expect(await store.search('x')).toEqual({
       query: 'x',
+      hits: [],
+      truncated: false,
+    });
+    expect(await store.search('比較専用語')).toEqual({
+      query: '比較専用語',
       hits: [],
       truncated: false,
     });
@@ -608,6 +732,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -676,6 +803,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -728,6 +858,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -757,6 +890,9 @@ describe('MeetingStore', () => {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+        input_kind: 'raw',
+        enhancement_model_sha256: null,
+        enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,

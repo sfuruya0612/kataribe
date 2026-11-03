@@ -2,33 +2,16 @@ import { resolve } from 'node:path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
+import { contentSecurityPolicy } from './src/main/csp';
 
-const devPolicy = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self' ws://localhost:* http://localhost:*",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "media-src 'self' kataribe-audio:",
-].join('; ');
-
-const productionPolicy = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "media-src 'self' kataribe-audio:",
-].join('; ');
-
-function contentSecurityPolicy(): Plugin {
+function contentSecurityPolicyPlugin(): Plugin {
   return {
     name: 'kataribe-content-security-policy',
     transformIndexHtml(html, context) {
-      const policy = context.server ? devPolicy : productionPolicy;
-      return html.replace('__CSP__', policy);
+      return html.replace(
+        '__CSP__',
+        contentSecurityPolicy(context.server !== undefined),
+      );
     },
   };
 }
@@ -46,6 +29,6 @@ export default defineConfig({
         '@renderer': resolve('src/renderer/src'),
       },
     },
-    plugins: [react(), contentSecurityPolicy()],
+    plugins: [react(), contentSecurityPolicyPlugin()],
   },
 });

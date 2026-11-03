@@ -282,3 +282,56 @@ describe('SettingsStore', () => {
     expect(settings.llmDefaultProfileId).toBe('');
   });
 });
+
+describe('transcription and summary preprocessing settings', () => {
+  it('req_trans_001_defaults_to_local_whisper_and_whisper_1', () => {
+    const settings = normalizeAppSettings({});
+    expect(settings.transcriptionEngine).toBe('whisper-cpp');
+    expect(settings.openaiTranscriptionModel).toBe('whisper-1');
+    expect(settings.openaiTranscriptionProfileId).toBe('');
+    expect(settings.removeFillersBeforeSummary).toBe(true);
+    expect(settings.enhanceSavedAudio).toBe(false);
+    expect(settings.enhanceBeforeTranscription).toBe(false);
+  });
+
+  it('req_trans_001_selects_a_chatgpt_profile_and_ignores_other_providers', () => {
+    const settings = normalizeAppSettings({
+      transcriptionEngine: 'openai',
+      openaiTranscriptionModel: 'gpt-4o-transcribe',
+      openaiTranscriptionProfileId: 'local',
+      llmProfiles: [
+        {
+          id: 'work',
+          provider: 'chatgpt',
+          baseUrl: 'https://api.openai.com/v1',
+          model: 'gpt-5.5',
+        },
+        {
+          id: 'local',
+          provider: 'ollama',
+          baseUrl: 'http://localhost:11434/v1',
+          model: 'qwen3',
+        },
+      ],
+      llmDefaultProfileId: 'work',
+    });
+    expect(settings.transcriptionEngine).toBe('openai');
+    expect(settings.openaiTranscriptionModel).toBe('gpt-4o-transcribe');
+    expect(settings.openaiTranscriptionProfileId).toBe('work');
+  });
+
+  it('req_trans_001_falls_back_to_defaults_for_invalid_values', () => {
+    const settings = normalizeAppSettings({
+      transcriptionEngine: 'cloud' as never,
+      openaiTranscriptionModel: 'unknown' as never,
+      removeFillersBeforeSummary: false,
+      enhanceSavedAudio: true,
+      enhanceBeforeTranscription: true,
+    });
+    expect(settings.transcriptionEngine).toBe('whisper-cpp');
+    expect(settings.openaiTranscriptionModel).toBe('whisper-1');
+    expect(settings.removeFillersBeforeSummary).toBe(false);
+    expect(settings.enhanceSavedAudio).toBe(true);
+    expect(settings.enhanceBeforeTranscription).toBe(true);
+  });
+});

@@ -1,12 +1,18 @@
 /// <reference types="vite/client" />
 
 import type { ClippingConfig } from '../../shared/clipping';
+import type {
+  EnhancementCancelMessage,
+  EnhancementStartMessage,
+  ReuseLicenseKind,
+} from '../../shared/reuse';
 import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
   AppSettings,
   DiarizationModelProgress,
   DiarizationModelStatus,
+  EnhancementFile,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -36,6 +42,10 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseDiskUsage,
+  ReuseModel,
+  ReuseModelList,
+  ReuseModelProgress,
   SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
@@ -131,6 +141,9 @@ declare global {
         names: string[],
       ) => Promise<MeetingDetail>;
       retryTranscription: (meetingId: string) => Promise<ProcessingState>;
+      retryTranscriptionComparison: (
+        meetingId: string,
+      ) => Promise<ProcessingState>;
       getMeetingWaveform: (meetingId: string) => Promise<MeetingWaveform>;
       openMeetingFolder: (meetingId: string) => Promise<void>;
       getProcessingState: () => Promise<ProcessingState>;
@@ -181,6 +194,49 @@ declare global {
         model: WhisperModel,
       ) => Promise<WhisperModelList>;
       deleteWhisperModel: (model: WhisperModel) => Promise<WhisperModelList>;
+      listReuseModels: () => Promise<ReuseModelList>;
+      downloadReuseModel: (model: ReuseModel) => Promise<ReuseModelList>;
+      cancelReuseModelDownload: (
+        model: ReuseModel,
+      ) => Promise<ReuseModelList>;
+      deleteReuseModel: (model: ReuseModel) => Promise<ReuseModelList>;
+      getReuseEnhancement: (
+        meetingId: string,
+      ) => Promise<EnhancementFile | null>;
+      getReuseDiskUsage: () => Promise<ReuseDiskUsage>;
+      deleteReuseSavedAudio: () => Promise<ReuseDiskUsage>;
+      enhanceReuseSavedAudio: (
+        meetingId: string,
+        model: ReuseModel,
+      ) => Promise<ProcessingState>;
+      openReuseLicense: (kind: ReuseLicenseKind) => Promise<void>;
+      onReuseModelProgress: (
+        listener: (progress: ReuseModelProgress) => void,
+      ) => () => void;
+      onReuseModelsChanged: (
+        listener: (list: ReuseModelList) => void,
+      ) => () => void;
+      onEnhancementStart: (
+        listener: (message: EnhancementStartMessage) => void,
+      ) => () => void;
+      onEnhancementCancel: (
+        listener: (message: EnhancementCancelMessage) => void,
+      ) => () => void;
+      reportEnhancementProgress: (
+        requestId: string,
+        progress: number,
+      ) => Promise<void>;
+      sendEnhancementChunk: (
+        requestId: string,
+        index: number,
+        samples: Float32Array,
+      ) => Promise<void>;
+      reportEnhancementDone: (requestId: string) => Promise<void>;
+      reportEnhancementReady: () => Promise<void>;
+      reportEnhancementError: (
+        requestId: string,
+        message: string,
+      ) => Promise<void>;
       getDiarizationModelStatus: () => Promise<DiarizationModelStatus>;
       downloadDiarizationModels: () => Promise<DiarizationModelStatus>;
       cancelDiarizationModelDownload: () => Promise<DiarizationModelStatus>;

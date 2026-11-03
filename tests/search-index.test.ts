@@ -41,6 +41,13 @@ async function setup() {
     app_version: '0.1.0',
     audio_path: 'audio.mp3',
     summary_language: 'en',
+    enhancement: {
+      savedAudioModels: ['nemotronlabs'],
+      savedAudioState: 'succeeded',
+      hasRawTranscript: true,
+      transcriptModels: ['nemotronlabs'],
+      primarySource: 'nemotronlabs',
+    },
   };
   await writeMeetingMeta(join(meetingDir, 'meta.json'), meta);
   await writeFile(
@@ -84,9 +91,10 @@ async function setup() {
     ),
   );
   const store = new MeetingStore(saveRoot);
-  const index = await MeetingSearchIndex.open(join(root, 'index'), saveRoot);
+  const indexRoot = join(root, 'index');
+  const index = await MeetingSearchIndex.open(indexRoot, saveRoot);
   await index.rebuild(store);
-  return { root, saveRoot, meetingId, meetingDir, store, index };
+  return { root, saveRoot, indexRoot, meetingId, meetingDir, store, index };
 }
 
 describe('MeetingSearchIndex', () => {
@@ -99,6 +107,10 @@ describe('MeetingSearchIndex', () => {
       title: '検索テスト',
       translationLanguages: ['en'],
       summaryLanguage: 'en',
+      enhancedModels: ['nemotronlabs'],
+      hasRawTranscript: true,
+      transcriptModels: ['nemotronlabs'],
+      enhancementState: 'succeeded',
     });
 
     expect(index.search('キャッシュ').hits[0]).toMatchObject({
@@ -144,5 +156,61 @@ describe('MeetingSearchIndex', () => {
     expect(index.list()).toEqual([]);
     expect(index.search('キャッシュ').hits).toEqual([]);
     index.close();
+  });
+
+  it('rebuilds the enhancement columns from the meeting folder', async () => {
+    const { index, indexRoot, store, saveRoot, meetingId } = await setup();
+    index.close();
+    const reopened = await MeetingSearchIndex.open(indexRoot, saveRoot);
+    await reopened.rebuild(store);
+    expect(reopened.list()[0]).toMatchObject({
+      id: meetingId,
+      enhancedModels: ['nemotronlabs'],
+      hasRawTranscript: true,
+      transcriptModels: ['nemotronlabs'],
+      enhancementState: 'succeeded',
+    });
+    reopened.close();
+  });
+
+  it('adds the enhancement columns to an existing index', async () => {
+    const { index, indexRoot, store, saveRoot, meetingId } = await setup();
+    index.close();
+    const { createHash } = await import('node:crypto');
+    const name = `${createHash('sha256').update(saveRoot).digest('hex').slice(0, 24)}.sqlite`;
+    await rm(join(indexRoot, name), { force: true });
+    await rm(join(indexRoot, `${name}-wal`), { force: true });
+    await rm(join(indexRoot, `${name}-shm`), { force: true });
+    const { DatabaseSync } = await import('node:sqlite');
+    const db = new DatabaseSync(join(indexRoot, name));
+    db.exec(`
+      CREATE TABLE meetings (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        meeting_dir TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        duration REAL NOT NULL,
+        status TEXT NOT NULL,
+        input_source TEXT,
+        sample_rate INTEGER NOT NULL,
+        audio_url TEXT,
+        chunk_count INTEGER NOT NULL,
+        has_transcript INTEGER NOT NULL,
+        has_summary INTEGER NOT NULL,
+        transcript_partial INTEGER NOT NULL,
+        translation_languages TEXT NOT NULL,
+        summary_language TEXT,
+        pinned INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    db.close();
+    const migrated = await MeetingSearchIndex.open(indexRoot, saveRoot);
+    await migrated.rebuild(store);
+    expect(migrated.list()[0]).toMatchObject({
+      id: meetingId,
+      enhancedModels: ['nemotronlabs'],
+      enhancementState: 'succeeded',
+    });
+    migrated.close();
   });
 });

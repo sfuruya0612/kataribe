@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BinaryLocator,
   buildMp3Args,
+  buildDecodeWavArgs,
   buildTranscriptionWavArgs,
   computeWavWaveform,
   MediaEncoder,
@@ -64,6 +65,13 @@ describe('ffmpeg arguments', () => {
     expect(args).toContain('-ar');
     expect(args[args.indexOf('-ar') + 1]).toBe('16000');
     expect(args).toContain('pcm_s16le');
+  });
+
+  it('builds mono PCM arguments that keep the input sample rate', () => {
+    const args = buildDecodeWavArgs('/in.mp3', '/out.wav.part');
+    expect(args).toContain('pcm_s16le');
+    expect(args).not.toContain('-ar');
+    expect(args).not.toContain('16000');
   });
 
   it('parses progress lines', () => {

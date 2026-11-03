@@ -1,10 +1,14 @@
 import type { TranscriptSegment } from '../shared/markdown';
-import type { SpeakerCount } from '../shared/types';
+import type {
+  EnhancementSettings,
+  SpeakerCount,
+} from '../shared/types';
 import type { DiarizationProgress, DiarizationService } from './diarization';
 import { turnsToCache, type DiarizationResult } from './diarization';
 import {
   DIARIZATION_CACHE_SCHEMA_VERSION,
   type DiarizationCache,
+  type DiarizationInputKind,
 } from './diarization-cache';
 import type { MeetingMetaDiarization } from './meeting-meta';
 
@@ -16,6 +20,9 @@ export type RunDiarizationOptions = {
   signal: AbortSignal;
   cache?: DiarizationCache | null;
   audioSha256?: string;
+  inputKind?: DiarizationInputKind;
+  enhancementModelSha256?: string | null;
+  enhancementSettings?: EnhancementSettings | null;
   onProgress?: (progress: DiarizationProgress) => void;
 };
 
@@ -54,6 +61,9 @@ export async function runDiarization(
       signal: options.signal,
       cache: options.cache,
       audioSha256: options.audioSha256,
+      inputKind: options.inputKind,
+      enhancementModelSha256: options.enhancementModelSha256,
+      enhancementSettings: options.enhancementSettings,
       onProgress: options.onProgress,
     });
     if (result === null) {

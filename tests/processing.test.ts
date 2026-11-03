@@ -18,16 +18,23 @@ import {
 } from '../src/main/diarization-cache';
 import type { LlmClient } from '../src/main/llm';
 import type { EncodeOptions, MediaEncoder } from '../src/main/media';
-import { writeMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
+import { writeMeetingMeta, readMeetingMeta, type MeetingMeta } from '../src/main/meeting-meta';
 import { MeetingStore } from '../src/main/meetings';
-import type { ModelManager } from '../src/main/models';
+import {
+  createEnhancementFile,
+  readEnhancementFile,
+  writeEnhancementFile,
+} from '../src/main/reuse-metadata';
 import { runDiarization } from '../src/main/diarization-run';
 import { ProcessingCoordinator } from '../src/main/processing';
+import type { ReuseSavedAudioService } from '../src/main/reuse-saved-audio';
+import type { ReuseEnhancementService } from '../src/main/reuse-enhancement';
 import type {
   TranscribeOptions,
   TranscriptionOutcome,
   TranscriptionService,
 } from '../src/main/transcription';
+import type { TranscriptionRunner } from '../src/main/transcription-runner';
 import { encodeWavMono16 } from '../src/main/wav';
 import {
   formatTranscriptMarkdown,
@@ -35,6 +42,7 @@ import {
   type TranscriptSegment,
 } from '../src/shared/markdown';
 import { normalizeAppSettings } from '../src/shared/settings';
+import type { AppSettings } from '../src/shared/types';
 
 const roots: string[] = [];
 
@@ -89,13 +97,18 @@ function createCoordinator(options: {
   root: string;
   saveRoot: string;
   complete: ReturnType<typeof vi.fn>;
+  settings?: Partial<AppSettings>;
+  reuseSavedAudio?: ReuseSavedAudioService;
+  reuseEnhancement?: ReuseEnhancementService;
+  mediaEncoder?: MediaEncoder;
+  transcriptionRunner?: TranscriptionRunner;
+  diarizationService?: DiarizationService;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const states: string[] = [];
   const coordinator = new ProcessingCoordinator({
     tempRoot: join(options.root, 'tmp'),
     meetingStore,
-    modelManager: {} as ModelManager,
     apiKeyStore: {
       status: async (profileId: string) => ({
         profileId,
@@ -107,10 +120,14 @@ function createCoordinator(options: {
       hostMatches: () => true,
       getKey: async () => 'sk-test',
     } as unknown as ApiKeyStore,
-    mediaEncoder: {} as MediaEncoder,
+    mediaEncoder: options.mediaEncoder ?? ({} as MediaEncoder),
     transcriptionService: {} as TranscriptionService,
-    diarizationService: {} as DiarizationService,
+    transcriptionRunner:
+      options.transcriptionRunner ?? ({} as TranscriptionRunner),
+    diarizationService: options.diarizationService ?? ({} as DiarizationService),
     llmClient: { complete: options.complete } as unknown as LlmClient,
+    reuseSavedAudio: options.reuseSavedAudio,
+    reuseEnhancement: options.reuseEnhancement,
     settings: () =>
       normalizeAppSettings({
         llmProfiles: [
@@ -130,6 +147,8 @@ function createCoordinator(options: {
         llmDefaultProfileId: 'work',
         summaryLanguage: 'ja',
         whisperModel: 'small',
+        removeFillersBeforeSummary: false,
+        ...options.settings,
       }),
     onStateChange: (state) => {
       states.push(`${state.stage}:${state.progress}`);
@@ -171,6 +190,8 @@ describe('ProcessingCoordinator summary flow', () => {
     });
     expect(preview.text).toContain('リリース時期');
     expect(preview.estimatedTokens).toBeGreaterThan(0);
+    expect(preview.cleanupEnabled).toBe(false);
+    expect(preview.cleanupEstimatedTokens).toBe(0);
     expect(complete).not.toHaveBeenCalled();
 
     const result = await coordinator.generateSummary(meetingId, preview.token);
@@ -178,6 +199,7 @@ describe('ProcessingCoordinator summary flow', () => {
     expect(result.summary.body).toContain('## 要約');
     expect(result.summary.body).toContain('- [ ] 資料をまとめる');
     expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 40 });
+    expect(result.cleanup.state).toBe('skipped');
 
     const summaryPath = join(meetingDir, 'summary.md');
     const markdown = await readFile(summaryPath, 'utf8');
@@ -192,6 +214,66 @@ describe('ProcessingCoordinator summary flow', () => {
     await expect(
       coordinator.generateSummary(meetingId, preview.token),
     ).rejects.toThrow('確認トークンが無効');
+  });
+
+  it('req_summary_002_cleans_before_summary_and_records_the_result', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(
+      join(meetingDir, 'transcript.md'),
+      formatTranscriptMarkdown({
+        title: '要約テスト',
+        startedAt: '2026-10-31T01:00:00.000Z',
+        durationSeconds: 60,
+        source: 'mic+system',
+        model: 'small',
+        language: 'ja',
+        segments: [
+          {
+            startSeconds: 1,
+            endSeconds: 2,
+            speaker: '話者A',
+            text: 'あー、リリース時期を決めます。',
+          },
+          {
+            startSeconds: 12,
+            endSeconds: 13,
+            speaker: '話者B',
+            text: 'なるほど、担当は田中さんです。',
+          },
+        ],
+      }),
+    );
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce({
+        text: '[00:00:01] 話者A: リリース時期を決めます。\n[00:00:12] 話者B: 担当は田中さんです。',
+        inputTokens: 10,
+        outputTokens: 5,
+        status: 200,
+      })
+      .mockResolvedValueOnce(summaryResponse);
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: { removeFillersBeforeSummary: true },
+    });
+
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    expect(preview.cleanupEnabled).toBe(true);
+    expect(preview.cleanupEstimatedTokens).toBeGreaterThan(0);
+
+    const result = await coordinator.generateSummary(meetingId, preview.token);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0].user).not.toContain('なるほど');
+    expect(result.cleanup.state).toBe('completed');
+    const meta = JSON.parse(await readFile(join(meetingDir, 'meta.json'), 'utf8'));
+    expect(meta.summary.cleanup).toMatchObject({
+      state: 'completed',
+      chunks: 1,
+      fallback_chunks: 0,
+    });
+    expect(meta.summary.usage).toEqual({ input_tokens: 110, output_tokens: 45 });
   });
 
   it('uses the selected LLM profile for preview and generation', async () => {
@@ -371,6 +453,818 @@ describe('ProcessingCoordinator interrupted recovery', () => {  it('marks unfini
     expect(updated.transcription.state).toBe('completed');
     expect(updated.transcription.partial).toBe(false);
   });
+
+  it('marks an interrupted enhancement and its enhancement.json entries', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.status = 'enhancing';
+    await writeFile(metaPath, JSON.stringify(meta));
+    const source = {
+      path: 'audio.mp3',
+      sha256: 'a'.repeat(64),
+      sample_rate: 48_000,
+      channels: 1,
+    };
+    const file = createEnhancementFile(source);
+    file.saved_audio.nemotronlabs = {
+      state: 'running',
+      model_sha256: 'b'.repeat(64),
+      input: source,
+      output: null,
+      settings: { chunk_seconds: 5, hop_seconds: 2.5, crossfade_seconds: 0.5 },
+      started_at: '2026-11-03T00:00:00.000Z',
+      finished_at: null,
+      elapsed_seconds: null,
+      error: null,
+    };
+    await writeEnhancementFile(meetingDir, file);
+
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    await coordinator.markInterruptedMeetings();
+
+    const updated = JSON.parse(await readFile(metaPath, 'utf8'));
+    expect(updated.status).toBe('error');
+    expect(updated.error).toContain('音声強調');
+    expect(updated.id).toBe(meetingId);
+    expect(updated.enhancement?.savedAudioState).toBe('interrupted');
+    const enhancement = await readEnhancementFile(meetingDir);
+    expect(enhancement.state).toBe('ok');
+    expect(
+      enhancement.state === 'ok'
+        ? enhancement.file.saved_audio.nemotronlabs?.state
+        : null,
+    ).toBe('interrupted');
+  });
+});
+
+describe('saved audio enhancement queue', () => {
+  it('rejects a second enhancement for the same meeting and restores the status', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const enhance = vi.fn(async () => {
+      await gate;
+    });
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      reuseSavedAudio: { enhance } as unknown as ReuseSavedAudioService,
+    });
+    const first = coordinator.requestSavedAudioEnhancement(
+      meetingId,
+      'nemotronlabs',
+    );
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (coordinator.getState().stage === 'enhancing') {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect(coordinator.getState().stage).toBe('enhancing');
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if ((await readMeetingMeta(join(meetingDir, 'meta.json'))).status === 'enhancing') {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'enhancing',
+    );
+    await expect(
+      coordinator.requestSavedAudioEnhancement(meetingId, 'nemotronlabs'),
+    ).rejects.toThrow(/already queued/u);
+    release();
+    await first;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      if (coordinator.getState().stage === null) {
+        break;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    }
+    expect(coordinator.getState().stage).toBeNull();
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+    expect(enhance).toHaveBeenCalledTimes(1);
+  });
+
+  it('removes stale derivatives when the saved audio changes before re-enhancement', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'changed audio');
+    await writeFile(join(meetingDir, 'transcript.raw.md'), 'old raw');
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      'old enhanced',
+    );
+    await writeFile(
+      join(meetingDir, 'audio.enhanced.nemotronlabs.mp3'),
+      'old enhanced audio',
+    );
+    await writeEnhancementFile(
+      meetingDir,
+      createEnhancementFile({
+        path: 'audio.mp3',
+        sha256: '0'.repeat(64),
+        sample_rate: 44100,
+        channels: 1,
+      }),
+    );
+    const enhance = vi.fn(async () => undefined);
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      reuseSavedAudio: { enhance } as unknown as ReuseSavedAudioService,
+    });
+
+    await coordinator.requestSavedAudioEnhancement(
+      meetingId,
+      'nemotronlabs',
+    );
+
+    expect(enhance).toHaveBeenCalledTimes(1);
+    await expect(
+      readFile(join(meetingDir, 'transcript.raw.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'transcript.nemotronlabs.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'audio.enhanced.nemotronlabs.mp3')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('transcription comparison flow', () => {
+  it('saves raw and enhanced snapshots and makes the enhanced result primary', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const outcome = (text: string): TranscriptionOutcome => ({
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    });
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: outcome(
+          options.audioWavPath.includes('enhanced')
+            ? 'enhanced text'
+            : 'raw text',
+        ),
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+    expect(
+      (await readFile(join(meetingDir, 'transcript.md'), 'utf8')).includes(
+        'enhanced text',
+      ),
+    ).toBe(true);
+    expect(
+      (await readFile(join(meetingDir, 'transcript.raw.md'), 'utf8')).includes(
+        'raw text',
+      ),
+    ).toBe(true);
+    expect(
+      (
+        await readFile(join(meetingDir, 'transcript.nemotronlabs.md'), 'utf8')
+      ).includes('enhanced text'),
+    ).toBe(true);
+    const read = await readEnhancementFile(meetingDir);
+    expect(read.state).toBe('ok');
+    expect(
+      read.state === 'ok' ? read.file.transcription.raw.state : null,
+    ).toBe('succeeded');
+    expect(
+      read.state === 'ok'
+        ? read.file.transcription.models.nemotronlabs?.state
+        : null,
+    ).toBe('succeeded');
+    expect(
+      read.state === 'ok' ? read.file.transcription.primary : null,
+    ).toEqual({
+      source: 'nemotronlabs',
+      path: 'transcript.md',
+    });
+    const meta = await readMeetingMeta(join(meetingDir, 'meta.json'));
+    expect(meta.status).toBe('transcribed');
+    expect(meta.enhancement?.hasRawTranscript).toBe(true);
+    expect(meta.enhancement?.transcriptModels).toEqual(['nemotronlabs']);
+    expect(runner.plan).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs speaker diarization only on the primary transcript', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const outcome = (text: string): TranscriptionOutcome => ({
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    });
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: outcome(
+          options.audioWavPath.includes('enhanced')
+            ? 'enhanced text'
+            : 'raw text',
+        ),
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const diarize = vi.fn(
+      async (
+        _wavPath: string,
+        segments: TranscriptSegment[],
+        options: DiarizationOptions,
+      ) => ({
+        ...diarizationResult(options, false),
+        segments: segments.map((segment) => ({
+          ...segment,
+          speaker: '田中',
+        })),
+      }),
+    );
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: true,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+      diarizationService: { diarize } as unknown as DiarizationService,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+
+    expect(diarize).toHaveBeenCalledTimes(1);
+    expect(diarize.mock.calls[0]?.[0]).toContain('enhanced');
+    expect(
+      await readFile(join(meetingDir, 'transcript.raw.md'), 'utf8'),
+    ).not.toContain('田中');
+    expect(
+      await readFile(
+        join(meetingDir, 'transcript.nemotronlabs.md'),
+        'utf8',
+      ),
+    ).not.toContain('田中');
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      '田中',
+    );
+  });
+
+  it('sends the enhanced audio once to OpenAI without a comparison', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const outcome: TranscriptionOutcome = {
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text: 'openai text' }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    };
+    const run = vi.fn(async () => ({
+      outcome,
+      resolution: {
+        engine: 'openai' as const,
+        modelLabel: 'openai/whisper-1',
+        fallbackReason: null,
+      },
+    }));
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'openai' as const,
+          modelLabel: 'openai/whisper-1',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: null,
+        localModelPath: null,
+        openAiModel: 'whisper-1',
+        openAiEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
+        openAiApiKey: 'sk-test',
+      })),
+      run,
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const enhance = vi.fn(async ({ outputPath }: { outputPath: string }) => {
+      await writeFile(
+        outputPath,
+        encodeWavMono16(new Float32Array(16_000), 16_000),
+      );
+    });
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+        transcriptionEngine: 'openai',
+        openaiTranscriptionProfileId: 'work',
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement: { enhance } as unknown as ReuseEnhancementService,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(enhance).toHaveBeenCalledTimes(1);
+    await expect(
+      readFile(join(meetingDir, 'transcript.raw.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'transcript.nemotronlabs.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      'openai text',
+    );
+  });
+
+  it('saves a partial transcript when neither side completes', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const partial: TranscriptionOutcome = {
+      state: 'partial',
+      segments: [{ startSeconds: 0, endSeconds: 1, text: 'raw partial' }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: 'process-failed',
+      error: 'raw failed',
+      resumed: false,
+    };
+    const failed: TranscriptionOutcome = {
+      ...partial,
+      state: 'failed',
+      segments: [],
+      error: 'enhanced failed',
+    };
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: options.audioWavPath.includes('enhanced') ? failed : partial,
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+
+    const transcript = await readFile(join(meetingDir, 'transcript.md'), 'utf8');
+    expect(transcript).toContain('raw partial');
+    expect(transcript).toContain('partial: true');
+    await expect(
+      readFile(join(meetingDir, 'transcript.raw.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'transcript.nemotronlabs.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    const meta = await readMeetingMeta(join(meetingDir, 'meta.json'));
+    expect(meta.transcription?.state).toBe('partial');
+    expect(meta.transcription?.partial).toBe(true);
+  });
+
+  it('records the enhancement failure and keeps the raw transcript', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    const outcome: TranscriptionOutcome = {
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text: 'raw text' }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    };
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async () => ({
+        outcome,
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async () => {
+        throw new Error('gpu unavailable');
+      },
+    } as unknown as ReuseEnhancementService;
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscription(meetingId);
+
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toContain(
+      'raw text',
+    );
+    expect(runner.run).toHaveBeenCalledTimes(1);
+    const read = await readEnhancementFile(meetingDir);
+    expect(read.state).toBe('ok');
+    expect(
+      read.state === 'ok'
+        ? read.file.transcription.models.nemotronlabs
+        : null,
+    ).toMatchObject({
+      state: 'failed',
+      error: 'gpu unavailable',
+    });
+  });
+
+  it('keeps the previous transcript when a re-run fails on one side', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    await writeFile(join(meetingDir, 'transcript.md'), 'OLD TRANSCRIPT');
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async (options: { audioWavPath: string }) => ({
+        outcome: options.audioWavPath.includes('enhanced')
+          ? {
+              state: 'failed' as const,
+              segments: [],
+              language: 'ja',
+              lastEndSeconds: 0,
+              durationSeconds: 1,
+              elapsedSeconds: 0.5,
+              errorCode: 'process-failed' as const,
+              error: 'enhanced failed',
+              resumed: false,
+            }
+          : {
+              state: 'completed' as const,
+              segments: [{ startSeconds: 0, endSeconds: 1, text: 'raw text' }],
+              language: 'ja',
+              lastEndSeconds: 1,
+              durationSeconds: 1,
+              elapsedSeconds: 0.5,
+              errorCode: null,
+              error: null,
+              resumed: false,
+            },
+        resolution: {
+          engine: 'whisper-cpp' as const,
+          modelLabel: 'small',
+          fallbackReason: null,
+        },
+      })),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const reuseEnhancement = {
+      enhance: async ({ outputPath }: { outputPath: string }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as ReuseEnhancementService;
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+      settings: {
+        enhanceBeforeTranscription: true,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+      reuseEnhancement,
+    });
+
+    await coordinator.requestTranscriptionComparison(meetingId);
+    expect(await readFile(join(meetingDir, 'transcript.md'), 'utf8')).toBe(
+      'OLD TRANSCRIPT',
+    );
+    expect(
+      await readFile(join(meetingDir, 'transcript.previous.md'), 'utf8'),
+    ).toBe('OLD TRANSCRIPT');
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+  });
+
+  it('clears a queued comparison marker when enqueue rejects', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    let markStarted = (): void => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const outcome: TranscriptionOutcome = {
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text: 'text' }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    };
+    const resolution = {
+      engine: 'whisper-cpp' as const,
+      modelLabel: 'small',
+      fallbackReason: null,
+    };
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution,
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async () => {
+        markStarted();
+        await gate;
+        return { outcome, resolution };
+      }),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: false,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+    });
+
+    const first = coordinator.requestTranscription(meetingId);
+    await started;
+    await expect(
+      coordinator.requestTranscriptionComparison(meetingId),
+    ).rejects.toThrow(/already queued/u);
+    release();
+    await first;
+
+    await vi.waitFor(async () => {
+      await coordinator.requestTranscription(meetingId);
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(2);
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+  });
 });
 
 describe('runDiarization', () => {
@@ -397,6 +1291,9 @@ describe('runDiarization', () => {
           audio_sha256: 'a'.repeat(64),
           segmentation_sha256: 'b'.repeat(64),
           embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
           speaker_count: 'auto',
           cluster_threshold: 0.9,
           threads: 4,
@@ -419,11 +1316,14 @@ describe('runDiarization', () => {
     expect(result.meta).toEqual({ state: 'completed', speakers: 2 });
     expect(result.cacheHit).toBe(true);
     expect(result.cache).toEqual({
-      schema_version: 1,
+      schema_version: 2,
       key: {
         audio_sha256: 'a'.repeat(64),
         segmentation_sha256: 'b'.repeat(64),
         embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
         speaker_count: 'auto',
         cluster_threshold: 0.9,
         threads: 4,
@@ -535,6 +1435,9 @@ function diarizationResult(
       audio_sha256: options.audioSha256 ?? 'a'.repeat(64),
       segmentation_sha256: 'b'.repeat(64),
       embedding_sha256: 'c'.repeat(64),
+      input_kind: options.inputKind ?? 'raw',
+      enhancement_model_sha256: options.enhancementModelSha256 ?? null,
+      enhancement_settings: options.enhancementSettings ?? null,
       speaker_count: options.numSpeakers,
       cluster_threshold: 0.9,
       threads: 4,
@@ -577,6 +1480,9 @@ async function createDiarizationMeeting() {
       audio_sha256: audioHash,
       segmentation_sha256: 'b'.repeat(64),
       embedding_sha256: 'c'.repeat(64),
+      input_kind: 'raw',
+      enhancement_model_sha256: null,
+      enhancement_settings: null,
       speaker_count: 'auto',
       cluster_threshold: 0.9,
       threads: 4,
@@ -619,6 +1525,8 @@ function createDiarizationCoordinator(options: {
     segments: TranscriptSegment[],
     options: DiarizationOptions,
   ) => Promise<DiarizationResult | null>;
+  runner?: TranscriptionRunner;
+  settings?: Partial<AppSettings>;
 }) {
   const meetingStore = new MeetingStore(options.saveRoot);
   const calls: Array<{
@@ -629,9 +1537,6 @@ function createDiarizationCoordinator(options: {
   const coordinator = new ProcessingCoordinator({
     tempRoot: join(options.root, 'tmp'),
     meetingStore,
-    modelManager: {
-      installedPath: async () => '/tmp/ggml-small.bin',
-    } as unknown as ModelManager,
     apiKeyStore: {
       status: async (profileId: string) => ({
         profileId,
@@ -654,6 +1559,18 @@ function createDiarizationCoordinator(options: {
     transcriptionService: {
       transcribe: async (_options: TranscribeOptions) => transcriptionOutcome,
     } as unknown as TranscriptionService,
+    transcriptionRunner:
+      options.runner ??
+      ({
+        run: async () => ({
+          outcome: transcriptionOutcome,
+          resolution: {
+            engine: 'whisper-cpp' as const,
+            modelLabel: 'small',
+            fallbackReason: null,
+          },
+        }),
+      } as unknown as TranscriptionRunner),
     diarizationService: {
       diarize: async (
         wavPath: string,
@@ -687,6 +1604,8 @@ function createDiarizationCoordinator(options: {
         whisperModel: 'small',
         speakerDiarization: true,
         speakerCount: 'auto',
+        removeFillersBeforeSummary: false,
+        ...options.settings,
       }),
     onStateChange: () => undefined,
     onMeetingUpdated: () => undefined,
@@ -822,5 +1741,132 @@ describe('ProcessingCoordinator diarization cache', () => {
     const transcript = await readFile(join(setup.meetingDir, 'transcript.md'), 'utf8');
     expect(transcript).toContain('一つ目です。');
     expect(transcript).not.toContain('田中');
+  });
+});
+
+describe('ProcessingCoordinator transcription engine metadata', () => {
+  it('req_trans_001_records_the_openai_engine_and_model', async () => {
+    const setup = await createDiarizationMeeting();
+    const runner = {
+      run: async () => ({
+        outcome: transcriptionOutcome,
+        resolution: {
+          engine: 'openai' as const,
+          modelLabel: 'openai/whisper-1',
+          fallbackReason: null,
+        },
+      }),
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.transcription?.state).toBe('completed');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.model).toBe('openai/whisper-1');
+    const transcript = await readFile(
+      join(setup.meetingDir, 'transcript.md'),
+      'utf8',
+    );
+    expect(transcript).toContain('model: openai/whisper-1');
+  });
+
+  it('req_trans_001_reports_a_failed_openai_transcription', async () => {
+    const setup = await createDiarizationMeeting();
+    const failedOutcome: TranscriptionOutcome = {
+      state: 'failed',
+      segments: [],
+      language: 'auto',
+      lastEndSeconds: 0,
+      durationSeconds: 4,
+      elapsedSeconds: 0,
+      errorCode: 'openai-config',
+      error: 'invalid key',
+      resumed: false,
+    };
+    const runner = {
+      run: async () => ({
+        outcome: failedOutcome,
+        resolution: {
+          engine: 'openai' as const,
+          modelLabel: 'openai/whisper-1',
+          fallbackReason: null,
+        },
+      }),
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.status).toBe('error');
+    expect(meta.transcription?.state).toBe('failed');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.model).toBe('openai/whisper-1');
+    expect(meta.error).toContain('OpenAI');
+  });
+
+  it('req_trans_001_saves_a_partial_openai_transcription', async () => {
+    const setup = await createDiarizationMeeting();
+    const partialOutcome: TranscriptionOutcome = {
+      state: 'partial',
+      segments: [{ startSeconds: 1, endSeconds: 2, text: '前半です。' }],
+      language: 'ja',
+      lastEndSeconds: 2,
+      durationSeconds: 4,
+      elapsedSeconds: 1,
+      errorCode: 'openai-server',
+      error: 'server error',
+      resumed: false,
+    };
+    const runner = {
+      run: async (runOptions: {
+        onPartial?: (outcome: TranscriptionOutcome) => void | Promise<void>;
+      }) => {
+        await runOptions.onPartial?.(partialOutcome);
+        return {
+          outcome: partialOutcome,
+          resolution: {
+            engine: 'openai' as const,
+            modelLabel: 'openai/whisper-1',
+            fallbackReason: null,
+          },
+        };
+      },
+    } as unknown as TranscriptionRunner;
+    const { coordinator } = createDiarizationCoordinator({
+      root: setup.root,
+      saveRoot: setup.saveRoot,
+      diarize: async (_wavPath, _segments, options) =>
+        diarizationResult(options, false),
+      runner,
+    });
+
+    await coordinator.requestTranscription(setup.meetingId);
+
+    const meta = await readMeetingMeta(join(setup.meetingDir, 'meta.json'));
+    expect(meta.status).toBe('error');
+    expect(meta.transcription?.state).toBe('partial');
+    expect(meta.transcription?.engine).toBe('openai');
+    expect(meta.transcription?.partial).toBe(true);
+    const transcript = await readFile(
+      join(setup.meetingDir, 'transcript.md'),
+      'utf8',
+    );
+    expect(transcript).toContain('partial: true');
+    expect(transcript).toContain('前半です。');
   });
 });

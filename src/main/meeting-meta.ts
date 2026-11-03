@@ -3,12 +3,16 @@ import { dirname } from 'node:path';
 import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
+  EnhancementState,
   InputSource,
   MeetingStatus,
   RecordingCaptureStats,
   RecordingErrorInfo,
   RecordingEvent,
+  ReuseModel,
   SummaryLanguage,
+  TranscriptionCleanupState,
+  TranscriptionEngine,
 } from '../shared/types';
 import { WAV_BITS_PER_SAMPLE, WAV_CHANNELS } from './wav';
 import { t } from './i18n';
@@ -52,12 +56,21 @@ export type MeetingMetaTranscription = {
     | 'completed';
   started_at?: string;
   finished_at?: string;
+  engine?: TranscriptionEngine;
   model?: string;
   language?: string;
   last_segment_end?: number;
   resume_count?: number;
   error?: string;
   partial?: boolean;
+};
+
+export type MeetingMetaSummaryCleanup = {
+  state: TranscriptionCleanupState;
+  chunks: number;
+  fallback_chunks: number;
+  removed_chars: number;
+  error?: string;
 };
 
 export type MeetingMetaSummary = {
@@ -67,6 +80,7 @@ export type MeetingMetaSummary = {
   language?: string;
   generated_at?: string;
   error?: string;
+  cleanup?: MeetingMetaSummaryCleanup;
   usage?: {
     input_tokens: number | null;
     output_tokens: number | null;
@@ -88,6 +102,14 @@ export type MeetingMetaDiarization = {
   state: 'completed' | 'failed';
   speakers?: number;
   error?: string;
+};
+
+export type MeetingMetaEnhancement = {
+  savedAudioModels?: ReuseModel[];
+  savedAudioState?: EnhancementState;
+  hasRawTranscript?: boolean;
+  transcriptModels?: ReuseModel[];
+  primarySource?: 'raw' | ReuseModel;
 };
 
 export type MeetingMeta = {
@@ -120,6 +142,7 @@ export type MeetingMeta = {
   encoding?: MeetingMetaEncoding;
   transcription?: MeetingMetaTranscription;
   diarization?: MeetingMetaDiarization;
+  enhancement?: MeetingMetaEnhancement;
   speakers?: string[];
   summary?: MeetingMetaSummary;
   translations?: Partial<Record<SummaryLanguage, MeetingMetaTranslation>>;

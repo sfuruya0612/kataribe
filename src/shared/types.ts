@@ -10,10 +10,81 @@ export type AppInfo = {
 export type MeetingStatus =
   | 'recording'
   | 'encoding'
+  | 'enhancing'
   | 'transcribing'
   | 'transcribed'
   | 'summarized'
   | 'error';
+
+export type EnhancementState =
+  | 'pending'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled'
+  | 'interrupted';
+
+export type EnhancementAudioSource = {
+  path: string;
+  sha256: string;
+  sample_rate: number;
+  channels: number;
+};
+
+export type EnhancementSettings = {
+  chunk_seconds: number;
+  hop_seconds: number;
+  crossfade_seconds: number;
+};
+
+export type EnhancementSavedAudio = {
+  state: EnhancementState;
+  model_sha256: string;
+  input: EnhancementAudioSource;
+  output: { path: string; sha256: string } | null;
+  settings: EnhancementSettings;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  error: string | null;
+};
+
+export type EnhancementTranscriptionSettings = {
+  engine: TranscriptionEngine;
+  whisper_model: string;
+  chunk_seconds: number | null;
+  hop_seconds: number | null;
+  crossfade_seconds: number | null;
+};
+
+export type EnhancementTranscriptionEntry = {
+  state: EnhancementState;
+  path: string | null;
+  input_sha256: string;
+  output_sha256: string | null;
+  model: string | null;
+  model_sha256: string | null;
+  settings: EnhancementTranscriptionSettings;
+  chars: number | null;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  error: string | null;
+};
+
+export type EnhancementTranscription = {
+  source_input_sha256: string | null;
+  raw: EnhancementTranscriptionEntry;
+  models: Partial<Record<ReuseModel, EnhancementTranscriptionEntry>>;
+  primary: { source: 'raw' | ReuseModel; path: string | null };
+};
+
+export type EnhancementFile = {
+  schema_version: number;
+  source: EnhancementAudioSource;
+  saved_audio: Partial<Record<ReuseModel, EnhancementSavedAudio>>;
+  transcription: EnhancementTranscription;
+};
 
 export type MeetingSummary = {
   id: string;
@@ -32,6 +103,10 @@ export type MeetingSummary = {
   translationLanguages: SummaryLanguage[];
   summaryLanguage: SummaryLanguage | null;
   pinned: boolean;
+  enhancedModels: ReuseModel[];
+  hasRawTranscript: boolean;
+  transcriptModels: ReuseModel[];
+  enhancementState: EnhancementState | null;
 };
 
 /** 全会議の ToDo 一覧に表示する項目。 */
@@ -85,6 +160,11 @@ export type RecordingErrorInfo = {
   at: string;
 };
 
+export type TranscriptComparison = {
+  raw: TranscriptDocument | null;
+  models: Partial<Record<ReuseModel, TranscriptDocument>>;
+};
+
 export type MeetingDetail = {
   meeting: MeetingSummary;
   recordingError: RecordingErrorInfo | null;
@@ -93,6 +173,9 @@ export type MeetingDetail = {
   translations: Partial<Record<SummaryLanguage, TranscriptTranslation>>;
   speakers: string[];
   diarizationError: string | null;
+  enhancement: EnhancementFile | null;
+  transcriptComparisons: TranscriptComparison;
+  enhancementWarning: string | null;
 };
 export type MeetingSearchKind =
   | 'title'
@@ -119,6 +202,7 @@ export type MeetingSearchResult = {
 
 export type ProcessingStage =
   | 'encoding'
+  | 'enhancing'
   | 'transcribing'
   | 'translating'
   | 'summarizing';
@@ -134,6 +218,51 @@ export type ProcessingState = {
 };
 
 export type WhisperModel = 'large-v3-turbo' | 'medium' | 'small';
+
+export const REUSE_MODELS = ['nemotronlabs'] as const;
+
+export type ReuseModel = (typeof REUSE_MODELS)[number];
+
+export type ReuseModelInfo = {
+  id: ReuseModel;
+  label: string;
+  license: string;
+  sizeBytes: number;
+  installed: boolean;
+  downloading: boolean;
+  progress: number | null;
+  error: string | null;
+};
+
+export type ReuseModelList = {
+  models: ReuseModelInfo[];
+  modelsDir: string;
+};
+
+export type ReuseModelProgress = {
+  id: ReuseModel;
+  downloadedBytes: number;
+  totalBytes: number;
+  progress: number;
+};
+
+export type ReuseDiskUsage = {
+  bytes: number;
+  meetings: number;
+};
+
+export type TranscriptionEngine = 'whisper-cpp' | 'openai';
+
+export type OpenAiTranscriptionModel =
+  | 'whisper-1'
+  | 'gpt-4o-transcribe'
+  | 'gpt-4o-mini-transcribe';
+
+export type TranscriptionCleanupState =
+  | 'completed'
+  | 'partial'
+  | 'failed'
+  | 'skipped';
 
 export type SpeakerCount = 'auto' | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
@@ -188,6 +317,9 @@ export type AppSettings = {
   theme: ThemeMode;
   uiLanguage: UiLanguage;
   whisperModel: WhisperModel;
+  transcriptionEngine: TranscriptionEngine;
+  openaiTranscriptionProfileId: string;
+  openaiTranscriptionModel: OpenAiTranscriptionModel;
   speakerDiarization: boolean;
   speakerCount: SpeakerCount;
   whisperInitialPrompt: string;
@@ -197,6 +329,9 @@ export type AppSettings = {
   llmDefaultProfileId: string;
   summaryLanguage: SummaryLanguage;
   summaryPromptTemplate: string;
+  removeFillersBeforeSummary: boolean;
+  enhanceSavedAudio: boolean;
+  enhanceBeforeTranscription: boolean;
   clippingConfig: ClippingConfig;
   silenceConfig: SilenceConfig;
 };
@@ -461,6 +596,8 @@ export type SummaryPreview = {
   language: SummaryLanguage;
   charCount: number;
   estimatedTokens: number;
+  cleanupEnabled: boolean;
+  cleanupEstimatedTokens: number;
   contentHash: string;
   text: string;
   partial: boolean;
@@ -513,10 +650,19 @@ export type SummaryUsage = {
   outputTokens: number | null;
 };
 
+export type SummaryCleanup = {
+  state: TranscriptionCleanupState;
+  chunks: number;
+  fallbackChunks: number;
+  removedChars: number;
+  error: string | null;
+};
+
 export type GenerateSummaryResult = {
   meeting: MeetingSummary;
   summary: SummaryDocument;
   usage: SummaryUsage | null;
+  cleanup: SummaryCleanup;
 };
 
 export type SaveMarkdownResult = {

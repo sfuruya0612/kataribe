@@ -32,12 +32,32 @@ Kataribe は、会議 1 件を 1 つのフォルダにまとめ、mp3、文字�
   - `transcript.md`: タイムスタンプ付きの文字起こし（ADR-0011）。
   - `summary.md`: 要約、決定事項、ToDo、未決事項（ADR-0011）。
   - `meta.json`: 録音条件、処理状況、使用モデル、使用プロバイダを持つメタデータ。
-- 録音中の `chunks/` と文字起こし用の `audio.16k.wav` は、保存先ルートの外の `~/Library/Application Support/Kataribe/tmp/<meeting-id>/` に置く。
-  `chunks/` は mp3 と 16 kHz wav の生成が成功したら削除し、`audio.16k.wav` は文字起こしが成功したら削除する（ADR-0005）。
+- 音声強調を使った会議では、次のファイルを追加する (ADR-0027)。
+  - 会議フォルダの成果物:
+    - `audio.enhanced.nemotronlabs.mp3`: 商用利用が可能なモデルで強調した保存音声。生の `audio.mp3` は残す。
+    - `transcript.raw.md` と `transcript.nemotronlabs.md`: 強調前と強調後の比較用文字起こし。`transcript.md` を要約、翻訳、検索の正とし、ToDo は `summary.md` を正とする。
+    - `transcript.previous.md`: 文字起こし前の強調の再実行前のコピー。
+  - 正本:
+    - `enhancement.json`: 音声強調の状態の正本。設定、モデル、処理時間、入出力のハッシュを持つ。
+  - tmp の一時ファイル:
+    - `audio.16k.enhanced.wav`: 文字起こし前の強調 WAV。保存先ルートの外の tmp に置き、成功、失敗、キャンセルで削除する。
+- 録音中の `chunks/`、文字起こし用の `audio.16k.wav`、mp3 からデコードした一時 WAV は、保存先ルートの外の `~/Library/Application Support/Kataribe/tmp/<meeting-id>/` に置く。
+  `chunks/` の削除は ADR-0005 に従う。
+  文字起こし用の `audio.16k.wav` は ADR-0005 に従い、文字起こしが失敗、キャンセル、タイムアウトしたときは再試行のために残す。
+  mp3 からデコードした一時 WAV は、成功、失敗、キャンセルのいずれでも削除する。
+  起動時に、復旧データを持たない会議の一時ディレクトリを削除する。`status` が `error` の会議、または `transcription.state` が `partial`、`failed`、`cancelled`、`interrupted` の会議は、`chunks/` と `audio.16k.wav` を残す。比較セッションの生と強調のどちらかが完了していない会議も残す。
   これにより、保存先がクラウド同期の対象でも、録音中の音声と一時 wav が同期されない。
-  PRD のデータ設計では会議フォルダに置くとしているが、容量と同期の扱いを考慮して Application Support に移す。
+- 録音チャンクを結合した `audio.wav` は、処理中だけ会議フォルダに置き、保存音声の強調と、OFF のときの 16 kHz WAV の生成後に削除する。
+  保存先がクラウド同期の対象の場合、処理中は `audio.wav` が同期され得る。
+- `enhancement.json` を音声強調の状態の正本とし、`meta.json` は会議一覧に必要な状態の要約だけを持つ。
+  `meta.json.enhancement` は、強調音声があるモデル、直近の保存音声の状態、生の比較用文字起こしの有無、比較用文字起こしがあるモデル、正にした文字起こしの種類を持つ。
+  入力と出力のハッシュ、設定、処理時間は `enhancement.json` にだけ置く。
+  両者が食い違うときは `enhancement.json` を正とし、`meta.json` を再生成する。
+- 音声強調モデルの重みは、アプリに同梱せず、`~/Library/Application Support/Kataribe/models/reuse/nemotronlabs.safetensors` に置く。
+  初回利用時に Hugging Face から HTTPS でダウンロードし、SHA-256 を照合してから使う。
+  会議フォルダには置かない。
 - ファイルを会議データの **正本** とする。
-  `meta.json`、`transcript.md`、`summary.md` の内容が正であり、SQLite はそこから作る索引である。
+  `meta.json`、`transcript.md`、`summary.md`、`diarization.json`、`enhancement.json` の内容が正であり、SQLite はそこから作る索引である。
   SQLite を削除しても、会議フォルダから索引を再構築できる。
 - 索引の SQLite ファイルは、保存先ルートの直下ではなく、`~/Library/Application Support/Kataribe/index/<保存先ルートのハッシュ>.sqlite` に置く。
   SQLite をクラウド同期の対象にしないためである。
@@ -46,13 +66,15 @@ Kataribe は、会議 1 件を 1 つのフォルダにまとめ、mp3、文字�
   SQLite は会議一覧の高速化に使い、全文検索の FTS5 は次フェーズで同じファイルに追加する。
 - SQLite は、会議の本文、タイトル、状態の正本にはしない。
   索引のテーブルは、会議 ID の UUID を主キーとし、会議フォルダのパス、タイトル、日付、長さ、状態、更新日時を持つ。
+  音声強調の要約として、強調音声があるモデル、生の比較用文字起こしの有無、比較用文字起こしがあるモデル、直近の状態の列も持つ。
+  索引を削除しても、会議フォルダから同じ列を再構築できる。
   全文検索用の FTS5 のテーブルは、文字起こしと要約の本文を持つ。
 - SQLite の索引は、アプリの起動時と、会議フォルダの変更を検知したときに更新する。
   索引の再構築のコマンドを設定画面か開発用のメニューに用意する。
 - `meta.json` は JSON で書き、`schema_version`、`id`、`status`、`title`、`started_at`、`duration`、`source`、`model`、`provider`、各段階の開始と終了の時刻を持つ。
-  `status` は `recording`、`encoding`、`transcribing`、`transcribed`、`summarized`、`error` のいずれかとする（PRD のデータ設計）。
+  `status` は `recording`、`encoding`、`enhancing`、`transcribing`、`transcribed`、`summarized`、`error` のいずれかとする (PRD のデータ設計)。
   録音の最終チャンク番号、期待する総サンプル数、サンプルレート（ADR-0002）、文字起こしの状態、部分結果、再開回数（ADR-0007）、アプリのバージョン（ADR-0014）も同じファイルに持つ。
-- `meta.json`、`transcript.md`、`summary.md` の書き込みは、一時ファイルに対して行ってから rename する。
+- `meta.json`、`transcript.md`、`summary.md`、`enhancement.json` の書き込みは、一時ファイルに対して行ってから rename する。
   途中の書き込みでファイルが壊れないようにする。
   JSON は書き込み前に schema を検査する。
 - `meta.json` の `title` を会議タイトルの正とする。

@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import {
+  copyFile,
   mkdir,
   readFile,
+  rename,
   rm,
   stat,
 } from 'node:fs/promises';
@@ -20,9 +22,13 @@ import {
 } from '../shared/markdown';
 import type {
   AppSettings,
+  EnhancementFile,
+  EnhancementTranscriptionEntry,
+  EnhancementSettings,
   GenerateSummaryResult,
   LlmRuntimeConfig,
   MeetingDetail,
+  MeetingStatus,
   ProcessingState,
   SummaryPreview,
   SummaryLanguage,
@@ -41,6 +47,7 @@ import {
   readDiarizationCache,
   writeDiarizationCache,
   type DiarizationCache,
+  type DiarizationInputKind,
 } from './diarization-cache';
 import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
@@ -54,22 +61,40 @@ import {
   type MeetingMetaDiarization,
 } from './meeting-meta';
 import { TRANSLATION_FILES, type MeetingStore } from './meetings';
-import type { ModelManager } from './models';
+import {
+  readEnhancementFile,
+  updateMetaEnhancement,
+  writeEnhancementFile,
+} from './reuse-metadata';
 import { generateSummary } from './summary';
 import { generateMeetingTitle } from './summary';
 import type { TranscriptionOutcome, TranscriptionService } from './transcription';
+import type {
+  TranscriptionPlan,
+  TranscriptionRunner,
+} from './transcription-runner';
 import { translateTranscript } from './translation';
+import {
+  cleanupMeetingTemp,
+  invalidateEnhancement,
+  reconcileEnhancement,
+} from './reuse-cleanup';
+import type { ReuseSavedAudioService } from './reuse-saved-audio';
+import type { ReuseEnhancementService } from './reuse-enhancement';
+import { getReuseModelDefinition } from './reuse-models';
 import { readWavInfo } from './wav';
 
 export type ProcessingCoordinatorOptions = {
   tempRoot: string;
   meetingStore: MeetingStore;
-  modelManager: ModelManager;
   apiKeyStore: ApiKeyStore;
   mediaEncoder: MediaEncoder;
   transcriptionService: TranscriptionService;
+  transcriptionRunner: TranscriptionRunner;
   diarizationService: DiarizationService;
   llmClient: LlmClient;
+  reuseSavedAudio?: ReuseSavedAudioService;
+  reuseEnhancement?: ReuseEnhancementService;
   settings: () => AppSettings;
   now?: () => Date;
   onStateChange: (state: ProcessingState) => void;
@@ -93,6 +118,7 @@ type PreviewToken = {
   model: string;
   kind: 'openai' | 'anthropic';
   language: AppSettings['summaryLanguage'];
+  cleanupFillers: boolean;
 };
 
 type TranslationToken = {
@@ -214,6 +240,28 @@ function transcriptionErrorMessage(outcome: TranscriptionOutcome): string {
       return t('文字起こしをキャンセルしました。部分的な結果を保存しています。');
     case 'invalid-audio':
       return t('文字起こし用の音声ファイルを読み込めませんでした。');
+    case 'openai-config':
+      return t('OpenAI の文字起こし設定を確認してください。{detail}', {
+        detail: outcome.error ?? '',
+      }).trim();
+    case 'openai-rate-limit':
+      return t(
+        'OpenAI の文字起こし API のレート制限に達しました。時間をおいて再実行してください。',
+      );
+    case 'openai-server':
+      return t(
+        'OpenAI の文字起こし API がサーバーエラーを返しました。時間をおいて再実行してください。',
+      );
+    case 'openai-network':
+      return t(
+        'OpenAI の文字起こし API に接続できませんでした。ネットワークを確認してください。',
+      );
+    case 'file-too-large':
+      return t('音声の分割が大きすぎます。音声を短くして再実行してください。');
+    case 'openai-failed':
+      return t('OpenAI の文字起こしに失敗しました。{detail}', {
+        detail: outcome.error ?? '',
+      }).trim();
     default:
       return t('whisper.cpp の実行に失敗しました。{detail}', {
         detail: outcome.error ?? '',
@@ -231,12 +279,14 @@ function summaryErrorMessage(error: unknown): string {
 export class ProcessingCoordinator {
   private readonly tempRoot: string;
   private readonly meetingStore: MeetingStore;
-  private readonly modelManager: ModelManager;
   private readonly apiKeyStore: ApiKeyStore;
   private readonly mediaEncoder: MediaEncoder;
   private readonly transcriptionService: TranscriptionService;
+  private readonly transcriptionRunner: TranscriptionRunner;
   private readonly diarizationService: DiarizationService;
   private readonly llmClient: LlmClient;
+  private readonly reuseSavedAudio?: ReuseSavedAudioService;
+  private readonly reuseEnhancement?: ReuseEnhancementService;
   private readonly settings: () => AppSettings;
   private readonly now: () => Date;
   private readonly onStateChange: (state: ProcessingState) => void;
@@ -254,6 +304,8 @@ export class ProcessingCoordinator {
   private queue: Promise<void> = Promise.resolve();
   private active: ActiveTask | null = null;
   private queued = new Set<string>();
+  private readonly comparisonReruns = new Set<string>();
+  private readonly comparisonRerunStatus = new Map<string, MeetingStatus>();
   private state: ProcessingState = { ...IDLE_STATE };
   private recordingActive = false;
   private shuttingDown = false;
@@ -261,12 +313,14 @@ export class ProcessingCoordinator {
   constructor(options: ProcessingCoordinatorOptions) {
     this.tempRoot = options.tempRoot;
     this.meetingStore = options.meetingStore;
-    this.modelManager = options.modelManager;
     this.apiKeyStore = options.apiKeyStore;
     this.mediaEncoder = options.mediaEncoder;
     this.transcriptionService = options.transcriptionService;
+    this.transcriptionRunner = options.transcriptionRunner;
     this.diarizationService = options.diarizationService;
     this.llmClient = options.llmClient;
+    this.reuseSavedAudio = options.reuseSavedAudio;
+    this.reuseEnhancement = options.reuseEnhancement;
     this.settings = options.settings;
     this.now = options.now ?? (() => new Date());
     this.onStateChange = options.onStateChange;
@@ -310,6 +364,52 @@ export class ProcessingCoordinator {
     return this.enqueue(meetingId, () => this.processMeeting(meetingId));
   }
 
+  requestSavedAudioEnhancement(
+    meetingId: string,
+    model: 'nemotronlabs',
+  ): Promise<void> {
+    if (!this.reuseSavedAudio) {
+      return Promise.reject(new Error('speech enhancement is not available'));
+    }
+    return this.enqueue(meetingId, () =>
+      this.enhanceSavedAudioOnly(meetingId, model),
+    );
+  }
+
+  async requestTranscriptionComparison(meetingId: string): Promise<void> {
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error(t('会議が見つかりません。'));
+    }
+    const meta = await readMeetingMeta(join(meeting.meetingDir, 'meta.json'));
+    const transcriptPath = join(meeting.meetingDir, 'transcript.md');
+    try {
+      await copyFile(
+        transcriptPath,
+        join(meeting.meetingDir, 'transcript.previous.md'),
+      );
+    } catch (error) {
+      if (
+        !(
+          typeof error === 'object' &&
+          error !== null &&
+          (error as { code?: unknown }).code === 'ENOENT'
+        )
+      ) {
+        throw error;
+      }
+    }
+    this.comparisonRerunStatus.set(meetingId, meta.status);
+    this.comparisonReruns.add(meetingId);
+    try {
+      await this.enqueue(meetingId, () => this.processMeeting(meetingId));
+    } catch (error) {
+      this.comparisonRerunStatus.delete(meetingId);
+      this.comparisonReruns.delete(meetingId);
+      throw error;
+    }
+  }
+
   cancel(): boolean {
     if (!this.active) {
       return false;
@@ -330,13 +430,58 @@ export class ProcessingCoordinator {
   async markInterruptedMeetings(): Promise<void> {
     const meetings = await this.meetingStore.list();
     for (const meeting of meetings) {
-      if (meeting.status !== 'encoding' && meeting.status !== 'transcribing') {
+      if (
+        meeting.status !== 'encoding' &&
+        meeting.status !== 'enhancing' &&
+        meeting.status !== 'transcribing'
+      ) {
         continue;
       }
       const metaPath = join(meeting.meetingDir, 'meta.json');
       try {
         let completed = false;
-        await updateMeetingMeta(metaPath, (meta) => {
+        await updateMeetingMeta(metaPath, async (meta) => {
+          if (meta.status === 'enhancing') {
+            meta.status = 'error';
+            meta.error = t(
+              '前回の音声強調が中断されました。会議詳細から再実行してください。',
+            );
+            const read = await readEnhancementFile(meeting.meetingDir);
+            if (read.state === 'ok') {
+              const finishedAt = new Date().toISOString();
+              for (const entry of Object.values(read.file.saved_audio)) {
+                if (entry?.state === 'pending' || entry?.state === 'running') {
+                  entry.state = 'interrupted';
+                  entry.finished_at = finishedAt;
+                  entry.error = 'interrupted';
+                }
+              }
+              for (const entry of Object.values(read.file.transcription.models)) {
+                if (entry?.state === 'pending' || entry?.state === 'running') {
+                  entry.state = 'interrupted';
+                  entry.finished_at = finishedAt;
+                  entry.error = 'interrupted';
+                }
+              }
+              if (
+                read.file.transcription.raw.state === 'pending' ||
+                read.file.transcription.raw.state === 'running'
+              ) {
+                read.file.transcription.raw.state = 'interrupted';
+                read.file.transcription.raw.finished_at = finishedAt;
+                read.file.transcription.raw.error = 'interrupted';
+              }
+              try {
+                await writeEnhancementFile(meeting.meetingDir, read.file);
+              } catch (error) {
+                console.error(
+                  `failed to update enhancement.json after interruption: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
+              updateMetaEnhancement(meta, read.file);
+            }
+            return;
+          }
           if (meta.status === 'transcribing') {
             const lastEnd = meta.transcription?.last_segment_end ?? 0;
             if (lastEnd >= Math.max(0, meta.duration - 15)) {
@@ -438,6 +583,7 @@ export class ProcessingCoordinator {
     const now = this.now().getTime();
     const language =
       detail.meeting.summaryLanguage ?? this.settings().summaryLanguage;
+    const cleanupFillers = this.settings().removeFillersBeforeSummary;
     this.previewTokens.set(token, {
       meetingId,
       contentHash: hash,
@@ -450,6 +596,7 @@ export class ProcessingCoordinator {
       model: config.model,
       kind: config.kind,
       language,
+      cleanupFillers,
     });
     return {
       token,
@@ -462,6 +609,8 @@ export class ProcessingCoordinator {
       language,
       charCount: transcript.length,
       estimatedTokens: estimateTokens(transcript),
+      cleanupEnabled: cleanupFillers,
+      cleanupEstimatedTokens: cleanupFillers ? estimateTokens(transcript) : 0,
       contentHash: hash,
       text: transcript,
       partial: detail.transcript.partial,
@@ -576,6 +725,7 @@ export class ProcessingCoordinator {
         model: config.model,
         signal: controller.signal,
         systemPromptOverride: this.settings().summaryPromptTemplate,
+        cleanupFillers: preview.cleanupFillers,
         onProgress: (message, progress) => {
           this.setState({
             ...this.state,
@@ -614,6 +764,15 @@ export class ProcessingCoordinator {
           model: config.model,
           language: config.language,
           generated_at: this.now().toISOString(),
+          cleanup: {
+            state: generated.cleanup.state,
+            chunks: generated.cleanup.chunks,
+            fallback_chunks: generated.cleanup.fallbackChunks,
+            removed_chars: generated.cleanup.removedChars,
+            ...(generated.cleanup.error
+              ? { error: generated.cleanup.error }
+              : {}),
+          },
           usage: {
             input_tokens: generated.usage.inputTokens,
             output_tokens: generated.usage.outputTokens,
@@ -626,7 +785,7 @@ export class ProcessingCoordinator {
         try {
           const generatedTitle = await generateMeetingTitle({
             client: this.llmClient,
-            transcriptBody: body,
+            transcriptBody: generated.usedTranscriptBody,
             language: config.language,
             kind: config.kind,
             endpoint: config.endpoint,
@@ -660,6 +819,7 @@ export class ProcessingCoordinator {
         meeting,
         summary,
         usage: generated.usage,
+        cleanup: generated.cleanup,
       };
     } catch (error) {
       if (controller.signal.aborted) {
@@ -1075,6 +1235,57 @@ export class ProcessingCoordinator {
         console.error(`failed to read source wav: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
+    const comparisonRerun = this.comparisonReruns.delete(meetingId);
+    const rerunStatus = this.comparisonRerunStatus.get(meetingId) ?? null;
+    this.comparisonRerunStatus.delete(meetingId);
+    const comparisonRequested = this.settings().enhanceBeforeTranscription;
+    const plan =
+      typeof this.transcriptionRunner.plan === 'function'
+        ? await this.transcriptionRunner.plan({
+            durationSeconds: duration,
+            preferredAudio: comparisonRequested ? 'enhanced' : 'raw',
+          })
+        : null;
+    if (plan?.failure) {
+      const message =
+        plan.failure.error ?? t('文字起こしの準備に失敗しました。');
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = rerunStatus ?? 'error';
+        value.error = message;
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      return;
+    }
+    const resolvedEngine =
+      plan?.resolution.engine ?? this.settings().transcriptionEngine;
+    const resolvedModel =
+      plan?.resolution.modelLabel ??
+      (this.settings().transcriptionEngine === 'openai'
+        ? `openai/${this.settings().openaiTranscriptionModel}`
+        : this.settings().whisperModel);
+    const comparisonEnabled =
+      plan !== null &&
+      comparisonRequested &&
+      plan.resolution.engine === 'whisper-cpp';
+    if (comparisonRerun && !comparisonEnabled) {
+      throw new Error(t('文字起こし前の強調が OFF のため再実行できません。'));
+    }
+    const audioHash = hasMp3
+      ? await hashFile(mp3Path).catch(() => undefined)
+      : undefined;
+    await reconcileEnhancement(meeting.meetingDir, {
+      audioSha256: audioHash ?? '0'.repeat(64),
+      modelSha256: {
+        nemotronlabs: getReuseModelDefinition('nemotronlabs').sha256,
+      },
+      comparisonEnabled,
+      transcriptionEngine: resolvedEngine,
+    }).catch((error: unknown) => {
+      console.error(
+        `failed to reconcile speech enhancement: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
 
     try {
       const startedAt = this.now().toISOString();
@@ -1115,6 +1326,50 @@ export class ProcessingCoordinator {
         });
       }
 
+      if (this.settings().enhanceSavedAudio && this.reuseSavedAudio) {
+        await updateMeetingMeta(metaPath, (value) => {
+          value.status = 'enhancing';
+          delete value.error;
+        });
+        this.setState({
+          stage: 'enhancing',
+          meetingId,
+          progress: 0,
+          etaSeconds: null,
+          message: t('保存音声を強調しています'),
+          cancellable: true,
+          error: null,
+        });
+        try {
+          await this.reuseSavedAudio.enhance({
+            meetingId,
+            meetingDir: meeting.meetingDir,
+            audioPath: mp3Path,
+            sourceWavPath: hasSourceWav ? sourceWav : null,
+            model: 'nemotronlabs',
+            bitrateKbps: this.settings().mp3BitrateKbps,
+            signal: controller.signal,
+            onProgress: (progress) => {
+              this.setState({
+                ...this.state,
+                progress,
+              });
+            },
+          });
+        } catch (error) {
+          if (controller.signal.aborted) {
+            throw error;
+          }
+          console.error(
+            `saved audio enhancement failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        this.onMeetingUpdated(meetingId);
+      }
+
+      if (comparisonEnabled && plan) {
+        await rm(transcriptionWav, { force: true }).catch(() => undefined);
+      }
       if (!(await exists(transcriptionWav))) {
         this.setState({
           ...this.state,
@@ -1124,7 +1379,8 @@ export class ProcessingCoordinator {
           etaSeconds: null,
         });
         await this.mediaEncoder.createTranscriptionWav({
-          inputPath: hasSourceWav ? sourceWav : mp3Path,
+          inputPath:
+            comparisonEnabled || !hasSourceWav ? mp3Path : sourceWav,
           outputPath: transcriptionWav,
           durationSeconds: duration,
           bitrateKbps: this.settings().mp3BitrateKbps,
@@ -1159,6 +1415,23 @@ export class ProcessingCoordinator {
         }
       }
 
+      const enhancedForOpenAi =
+        plan?.resolution.engine === 'openai' && comparisonRequested
+          ? await this.enhanceTranscriptionWav(
+              meetingId,
+              tempDir,
+              transcriptionWav,
+              controller,
+            )
+          : { outputPath: null, error: null };
+      const selectedWav = enhancedForOpenAi.outputPath ?? transcriptionWav;
+      if (plan?.resolution.engine === 'openai' && comparisonRequested) {
+        await invalidateEnhancement(
+          meeting.meetingDir,
+          'comparison',
+          'OpenAI transcription does not produce a comparison',
+        ).catch(() => undefined);
+      }
       meta = await updateMeetingMeta(metaPath, (value) => {
         value.status = 'transcribing';
         value.audio_path = 'audio.mp3';
@@ -1178,7 +1451,8 @@ export class ProcessingCoordinator {
           ...(value.transcription ?? {}),
           state: 'running',
           started_at: this.now().toISOString(),
-          model: this.settings().whisperModel,
+          engine: resolvedEngine,
+          model: resolvedModel,
           partial: false,
           resume_count: 0,
         };
@@ -1192,7 +1466,29 @@ export class ProcessingCoordinator {
         });
       }
       this.onMeetingUpdated(meetingId);
-      await this.transcribe(meetingId, meeting, metaPath, meta, transcriptionWav, controller);
+      if (comparisonEnabled && plan) {
+        await this.transcribeComparison(
+          meetingId,
+          meeting,
+          metaPath,
+          meta,
+          transcriptionWav,
+          plan,
+          controller,
+          comparisonRerun,
+          rerunStatus,
+        );
+      } else {
+        await this.transcribe(
+          meetingId,
+          meeting,
+          metaPath,
+          meta,
+          selectedWav,
+          controller,
+          plan ?? undefined,
+        );
+      }
     } catch (error) {
       const message =
         error instanceof MediaError && error.code === 'cancelled'
@@ -1203,7 +1499,7 @@ export class ProcessingCoordinator {
               ? error.message
               : String(error);
       await updateMeetingMeta(metaPath, (value) => {
-        value.status = 'error';
+        value.status = comparisonRerun ? (rerunStatus ?? 'error') : 'error';
         value.error = message;
         if (value.encoding?.state === 'running') {
           value.encoding = {
@@ -1222,7 +1518,630 @@ export class ProcessingCoordinator {
       throw error;
     } finally {
       this.active = null;
+      await cleanupMeetingTemp(
+        this.tempRoot,
+        meetingId,
+        meeting.meetingDir,
+      ).catch((error: unknown) => {
+        console.error(
+          `failed to clean meeting temp files: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     }
+  }
+
+  private async enhanceSavedAudioOnly(
+    meetingId: string,
+    model: 'nemotronlabs',
+  ): Promise<void> {
+    if (!this.reuseSavedAudio) {
+      throw new Error('speech enhancement is not available');
+    }
+    const meeting = await this.meetingStore.find(meetingId);
+    if (!meeting) {
+      throw new Error(t('会議が見つかりません。'));
+    }
+    const metaPath = join(meeting.meetingDir, 'meta.json');
+    const meta = await readMeetingMeta(metaPath);
+    const audioPath = join(meeting.meetingDir, 'audio.mp3');
+    if (!(await exists(audioPath))) {
+      throw new Error(t('変換できる音声ファイルがありません。'));
+    }
+    await reconcileEnhancement(meeting.meetingDir, {
+      audioSha256: await hashFile(audioPath),
+      modelSha256: {
+        nemotronlabs: getReuseModelDefinition('nemotronlabs').sha256,
+      },
+      comparisonEnabled:
+        this.settings().enhanceBeforeTranscription &&
+        this.settings().transcriptionEngine === 'whisper-cpp',
+      transcriptionEngine: this.settings().transcriptionEngine,
+    }).catch((error: unknown) => {
+      console.error(
+        `failed to reconcile speech enhancement: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
+    const previousStatus = meta.status;
+    const controller = new AbortController();
+    this.active = { meetingId, controller };
+    this.setState({
+      stage: 'enhancing',
+      meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: t('保存音声を強調しています'),
+      cancellable: true,
+      error: null,
+    });
+    await updateMeetingMeta(metaPath, (value) => {
+      value.status = 'enhancing';
+      delete value.error;
+    });
+    try {
+      await this.reuseSavedAudio.enhance({
+        meetingId,
+        meetingDir: meeting.meetingDir,
+        audioPath,
+        sourceWavPath: null,
+        model,
+        bitrateKbps: this.settings().mp3BitrateKbps,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          this.setState({ ...this.state, progress });
+        },
+      });
+      await updateMeetingMeta(metaPath, (value) => {
+        if (value.status === 'enhancing') {
+          value.status =
+            previousStatus === 'enhancing' ? 'transcribed' : previousStatus;
+        }
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+    } catch (error) {
+      await updateMeetingMeta(metaPath, (value) => {
+        if (value.status === 'enhancing') {
+          value.status =
+            previousStatus === 'enhancing' ? 'transcribed' : previousStatus;
+        }
+      }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      throw error;
+    } finally {
+      this.active = null;
+      this.setState({ ...IDLE_STATE });
+    }
+  }
+
+  private async enhanceTranscriptionWav(
+    _meetingId: string,
+    tempDir: string,
+    transcriptionWav: string,
+    controller: AbortController,
+  ): Promise<{ outputPath: string | null; error: string | null }> {
+    if (!this.reuseEnhancement) {
+      return { outputPath: null, error: null };
+    }
+    const outputPath = join(tempDir, 'audio.16k.enhanced.wav');
+    this.setState({
+      stage: 'enhancing',
+      meetingId: _meetingId,
+      progress: 0,
+      etaSeconds: null,
+      message: t('文字起こし前の音声を強調しています'),
+      cancellable: true,
+      error: null,
+    });
+    try {
+      await this.reuseEnhancement.enhance({
+        inputPath: transcriptionWav,
+        outputPath,
+        model: 'nemotronlabs',
+        signal: controller.signal,
+        onProgress: (progress) => {
+          this.setState({ ...this.state, progress });
+        },
+      });
+      return { outputPath, error: null };
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw error;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`pre-transcription enhancement failed: ${message}`);
+      await rm(outputPath, { force: true }).catch(() => undefined);
+      return { outputPath: null, error: message };
+    }
+  }
+
+  private async runComparisonSnapshot(options: {
+    meetingId: string;
+    tempDir: string;
+    audioWavPath: string;
+    durationSeconds: number;
+    plan: TranscriptionPlan;
+    controller: AbortController;
+    label: string;
+    progressStart: number;
+    progressSpan: number;
+  }): Promise<TranscriptionOutcome> {
+    const run = await this.transcriptionRunner.run(
+      {
+        meetingId: options.meetingId,
+        tempDir: options.tempDir,
+        audioWavPath: options.audioWavPath,
+        durationSeconds: options.durationSeconds,
+        signal: options.controller.signal,
+        preferredAudio: 'raw',
+        onUpdate: (progress) => {
+          this.setState({
+            ...this.state,
+            stage: 'transcribing',
+            progress: options.progressStart + progress.ratio * options.progressSpan,
+            etaSeconds: progress.etaSeconds,
+            message: progress.message ?? options.label,
+          });
+        },
+      },
+      options.plan,
+    );
+    return run.outcome;
+  }
+
+  private async transcribeComparison(
+    meetingId: string,
+    meeting: NonNullable<Awaited<ReturnType<MeetingStore['find']>>>,
+    metaPath: string,
+    meta: MeetingMeta,
+    transcriptionWav: string,
+    plan: TranscriptionPlan,
+    controller: AbortController,
+    rerun: boolean,
+    rerunStatus: MeetingStatus | null,
+  ): Promise<void> {
+    const tempDir = dirname(transcriptionWav);
+    const startedAt = this.now().toISOString();
+    const audioHash = await hashFile(join(meeting.meetingDir, 'audio.mp3')).catch(
+      () => undefined,
+    );
+    const sourceInputSha = await hashFile(transcriptionWav).catch(() => '');
+    if (rerun) {
+      const existing = await readEnhancementFile(meeting.meetingDir);
+      if (
+        existing.state === 'ok' &&
+        existing.file.transcription.source_input_sha256 !== null &&
+        existing.file.transcription.source_input_sha256 !== sourceInputSha
+      ) {
+        await invalidateEnhancement(
+          meeting.meetingDir,
+          'comparison',
+          'the comparison input changed',
+        ).catch(() => undefined);
+      }
+    }
+    if (!rerun) {
+      await invalidateEnhancement(
+        meeting.meetingDir,
+        'comparison',
+        'a new comparison session started',
+      ).catch(() => undefined);
+    }
+
+    const raw = await this.runComparisonSnapshot({
+      meetingId,
+      tempDir,
+      audioWavPath: transcriptionWav,
+      durationSeconds: meta.duration,
+      plan,
+      controller,
+      label: t('生の音声で文字起こししています'),
+      progressStart: 0,
+      progressSpan: 0.4,
+    });
+    const enhancedWav = join(tempDir, 'audio.16k.enhanced.wav');
+    let enhanced: TranscriptionOutcome | null = null;
+    const enhancement = await this.enhanceTranscriptionWav(
+      meetingId,
+      tempDir,
+      transcriptionWav,
+      controller,
+    );
+    if (enhancement.outputPath) {
+      enhanced = await this.runComparisonSnapshot({
+        meetingId,
+        tempDir,
+        audioWavPath: enhancement.outputPath,
+        durationSeconds: meta.duration,
+        plan,
+        controller,
+        label: t('強調した音声で文字起こししています'),
+        progressStart: 0.6,
+        progressSpan: 0.4,
+      });
+    }
+
+    const rawCompleted = raw.state === 'completed';
+    const enhancedCompleted = enhanced?.state === 'completed';
+    const bothCompleted = rawCompleted && enhancedCompleted;
+    const primary: {
+      outcome: TranscriptionOutcome;
+      wavPath: string;
+      enhanced: boolean;
+    } | null =
+      enhancedCompleted && enhanced
+        ? { outcome: enhanced, wavPath: enhancedWav, enhanced: true }
+        : rawCompleted
+          ? { outcome: raw, wavPath: transcriptionWav, enhanced: false }
+          : null;
+    const partial =
+      enhanced && enhanced.segments.length > 0 ? enhanced : raw;
+    const primarySegments = primary
+      ? primary.outcome.segments
+      : partial.segments;
+    if (rerun && (!bothCompleted || primary === null)) {
+      const message = transcriptionErrorMessage(partial);
+      await updateMeetingMeta(metaPath, (value) => {
+        value.status = rerunStatus ?? 'error';
+        value.error = message;
+      }).catch(() => undefined);
+      await rm(enhancedWav, { force: true }).catch(() => undefined);
+      this.onMeetingUpdated(meetingId);
+      this.setState({ ...IDLE_STATE, error: message });
+      return;
+    }
+
+    const diarization = primary
+      ? await this.diarizeOutcome({
+          meeting,
+          wavPath: primary.wavPath,
+          segments: primarySegments,
+          controller,
+          audioSha256: audioHash,
+          inputKind: primary.enhanced ? 'enhanced:nemotronlabs' : 'raw',
+          enhancementModelSha256: primary.enhanced
+            ? getReuseModelDefinition('nemotronlabs').sha256
+            : null,
+          enhancementSettings: primary.enhanced
+            ? { chunk_seconds: 5, hop_seconds: 2.5, crossfade_seconds: 0.5 }
+            : null,
+        })
+      : null;
+    const finalSegments = diarization?.segments ?? primarySegments;
+    const finishedAt = this.now().toISOString();
+    const rawMarkdown = rawCompleted
+      ? formatTranscriptMarkdown({
+          title: meeting.title,
+          startedAt: meta.started_at,
+          durationSeconds: raw.durationSeconds,
+          source: sourceLabel(meta),
+          model: plan.resolution.modelLabel,
+          language: raw.language,
+          segments: raw.segments,
+        })
+      : null;
+    const enhancedMarkdown = enhancedCompleted && enhanced
+      ? formatTranscriptMarkdown({
+          title: meeting.title,
+          startedAt: meta.started_at,
+          durationSeconds: enhanced.durationSeconds,
+          source: sourceLabel(meta),
+          model: plan.resolution.modelLabel,
+          language: enhanced.language,
+          segments: enhanced.segments,
+        })
+      : null;
+    const primaryMarkdown = primary
+      ? formatTranscriptMarkdown({
+          title: meeting.title,
+          startedAt: meta.started_at,
+          durationSeconds: primary.outcome.durationSeconds,
+          source: sourceLabel(meta),
+          model: plan.resolution.modelLabel,
+          language: primary.outcome.language,
+          segments: finalSegments,
+        })
+      : !rerun && finalSegments.length > 0
+        ? formatTranscriptMarkdown({
+            title: meeting.title,
+            startedAt: meta.started_at,
+            durationSeconds: partial.durationSeconds,
+            source: sourceLabel(meta),
+            model: plan.resolution.modelLabel,
+            language: partial.language,
+            segments: finalSegments,
+            partial: true,
+          })
+        : null;
+
+    const target = (name: string) =>
+      rerun ? join(tempDir, name) : join(meeting.meetingDir, name);
+    if (rawMarkdown) {
+      await writePrivateText(target('transcript.raw.md'), rawMarkdown);
+    }
+    if (enhancedMarkdown) {
+      await writePrivateText(target('transcript.nemotronlabs.md'), enhancedMarkdown);
+    }
+    if (primaryMarkdown) {
+      await writePrivateText(target('transcript.md'), primaryMarkdown);
+    }
+    if (rerun && bothCompleted) {
+      await rename(
+        join(tempDir, 'transcript.raw.md'),
+        join(meeting.meetingDir, 'transcript.raw.md'),
+      );
+      await rename(
+        join(tempDir, 'transcript.nemotronlabs.md'),
+        join(meeting.meetingDir, 'transcript.nemotronlabs.md'),
+      );
+      await rename(
+        join(tempDir, 'transcript.md'),
+        join(meeting.meetingDir, 'transcript.md'),
+      );
+    }
+
+    if (diarization?.cache) {
+      try {
+        await writeDiarizationCache(diarization.cachePath, diarization.cache);
+      } catch (error) {
+        console.error(
+          `failed to save speaker diarization cache: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await rm(diarization.cachePath, { force: true }).catch(() => undefined);
+      }
+    }
+    const speakerNames = [
+      ...new Set(
+        finalSegments
+          .map((segment) => segment.speaker)
+          .filter(
+            (speaker): speaker is string =>
+              typeof speaker === 'string' && speaker.length > 0,
+          ),
+      ),
+    ];
+    const primaryState = primary?.outcome.state ?? partial.state;
+    const message = primary ? null : transcriptionErrorMessage(partial);
+    await updateMeetingMeta(metaPath, (value) => {
+      value.status = primary ? 'transcribed' : 'error';
+      value.transcription = {
+        state: primaryState,
+        started_at: value.transcription?.started_at ?? startedAt,
+        finished_at: finishedAt,
+        engine: 'whisper-cpp',
+        model: plan.resolution.modelLabel,
+        language: primary?.outcome.language ?? partial.language,
+        last_segment_end:
+          primary?.outcome.lastEndSeconds ?? partial.lastEndSeconds,
+        resume_count: 0,
+        partial: primary === null,
+        error: message ?? undefined,
+      };
+      if (diarization?.meta) {
+        value.diarization = diarization.meta;
+      } else {
+        clearDiarization(value);
+      }
+      if (speakerNames.length > 0) {
+        value.speakers = speakerNames;
+      } else {
+        delete value.speakers;
+      }
+      if (message) {
+        value.error = message;
+      } else {
+        delete value.error;
+      }
+    });
+
+    const source = {
+      path: 'audio.mp3',
+      sha256: audioHash ?? '0'.repeat(64),
+      sample_rate: 44_100,
+      channels: 1,
+    };
+    const read = await readEnhancementFile(meeting.meetingDir);
+    const file: EnhancementFile =
+      read.state === 'ok'
+        ? read.file
+        : {
+            schema_version: 1,
+            source,
+            saved_audio: {},
+            transcription: {
+              source_input_sha256: sourceInputSha,
+              raw: {
+                state: 'pending',
+                path: null,
+                input_sha256: sourceInputSha,
+                output_sha256: null,
+                model: plan.resolution.modelLabel,
+                model_sha256: null,
+                settings: {
+                  engine: 'whisper-cpp',
+                  whisper_model: plan.resolution.modelLabel,
+                  chunk_seconds: null,
+                  hop_seconds: null,
+                  crossfade_seconds: null,
+                },
+                chars: null,
+                started_at: startedAt,
+                finished_at: finishedAt,
+                elapsed_seconds: null,
+                error: null,
+              },
+              models: {},
+              primary: { source: 'raw', path: null },
+            },
+          };
+    file.source = source;
+    file.transcription.source_input_sha256 = sourceInputSha;
+    const entry = (
+      outcome: TranscriptionOutcome | null,
+      markdown: string | null,
+      path: string | null,
+      enhanced: boolean,
+    ): EnhancementTranscriptionEntry => ({
+      state:
+        outcome?.state === 'completed'
+          ? 'succeeded'
+          : outcome?.state === 'partial'
+            ? 'running'
+            : outcome?.state === 'cancelled'
+              ? 'cancelled'
+              : outcome?.state === 'failed'
+                ? 'failed'
+                : 'pending',
+      path: markdown ? path : null,
+      input_sha256: sourceInputSha,
+      output_sha256: markdown
+        ? createHash('sha256').update(markdown).digest('hex')
+        : null,
+      model: plan.resolution.modelLabel,
+      model_sha256: enhanced
+        ? getReuseModelDefinition('nemotronlabs').sha256
+        : null,
+      settings: {
+        engine: 'whisper-cpp' as const,
+        whisper_model: plan.resolution.modelLabel,
+        chunk_seconds: enhanced ? 5 : null,
+        hop_seconds: enhanced ? 2.5 : null,
+        crossfade_seconds: enhanced ? 0.5 : null,
+      },
+      chars: markdown ? parseFrontMatter(markdown).body.length : null,
+      started_at: startedAt,
+      finished_at: finishedAt,
+      elapsed_seconds: outcome?.elapsedSeconds ?? null,
+      error: outcome?.error ?? null,
+    });
+    file.transcription.raw = entry(raw, rawMarkdown, 'transcript.raw.md', false);
+    if (enhanced) {
+      file.transcription.models.nemotronlabs = entry(
+        enhanced,
+        enhancedMarkdown,
+        'transcript.nemotronlabs.md',
+        true,
+      );
+    } else if (enhancement.error) {
+      file.transcription.models.nemotronlabs = {
+        state: 'failed',
+        path: null,
+        input_sha256: sourceInputSha,
+        output_sha256: null,
+        model: plan.resolution.modelLabel,
+        model_sha256: getReuseModelDefinition('nemotronlabs').sha256,
+        settings: {
+          engine: 'whisper-cpp' as const,
+          whisper_model: plan.resolution.modelLabel,
+          chunk_seconds: 5,
+          hop_seconds: 2.5,
+          crossfade_seconds: 0.5,
+        },
+        chars: null,
+        started_at: startedAt,
+        finished_at: finishedAt,
+        elapsed_seconds: null,
+        error: enhancement.error,
+      };
+    } else {
+      delete file.transcription.models.nemotronlabs;
+    }
+    file.transcription.primary = {
+      source: primary?.enhanced ? 'nemotronlabs' : 'raw',
+      path: primaryMarkdown ? 'transcript.md' : null,
+    };
+    await writeEnhancementFile(meeting.meetingDir, file);
+    await updateMeetingMeta(metaPath, (value) => {
+      updateMetaEnhancement(value, file);
+    }).catch(() => undefined);
+    await rm(enhancedWav, { force: true }).catch(() => undefined);
+    this.onMeetingUpdated(meetingId);
+    this.setState({ ...IDLE_STATE, error: primary ? null : message });
+  }
+
+  private async diarizeOutcome(options: {
+    meeting: NonNullable<Awaited<ReturnType<MeetingStore['find']>>>;
+    wavPath: string;
+    segments: TranscriptSegment[];
+    controller: AbortController;
+    audioSha256?: string;
+    inputKind?: DiarizationInputKind;
+    enhancementModelSha256?: string | null;
+    enhancementSettings?: EnhancementSettings | null;
+  }): Promise<{
+    segments: TranscriptSegment[];
+    meta: MeetingMetaDiarization | undefined;
+    cache: DiarizationCache | null;
+    cachePath: string;
+  }> {
+    const cachePath = diarizationCachePath(options.meeting.meetingDir);
+    const currentSettings = this.settings();
+    if (!currentSettings.speakerDiarization) {
+      return {
+        segments: options.segments,
+        meta: undefined,
+        cache: null,
+        cachePath,
+      };
+    }
+    const audioPath = join(options.meeting.meetingDir, 'audio.mp3');
+    let audioSha256 = options.audioSha256;
+    if (!audioSha256) {
+      try {
+        audioSha256 = await hashFile(audioPath);
+      } catch (error) {
+        console.error(
+          `failed to hash meeting audio: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const previousCache = await readDiarizationCache(cachePath);
+    const diarization = await runDiarization({
+      service: this.diarizationService,
+      wavPath: options.wavPath,
+      segments: options.segments,
+      numSpeakers: currentSettings.speakerCount,
+      signal: options.controller.signal,
+      cache: previousCache,
+      audioSha256,
+      inputKind: options.inputKind,
+      enhancementModelSha256: options.enhancementModelSha256,
+      enhancementSettings: options.enhancementSettings,
+      onProgress: (progress) => {
+        const percent =
+          progress.progress === null
+            ? ''
+            : ` (${Math.round(progress.progress * 100)}%)`;
+        this.setState({
+          ...this.state,
+          progress: 1,
+          etaSeconds: null,
+          message:
+            progress.phase === 'models'
+              ? t('話者分離モデルを準備しています{suffix}', {
+                  suffix: percent,
+                })
+              : t('話者を分離しています{suffix}', { suffix: percent }),
+        });
+      },
+    });
+    if (diarization.cacheHit && previousCache && diarization.cache) {
+      try {
+        await rewriteTranslationSpeakers(
+          options.meeting.meetingDir,
+          previousCache,
+          diarization.cache,
+        );
+      } catch (error) {
+        console.error(
+          `failed to update translation speaker labels: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return {
+      segments: diarization.segments,
+      meta: diarization.meta,
+      cache: diarization.cache,
+      cachePath,
+    };
   }
 
   private async transcribe(
@@ -1232,28 +2151,14 @@ export class ProcessingCoordinator {
     meta: MeetingMeta,
     transcriptionWav: string,
     controller: AbortController,
+    plan?: TranscriptionPlan,
   ): Promise<void> {
-    const model = this.settings().whisperModel;
-    const modelPath = await this.modelManager.installedPath(model);
-    if (!modelPath) {
-      const message = t(
-        'whisper モデル（{model}）がダウンロードされていません。設定画面から取得してください。',
-        { model },
-      );
-      await updateMeetingMeta(metaPath, (value) => {
-        value.status = 'error';
-        value.error = message;
-        clearDiarization(value);
-        value.transcription = {
-          ...(value.transcription ?? {}),
-          state: 'failed',
-          error: 'model-missing',
-        };
-      });
-      this.onMeetingUpdated(meetingId);
-      this.setState({ ...IDLE_STATE, error: message });
-      return;
-    }
+    const settings = this.settings();
+    let transcriptionEngine = settings.transcriptionEngine;
+    let transcriptionModel =
+      transcriptionEngine === 'openai'
+        ? `openai/${settings.openaiTranscriptionModel}`
+        : settings.whisperModel;
 
     this.setState({
       stage: 'transcribing',
@@ -1288,7 +2193,7 @@ export class ProcessingCoordinator {
         startedAt: meta.started_at,
         durationSeconds: meta.duration,
         source: sourceLabel(meta),
-        model,
+        model: transcriptionModel,
         language,
         segments,
         partial,
@@ -1299,7 +2204,8 @@ export class ProcessingCoordinator {
         value.transcription = {
           ...(value.transcription ?? {}),
           state: partial ? 'partial' : 'running',
-          model,
+          engine: transcriptionEngine,
+          model: transcriptionModel,
           language,
           partial,
           last_segment_end: segments.reduce(
@@ -1329,16 +2235,16 @@ export class ProcessingCoordinator {
 
     let outcome: TranscriptionOutcome | null = null;
     try {
-      outcome = await this.transcriptionService.transcribe({
-        meetingId,
-        tempDir: dirname(transcriptionWav),
-        audioWavPath: transcriptionWav,
-        model,
-        modelPath,
-        durationSeconds: meta.duration,
-        predictedSpeedRatio: this.settings().whisperSpeedRatios[model] ?? 0.2,
-        initialPrompt: this.settings().whisperInitialPrompt,
-        signal: controller.signal,
+      const run = await this.transcriptionRunner.run(
+        {
+          meetingId,
+          tempDir: dirname(transcriptionWav),
+          audioWavPath: transcriptionWav,
+          durationSeconds: meta.duration,
+          signal: controller.signal,
+          preferredAudio: this.settings().enhanceBeforeTranscription
+            ? 'enhanced'
+            : 'raw',
         onHardLimitExceeded: async (elapsedSeconds, predictedSeconds) => {
           if (!this.confirmContinue) {
             return true;
@@ -1370,7 +2276,40 @@ export class ProcessingCoordinator {
             partial,
           );
         },
-      });
+        onResolved: (resolution) => {
+          transcriptionEngine = resolution.engine;
+          transcriptionModel = resolution.modelLabel;
+          partialQueue = partialQueue
+            .then(async () => {
+              await updateMeetingMeta(metaPath, (value) => {
+                value.transcription = {
+                  ...(value.transcription ?? {}),
+                  state: value.transcription?.state ?? 'running',
+                  engine: resolution.engine,
+                  model: resolution.modelLabel,
+                };
+              });
+            })
+            .catch((error: unknown) => {
+              console.error(
+                `failed to save the transcription engine: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
+          if (resolution.fallbackReason === 'cloud-declined') {
+            this.setState({
+              ...this.state,
+              message: t(
+                'OpenAI への送信を取りやめ、ローカルの whisper で文字起こしをしています。',
+              ),
+            });
+          }
+        },
+      },
+      plan,
+      );
+      outcome = run.outcome;
+      transcriptionEngine = run.resolution.engine;
+      transcriptionModel = run.resolution.modelLabel;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await updateMeetingMeta(metaPath, (value) => {
@@ -1391,11 +2330,18 @@ export class ProcessingCoordinator {
     const finishedAt = this.now().toISOString();
     if (outcome.state === 'completed') {
       await partialQueue;
-      if (outcome.durationSeconds > 0 && outcome.elapsedSeconds > 0) {
+      if (
+        transcriptionEngine === 'whisper-cpp' &&
+        outcome.durationSeconds > 0 &&
+        outcome.elapsedSeconds > 0
+      ) {
         const ratio = outcome.elapsedSeconds / outcome.durationSeconds;
         if (Number.isFinite(ratio) && ratio >= 0.01 && ratio <= 10) {
           try {
-            await this.onSpeedRatioMeasured?.(model, Math.round(ratio * 1000) / 1000);
+            await this.onSpeedRatioMeasured?.(
+              this.settings().whisperModel,
+              Math.round(ratio * 1000) / 1000,
+            );
           } catch (error) {
             console.error(
               `failed to save transcription speed ratio: ${error instanceof Error ? error.message : String(error)}`,
@@ -1403,65 +2349,16 @@ export class ProcessingCoordinator {
           }
         }
       }
-      let finalSegments = outcome.segments;
-      let diarizationMeta: MeetingMetaDiarization | undefined;
-      let diarizationCache: DiarizationCache | null = null;
-      const cachePath = diarizationCachePath(meeting.meetingDir);
-      const currentSettings = this.settings();
-      if (currentSettings.speakerDiarization) {
-        const audioPath = join(meeting.meetingDir, 'audio.mp3');
-        let audioSha256: string | undefined;
-        try {
-          audioSha256 = await hashFile(audioPath);
-        } catch (error) {
-          console.error(
-            `failed to hash meeting audio: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        const previousCache = await readDiarizationCache(cachePath);
-        const diarization = await runDiarization({
-          service: this.diarizationService,
-          wavPath: transcriptionWav,
-          segments: outcome.segments,
-          numSpeakers: currentSettings.speakerCount,
-          signal: controller.signal,
-          cache: previousCache,
-          audioSha256,
-          onProgress: (progress) => {
-            const percent =
-              progress.progress === null
-                ? ''
-                : ` (${Math.round(progress.progress * 100)}%)`;
-            this.setState({
-              ...this.state,
-              progress: 1,
-              etaSeconds: null,
-              message:
-                progress.phase === 'models'
-                  ? t('話者分離モデルを準備しています{suffix}', {
-                      suffix: percent,
-                    })
-                  : t('話者を分離しています{suffix}', { suffix: percent }),
-            });
-          },
-        });
-        finalSegments = diarization.segments;
-        diarizationMeta = diarization.meta;
-        diarizationCache = diarization.cache;
-        if (diarization.cacheHit && previousCache && diarization.cache) {
-          try {
-            await rewriteTranslationSpeakers(
-              meeting.meetingDir,
-              previousCache,
-              diarization.cache,
-            );
-          } catch (error) {
-            console.error(
-              `failed to update translation speaker labels: ${error instanceof Error ? error.message : String(error)}`,
-            );
-          }
-        }
-      }
+      const diarization = await this.diarizeOutcome({
+        meeting,
+        wavPath: transcriptionWav,
+        segments: outcome.segments,
+        controller,
+      });
+      const finalSegments = diarization.segments;
+      const diarizationMeta = diarization.meta;
+      const diarizationCache = diarization.cache;
+      const cachePath = diarization.cachePath;
       const speakerNames = [
         ...new Set(
           finalSegments
@@ -1477,7 +2374,7 @@ export class ProcessingCoordinator {
         startedAt: meta.started_at,
         durationSeconds: outcome.durationSeconds,
         source: sourceLabel(meta),
-        model,
+        model: transcriptionModel,
         language: outcome.language,
         segments: finalSegments,
       });
@@ -1498,7 +2395,8 @@ export class ProcessingCoordinator {
           state: 'completed',
           started_at: value.transcription?.started_at ?? finishedAt,
           finished_at: finishedAt,
-          model,
+          engine: transcriptionEngine,
+          model: transcriptionModel,
           language: outcome.language,
           last_segment_end: outcome.lastEndSeconds,
           resume_count: outcome.resumed ? 1 : 0,
@@ -1528,7 +2426,7 @@ export class ProcessingCoordinator {
     const state =
       outcome.state === 'cancelled'
         ? 'cancelled'
-        : outcome.errorCode === 'model-missing' || outcome.errorCode === 'binary-missing'
+        : outcome.state === 'failed'
           ? 'failed'
           : 'partial';
     await partialQueue;
@@ -1550,7 +2448,8 @@ export class ProcessingCoordinator {
         ...(value.transcription ?? {}),
         state,
         finished_at: finishedAt,
-        model,
+        engine: transcriptionEngine,
+        model: transcriptionModel,
         language: outcome.language || lastLanguage,
         partial: finalSegments.length > 0,
         error: outcome.error ?? message,

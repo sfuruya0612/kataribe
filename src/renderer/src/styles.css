@@ -365,7 +365,8 @@ ul {
   background: var(--danger-soft);
 }
 
-.status-transcribing {
+.status-transcribing,
+.status-enhancing {
   color: var(--accent-strong);
   background: var(--accent-soft);
 }
@@ -1318,6 +1319,17 @@ ul {
 
 .audio-player audio {
   display: none;
+}
+
+.audio-variant-selector {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.audio-variant-selector .link-button.is-active {
+  color: var(--accent-strong);
+  font-weight: 600;
 }
 
 .play-button {

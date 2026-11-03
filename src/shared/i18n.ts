@@ -1,4 +1,4 @@
-import type { InputSource, UiLanguage } from './types';
+import type { EnhancementState, InputSource, UiLanguage } from './types';
 
 export type MessageParams = Readonly<Record<string, string | number>>;
 
@@ -496,6 +496,8 @@ export const EN_MESSAGES = {
     'Audio files and meeting metadata are not sent. The translation preserves the source timestamps. Translation quality and cost depend on the provider and model.',
   '専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。用語集が多いと関係のない単語を誘導することがあります。':
     'Enter technical terms and proper nouns separated by commas. This stabilizes terminology in Japanese meetings. A long glossary can bias the model toward unrelated words.',
+  'OpenAI の文字起こしでは、用語集は API のプロンプト上限に合わせて先頭から使います。':
+    'OpenAI transcription uses the beginning of the glossary within the API prompt limit.',
   '音声ファイルと会議のメタデータは送信しません。個人名や社名のマスクは行いません。概算料金はプロバイダの料金表を確認してください。送信先でのデータの扱いはプロバイダの規約に従います。':
     'Audio files and meeting metadata are not sent. Personal and company names are not masked. Check the provider price list for estimated cost. The provider terms govern how the destination handles the data.',
   ' · 残り約 {duration}': ' · about {duration} left',
@@ -822,6 +824,177 @@ export const EN_MESSAGES = {
   '{text} を完了にする': 'Mark {text} as done',
   '{text} を未完了に戻す': 'Mark {text} as not done',
   '{title} の会議詳細を開く': 'Open meeting details for {title}',
+  '文字起こしエンジン': 'Transcription engine',
+  'ローカル (whisper.cpp)': 'Local (whisper.cpp)',
+  'OpenAI API': 'OpenAI API',
+  'OpenAI の文字起こしモデル': 'OpenAI transcription model',
+  'ChatGPT プロファイル': 'ChatGPT profile',
+  'ChatGPT のプロファイルがありません': 'No ChatGPT profile is configured',
+  '（API キー未設定）': ' (API key not set)',
+  'OpenAI の API キーを設定': 'Set the OpenAI API key',
+  '文字起こしを開始する前に、送信先、モデル、音声の長さ、分割数を確認します。音声ファイルは端末外に出ます。':
+    'Before transcription starts, Kataribe shows the destination, model, audio duration, and chunk count. The audio file leaves this device.',
+  'このモデルは区間のタイムスタンプを返しません。文字起こしの時刻は分割した区間の単位になります。':
+    'This model does not return segment timestamps. Transcript times use the chunk boundaries.',
+  'API キーは「要約」タブの ChatGPT プロファイルに保存したキーを使います。送信を承認しなかった場合は、下のローカルモデルで文字起こしを続けます。':
+    'The API key is the one saved in the ChatGPT profile on the Summary tab. If you do not approve the upload, Kataribe continues with the local model below.',
+  '録音停止後の文字起こしで使うモデルです。OpenAI API を選んだ場合も、送信を取りやめたときのフォールバックに使います。':
+    'This model is used for transcription after recording stops. It is also the fallback when you cancel an OpenAI upload.',
+  'OpenAI 文字起こしの確認': 'Confirm OpenAI transcription',
+  '音声を OpenAI に送信しますか？': 'Send the audio to OpenAI?',
+  '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。':
+    'Destination: {host}\nModel: {model}\nAudio duration: {minutes} min\nChunks: {chunks}\n\nThe audio file leaves this device. Only the transcription audio is sent; the meeting title and save path are not sent.',
+  '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n音声: {audio}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。':
+    'Destination: {host}\nModel: {model}\nAudio duration: {minutes} min\nChunks: {chunks}\nAudio: {audio}\n\nThe audio file leaves this device. Only the transcription audio is sent; the meeting title and save path are not sent.',
+  '強調した音声（失敗したときは生の音声）':
+    'Enhanced audio (raw audio if enhancement fails)',
+  '生の音声': 'Raw audio',
+  '送信': 'Send',
+  'ローカルで続ける': 'Continue locally',
+  'OpenAI への送信を取りやめ、ローカルの whisper で文字起こしをしています。':
+    'Skipped the OpenAI upload and continued transcription with the local whisper model.',
+  '文字起こしをしています（{index}/{total}）': 'Transcribing ({index}/{total})',
+  'OpenAI 文字起こし用の ChatGPT プロファイルが設定されていません。設定画面で ChatGPT のプロファイルを選んでください。':
+    'No ChatGPT profile is selected for OpenAI transcription. Select a ChatGPT profile in Settings.',
+  'OpenAI の API キーを復号できませんでした。設定画面で再入力してください。{detail}':
+    'Could not decrypt the OpenAI API key. Enter it again in Settings. {detail}',
+  'OpenAI の API キーが設定されていません。設定画面の ChatGPT プロファイルに API キーを保存してください。':
+    'The OpenAI API key is not configured. Save an API key in the ChatGPT profile in Settings.',
+  '音声を送信する確認を表示できないため、OpenAI 文字起こしを中止しました。':
+    'OpenAI transcription was cancelled because the upload confirmation could not be shown.',
+  'OpenAI の文字起こし設定を確認してください。{detail}':
+    'Check the OpenAI transcription settings. {detail}',
+  'OpenAI の文字起こし API のレート制限に達しました。時間をおいて再実行してください。':
+    'The OpenAI transcription API rate limit was reached. Try again later.',
+  'OpenAI の文字起こし API がサーバーエラーを返しました。時間をおいて再実行してください。':
+    'The OpenAI transcription API returned a server error. Try again later.',
+  'OpenAI の文字起こし API に接続できませんでした。ネットワークを確認してください。':
+    'Could not reach the OpenAI transcription API. Check the network connection.',
+  'OpenAI の文字起こしに失敗しました。{detail}':
+    'OpenAI transcription failed. {detail}',
+  '音声の分割が大きすぎます。音声を短くして再実行してください。':
+    'An audio chunk is too large. Shorten the audio and try again.',
+  '要約の前処理': 'Summary preprocessing',
+  '相槌と擬音を除いてから要約する': 'Remove fillers and interjections before summarizing',
+  '文字起こしを LLM に送って相槌と擬音を除き、その本文から要約を作ります。送信回数とトークン数が増えます。':
+    'Kataribe sends the transcript to the LLM to remove fillers and interjections, then summarizes the cleaned text. This adds another request and more tokens.',
+  '相槌と擬音の除去': 'Filler and interjection removal',
+  'あり（約 {count} tokens を追加）': 'Yes (about {count} additional tokens)',
+  'なし': 'None',
+  '相槌と擬音の除去でも文字起こしを送信するため、送信は 2 回になります。':
+    'Filler and interjection removal also sends the transcript, so the transcript is sent twice.',
+  '相槌と擬音を除去できなかったため、元の文字起こしで要約しました。':
+    'Kataribe could not remove fillers and interjections, so it summarized the original transcript.',
+  '一部の区間で相槌と擬音を除去できなかったため、元の文字起こしを混ぜて要約しました。':
+    'Kataribe could not remove fillers and interjections in some chunks, so it summarized a mix of cleaned and original text.',
+  '相槌と擬音を除いています': 'Removing fillers and interjections',
+  '相槌と擬音を除いています（{index}/{total}）':
+    'Removing fillers and interjections ({index}/{total})',
+  'ライセンス': 'License',
+  'WebGPU エンジン': 'WebGPU engine',
+  '音声強調モデル': 'Speech enhancement model',
+  '音声強調 (RE-USE)': 'Speech enhancement (RE-USE)',
+  'WebGPU': 'WebGPU',
+  '音声強調を実行できます。': 'Speech enhancement is available.',
+  'この環境は WebGPU に対応していません。':
+    'This environment does not support WebGPU.',
+  'WebGPU を利用できる GPU が見つかりません。':
+    'No GPU that supports WebGPU was found.',
+  'この GPU は音声強調モデルに必要な容量を満たしません。':
+    'This GPU does not meet the memory requirements for the speech enhancement model.',
+  'WebGPU の可用性を確認しています。': 'Checking WebGPU availability.',
+  '音声強調は端末内の WebGPU で実行し、音声を外部に送りません。WebGPU が使えないときは音声強調を無効にします。':
+    'Speech enhancement runs on the local WebGPU and never sends audio off the device. When WebGPU is unavailable, speech enhancement is disabled.',
+  'WebGPU エンジンのライセンス': 'WebGPU engine license',
+  '音声強調モデルのライセンス': 'Speech enhancement model license',
+  '商用利用が可能な NVIDIA NemotronLabs RE-USE だけを使います。モデルは初回利用時にダウンロードし、SHA-256 を照合してから使います。':
+    'Kataribe uses only the commercially usable NVIDIA NemotronLabs RE-USE model. The model is downloaded on first use and verified with SHA-256 before use.',
+  'モデル一覧を読み込んでいます...': 'Loading models...',
+  'ダウンロード中': 'Downloading',
+  'ダウンロード中 ({percent}%)': 'Downloading ({percent}%)',
+  '未取得 ({size})': 'Not downloaded ({size})',
+  '研究および教育用のモデルは、モデル一覧、設定、ダウンロードのいずれにも含めません。':
+    'Research and education models are not included in the model list, settings, or downloads.',
+  '音声強調モデルの状態を取得できませんでした: {error}':
+    'Could not load the speech enhancement model status: {error}',
+  'ライセンスを開けませんでした: {error}': 'Could not open the license: {error}',
+  '音声強調中': 'Enhancing audio',
+  '音声強調をしています': 'Enhancing the audio',
+  '音声強調の状態': 'Speech enhancement status',
+  '保存音声の強調': 'Saved audio enhancement',
+  '文字起こし前の強調': 'Pre-transcription enhancement',
+  '実行中': 'Running',
+  '成功': 'Succeeded',
+  '失敗': 'Failed',
+  'キャンセル済み': 'Cancelled',
+  '中断': 'Interrupted',
+  '処理時間 {seconds} 秒': '{seconds} s processing time',
+  '使用モデル {model}': 'Model: {model}',
+  '音声強調はまだ実行されていません。':
+    'Speech enhancement has not run yet.',
+  '音声強調の状態を読み込めませんでした。':
+    'Could not load the speech enhancement status.',
+  '音声強調の状態を読み込めませんでした: {error}':
+    'Could not load the speech enhancement status: {error}',
+  '音声強調のディスク使用量': 'Speech enhancement disk usage',
+  '強調音声を削除': 'Delete enhanced audio',
+  '強調音声を削除します。よろしいですか？':
+    'Delete the enhanced audio files?',
+  '強調音声を削除しました。': 'Deleted the enhanced audio files.',
+  '強調音声を削除できませんでした: {error}':
+    'Could not delete the enhanced audio files: {error}',
+  '音声強調の使用量を取得できませんでした: {error}':
+    'Could not load the speech enhancement disk usage: {error}',
+  '{size} を使用しています。': 'Using {size}.',
+  '使用量を確認中...': 'Checking disk usage...',
+  '前回の音声強調が中断されました。会議詳細から再実行してください。':
+    'The previous speech enhancement was interrupted. Run it again from the meeting detail.',
+  '録音停止後の保存音声の強調': 'Enhance saved audio after recording',
+  '文字起こし前の音声を強調する': 'Enhance audio before transcription',
+  '文字起こしの準備に失敗しました。': 'Could not prepare transcription.',
+  '文字起こし前の強調が OFF のため再実行できません。':
+    'The comparison cannot run because pre-transcription enhancement is off.',
+  '文字起こし前の音声を強調しています': 'Enhancing audio before transcription',
+  '文字起こしの比較': 'Transcript comparison',
+  '現在の文字起こし': 'Current transcript',
+  '生の文字起こし': 'Raw transcript',
+  '強調した文字起こし': 'Enhanced transcript',
+  '比較用の文字起こしです。読み取り専用で、検索、翻訳、要約、ToDo の入力には使いません。':
+    'This is a comparison transcript. It is read-only and is not used for search, translation, summary, or ToDo input.',
+  '比較用の文字起こしを表示している間は、編集、翻訳、話者名の変更はできません。':
+    'Editing, translation, and speaker changes are disabled while viewing a comparison transcript.',
+  'この要約と翻訳は以前の文字起こしに基づいています。要約と翻訳を再生成してください。':
+    'This summary and translation are based on an earlier transcript. Regenerate them.',
+  '文字起こし前の強調を再実行': 'Run pre-transcription enhancement again',
+  '既存の transcript.md を transcript.previous.md にコピーして上書きします。よろしいですか？':
+    'Copy the existing transcript.md to transcript.previous.md and replace it?',
+  '文字起こし前の強調を開始できませんでした: {error}':
+    'Could not start pre-transcription enhancement: {error}',
+  '文字起こし前の強調の再実行に失敗しました。以前の文字起こしを残しました。':
+    'Pre-transcription enhancement failed. The previous transcript was kept.',
+  '文字起こし前の強調が完了しました。': 'Pre-transcription enhancement completed.',
+  '生の音声で文字起こししています': 'Transcribing the raw audio',
+  '強調した音声で文字起こししています': 'Transcribing the enhanced audio',
+  '文字起こしの前に RE-USE を適用し、生と強調の文字起こしを保存して比較できます。既定は OFF です。':
+    'Apply RE-USE before transcription and keep the raw and enhanced transcripts for comparison. The default is off.',
+  'OpenAI の文字起こし API を選んだ場合は比較せず、強調に成功した音声または生の音声を 1 回だけ送ります。':
+    'With the OpenAI transcription API, Kataribe does not compare and sends either the enhanced audio or the raw audio once.',
+  '録音停止後に保存する音声へ RE-USE を適用し、生の audio.mp3 と強調した audio.enhanced.nemotronlabs.mp3 を保存します。既定は OFF です。':
+    'Apply RE-USE to the audio saved after recording and keep both the raw audio.mp3 and the enhanced audio.enhanced.nemotronlabs.mp3. The default is off.',
+  '保存音声を強調しています': 'Enhancing the saved audio',
+  '保存音声の強調を再実行': 'Run saved audio enhancement again',
+  '生音声': 'Raw audio',
+  '強調音声': 'Enhanced audio',
+  '音声の種類': 'Audio version',
+  '再実行の入力は audio.mp3 から作るため、録音直後の強調とは入力が異なります。':
+    'A re-run decodes audio.mp3, so its input differs from the enhancement done right after recording.',
+  '同じモデルの強調音声を置き換えます。よろしいですか？':
+    'Replace the enhanced audio from the same model?',
+  '保存音声の強調が完了しました。': 'Saved audio enhancement completed.',
+  '保存音声の強調に失敗しました: {error}':
+    'Saved audio enhancement failed: {error}',
+  '音声強調を開始できませんでした: {error}':
+    'Could not start saved audio enhancement: {error}',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;
@@ -836,6 +1009,27 @@ export const INPUT_SOURCE_MESSAGE_KEYS: Record<InputSource, MessageKey> = {
   microphone: 'マイク',
   system: 'システム音声',
   both: 'マイク + システム音声',
+};
+
+export const ENHANCEMENT_STATE_MESSAGE_KEYS: Record<
+  EnhancementState,
+  MessageKey
+> = {
+  pending: '待機中',
+  running: '実行中',
+  succeeded: '成功',
+  failed: '失敗',
+  cancelled: 'キャンセル済み',
+  interrupted: '中断',
+};
+
+export const REUSE_GPU_REASON_MESSAGE_KEYS: Record<
+  'no-api' | 'no-adapter' | 'limits',
+  MessageKey
+> = {
+  'no-api': 'この環境は WebGPU に対応していません。',
+  'no-adapter': 'WebGPU を利用できる GPU が見つかりません。',
+  limits: 'この GPU は音声強調モデルに必要な容量を満たしません。',
 };
 
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;

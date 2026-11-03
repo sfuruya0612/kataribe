@@ -3,10 +3,16 @@ import type { IpcRendererEvent } from 'electron';
 import type { ClippingConfig } from '../shared/clipping';
 import type { SilenceConfig } from '../shared/silence';
 import type {
+  EnhancementCancelMessage,
+  EnhancementStartMessage,
+  ReuseLicenseKind,
+} from '../shared/reuse';
+import type {
   AppInfo,
   AppSettings,
   DiarizationModelProgress,
   DiarizationModelStatus,
+  EnhancementFile,
   GenerateSummaryResult,
   InputSource,
   LlmProfilesState,
@@ -36,6 +42,10 @@ import type {
   RecordingStartupFailureResult,
   RecordingStopResult,
   RecoverableRecording,
+  ReuseDiskUsage,
+  ReuseModel,
+  ReuseModelList,
+  ReuseModelProgress,
   SaveLlmProfileRequest,
   StartRecordingOptions,
   SummaryLanguage,
@@ -167,6 +177,10 @@ const api = {
     ipcRenderer.invoke('meetings:rename-speakers', meetingId, names),
   retryTranscription: (meetingId: string): Promise<ProcessingState> =>
     ipcRenderer.invoke('meetings:retry-transcription', meetingId),
+  retryTranscriptionComparison: (
+    meetingId: string,
+  ): Promise<ProcessingState> =>
+    ipcRenderer.invoke('meetings:retry-comparison', meetingId),
   getMeetingWaveform: (meetingId: string): Promise<MeetingWaveform> =>
     ipcRenderer.invoke('meetings:waveform', meetingId),
   openMeetingFolder: (meetingId: string): Promise<void> =>
@@ -231,6 +245,59 @@ const api = {
     ipcRenderer.invoke('models:cancel', model),
   deleteWhisperModel: (model: WhisperModel): Promise<WhisperModelList> =>
     ipcRenderer.invoke('models:delete', model),
+  listReuseModels: (): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:list-models'),
+  downloadReuseModel: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:download-model', model),
+  cancelReuseModelDownload: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:cancel-download', model),
+  deleteReuseModel: (model: ReuseModel): Promise<ReuseModelList> =>
+    ipcRenderer.invoke('reuse:delete-model', model),
+  getReuseEnhancement: (meetingId: string): Promise<EnhancementFile | null> =>
+    ipcRenderer.invoke('reuse:get-enhancement', meetingId),
+  getReuseDiskUsage: (): Promise<ReuseDiskUsage> =>
+    ipcRenderer.invoke('reuse:disk-usage'),
+  deleteReuseSavedAudio: (): Promise<ReuseDiskUsage> =>
+    ipcRenderer.invoke('reuse:delete-saved-audio'),
+  enhanceReuseSavedAudio: (
+    meetingId: string,
+    model: ReuseModel,
+  ): Promise<ProcessingState> =>
+    ipcRenderer.invoke('reuse:enhance-saved-audio', meetingId, model),
+  openReuseLicense: (kind: ReuseLicenseKind): Promise<void> =>
+    ipcRenderer.invoke('reuse:open-license', kind),
+  onReuseModelProgress: (
+    listener: (progress: ReuseModelProgress) => void,
+  ): (() => void) => subscribe('reuse:model-progress', listener),
+  onReuseModelsChanged: (
+    listener: (list: ReuseModelList) => void,
+  ): (() => void) => subscribe('reuse:models-changed', listener),
+  onEnhancementStart: (
+    listener: (message: EnhancementStartMessage) => void,
+  ): (() => void) => subscribe('enhancement:start', listener),
+  onEnhancementCancel: (
+    listener: (message: EnhancementCancelMessage) => void,
+  ): (() => void) => subscribe('enhancement:cancel', listener),
+  reportEnhancementProgress: (
+    requestId: string,
+    progress: number,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:progress', requestId, progress),
+  sendEnhancementChunk: (
+    requestId: string,
+    index: number,
+    samples: Float32Array,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:chunk', requestId, index, samples),
+  reportEnhancementDone: (requestId: string): Promise<void> =>
+    ipcRenderer.invoke('enhancement:done', requestId),
+  reportEnhancementReady: (): Promise<void> =>
+    ipcRenderer.invoke('enhancement:ready'),
+  reportEnhancementError: (
+    requestId: string,
+    message: string,
+  ): Promise<void> =>
+    ipcRenderer.invoke('enhancement:error', requestId, message),
   getDiarizationModelStatus: (): Promise<DiarizationModelStatus> =>
     ipcRenderer.invoke('diarization:model-status'),
   downloadDiarizationModels: (): Promise<DiarizationModelStatus> =>

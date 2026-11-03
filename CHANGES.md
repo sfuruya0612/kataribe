@@ -99,6 +99,29 @@
   - @shoichi.furuya
 - [ADD] 要約の再生成前に、既存の要約の上書きと ToDo の完了状態を引き継がない旨の警告を確認ダイアログに表示する
   - @shoichi.furuya
+- [ADD] OpenAI の文字起こし API をローカルの whisper.cpp と切り替えて使えるようにする
+  - 送信のたびに送信先、モデル、音声の長さ、分割数を確認し、承認しなかった場合はローカルの whisper.cpp で続ける
+  - `whisper-1`、`gpt-4o-transcribe`、`gpt-4o-mini-transcribe` を選べる
+  - @shoichi.furuya
+- [ADD] 要約の前に相槌と擬音を除く前処理を追加する
+  - 文字起こしを 2 回送る場合があることを確認ダイアログに表示し、除去に失敗したときは元の文字起こしで要約する
+  - @shoichi.furuya
+- [ADD] RE-USE の商用モデルのダウンロード、SHA-256 検証、WebGPU 音声強調エンジン、専用 Worker、カスタムプロトコル、設定画面を追加する
+  - モデル一覧には商用利用が可能な `nemotronlabs` だけを表示し、研究および教育用モデルを含めない
+  - Range リクエストに対応した `kataribe-temp` と `kataribe-model` で音声とモデルを読む
+  - @shoichi.furuya
+- [ADD] 音声強調の状態を `enhancement.json` に集約し、`enhancing` 状態、一時ファイルの後始末、検索索引の要約列、会議詳細の状態表示、設定画面の使用量と削除を追加する
+  - 失敗、キャンセル、中断では再試行用の `chunks/` と `audio.16k.wav` を残し、強調 WAV とデコード WAV は削除する
+  - 入力音声、モデルの重み、比較セッションの入力が変わったときは古い派生物を削除する
+  - @shoichi.furuya
+- [ADD] 録音停止後の保存音声を RE-USE で強調し、生音声と強調音声の切り替え、会議詳細からの再実行を追加する
+  - 既定は OFF とし、強調に失敗したときは生の `audio.mp3` と以前の強調音声を残す
+  - 再実行は `audio.mp3` からデコードした WAV を入力にし、完了時に既存の強調 mp3 を置き換える
+  - @shoichi.furuya
+- [ADD] 文字起こし前の音声強調と、生と強調の文字起こしの比較、会議詳細からの再実行を追加する
+  - 比較セッションは `audio.mp3` から 16 kHz WAV を 1 回だけ作り、生と強調の文字起こしを保存する
+  - 再実行は生と強調の両方が成功したときだけ `transcript.md` と比較用を置き換え、失敗時は以前の結果を残す
+  - @shoichi.furuya
 
 ### CHANGE
 
@@ -112,6 +135,8 @@
 - [FIX] 録音停止時に最終チャンクと停止通知が重複する問題を修正する
   - @shoichi.furuya
 - [FIX] WAV の fmt / data チャンクを解析して、波形と長さを正しく取得する
+  - @shoichi.furuya
+- [FIX] 文字起こし前の音声強調に失敗したとき、理由を会議詳細に表示し、生の文字起こしを残す
   - @shoichi.furuya
 
 ### misc
@@ -145,4 +170,18 @@
 - [ADD] README とリリースチェックリストに UI の言語の確認手順を追加する
   - @shoichi.furuya
 - [FIX] 話者分離モデルの実 I/O テストが CI の並列実行でタイムアウトする問題を修正する
+  - @shoichi.furuya
+- [ADD] ADR-0024、ADR-0025、ADR-0026 を追加し、OpenAI 文字起こし、相槌の除去、RE-USE の不採用を記録する
+  - @shoichi.furuya
+- [ADD] RE-USE の文字起こし精度に対する検証手順と結果を記録する
+  - 先行モデルと商用利用可能なモデルのライセンスと CER の比較を含む
+  - @shoichi.furuya
+- [ADD] PRD に OpenAI 文字起こしと相槌の除去の要求を追加し、README とリリースチェックリストを更新する
+  - @shoichi.furuya
+- [ADD] RE-USE の WebGPU 音声強調の issue 0023、0024、0025、0026 と ADR-0027 を追加し、ADR-0026 を Amended by に更新する
+  - アプリは商用利用が可能なモデルだけを扱い、研究および教育用モデルとの比較は配布物の外の検証手順で行う
+  - PRD に録音停止後と文字起こし前の音声強調の要求を追加し、データ設計、リスク、README を更新する
+  - ADR-0005、0007、0010、0012、0013、0021 に、派生音声、`enhancing` 状態、一時ファイル、キャッシュキーを反映する
+  - @shoichi.furuya
+- [ADD] 1000 行を超えるソースファイルの分割 issue 0027、0028、0029、0030、0031 を起票する
   - @shoichi.furuya

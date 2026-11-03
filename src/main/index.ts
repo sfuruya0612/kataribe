@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { access, mkdir, rm } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -48,6 +48,7 @@ import type {
   ThemeMode,
   WhisperModel,
 } from '../shared/types';
+import type { ReuseLicenseKind } from '../shared/reuse';
 import { ApiKeyStore, type SecretCrypto } from './api-keys';
 import { ChildProcessRegistry } from './child-registry';
 import { DiarizationService } from './diarization';
@@ -57,13 +58,37 @@ import { LlmClient } from './llm';
 import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
 import { MeetingStore } from './meetings';
+import { parseMeetingAudioUrl } from './meeting-audio';
 import { ModelManager } from './models';
 import { MultiOutputController } from './multi-output';
+import { OpenAiTranscriptionService } from './openai-transcription';
 import { ProcessingCoordinator } from './processing';
 import { configureChildProcessRegistry } from './process';
 import { RecordingCoordinator } from './recording-coordinator';
 import { RecordingManager } from './recording';
 import { RecordingStateStore } from './recording-state';
+import { ReuseEnhancementService } from './reuse-enhancement';
+import { ReuseSavedAudioService } from './reuse-saved-audio';
+import { runReuseSmokeTest } from './reuse-smoke';
+import {
+  REUSE_MODEL_DEFINITIONS,
+  ReuseModelManager,
+  isReuseModel,
+} from './reuse-models';
+import { reuseLicenseMenuItems } from './reuse-menu';
+import {
+  REUSE_PROTOCOL_PRIVILEGES,
+  REUSE_PROTOCOL_SCHEMES,
+  ReuseTempTokenStore,
+  isReuseLicenseKind,
+  registerReuseProtocols,
+  reuseLicensePath,
+} from './reuse-protocol';
+import {
+  cleanupOrphanedTempDirs,
+  deleteAllSavedAudio,
+  scanSavedAudioUsage,
+} from './reuse-cleanup';
 import { MeetingSearchIndex } from './search-index';
 import { SettingsStore } from './settings';
 import { listMeetingTodos, setMeetingTodoChecked } from './todos';
@@ -72,10 +97,13 @@ import {
   type PermissionDetails,
 } from './security';
 import { TranscriptionService } from './transcription';
+import { TranscriptionRunner } from './transcription-runner';
 import { TrayController } from './tray';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
 const isWindowTest = process.env.KATARIBE_WINDOW_TEST === '1';
+const isReuseSmokeTest = process.env.KATARIBE_REUSE_SMOKE_TEST === '1';
+const reuseSmokeModelPath = process.env.KATARIBE_REUSE_SMOKE_MODEL_PATH;
 const rendererUrl = process.env.ELECTRON_RENDERER_URL;
 const BLACKHOLE_URL = 'https://existential.audio/blackhole/';
 
@@ -87,8 +115,26 @@ let isQuitting = false;
 let shutdownInProgress = false;
 let stateTimer: NodeJS.Timeout | null = null;
 let processingCoordinator: ProcessingCoordinator | null = null;
+let reuseEnhancementService: ReuseEnhancementService | null = null;
 let activeMeetingIndex: MeetingSearchIndex | null = null;
 let meetingIndexRoot = '';
+let enhancementBridgeReady = false;
+const enhancementBridgeWaiters: Array<() => void> = [];
+
+function waitForEnhancementBridge(): Promise<void> {
+  if (enhancementBridgeReady) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolveBridge, rejectBridge) => {
+    const timer = setTimeout(() => {
+      rejectBridge(new Error('the enhancement bridge did not become ready'));
+    }, 5000);
+    enhancementBridgeWaiters.push(() => {
+      clearTimeout(timer);
+      resolveBridge();
+    });
+  });
+}
 
 const electronFetch: typeof fetch = (input, init) => {
   const value =
@@ -129,6 +175,10 @@ protocol.registerSchemesAsPrivileged([
       stream: true,
     },
   },
+  ...REUSE_PROTOCOL_SCHEMES.map((scheme) => ({
+    scheme,
+    privileges: REUSE_PROTOCOL_PRIVILEGES,
+  })),
 ]);
 
 const stateStore = new RecordingStateStore({
@@ -176,6 +226,34 @@ async function broadcastModelList(modelManager: ModelManager): Promise<void> {
   }
 }
 
+async function broadcastReuseModelList(
+  modelManager: ReuseModelManager,
+): Promise<void> {
+  try {
+    broadcast('reuse:models-changed', await modelManager.list());
+  } catch (error) {
+    console.error(
+      `failed to broadcast reuse model list: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function openReuseLicense(kind: ReuseLicenseKind): Promise<void> {
+  if (!isReuseLicenseKind(kind)) {
+    throw new Error('invalid reuse license kind');
+  }
+  const error = await shell.openPath(
+    reuseLicensePath(kind, {
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    }),
+  );
+  if (error) {
+    throw new Error(error);
+  }
+}
+
 async function refreshMeetingIndex(
   meetingStore: MeetingStore,
   meetingId: string,
@@ -193,13 +271,13 @@ async function refreshMeetingIndex(
 }
 
 async function showOpenDirectoryDialog(options: OpenDialogOptions) {
-  return mainWindow
+  return mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
     ? dialog.showOpenDialog(mainWindow, options)
     : dialog.showOpenDialog(options);
 }
 
 async function showMessageDialog(options: MessageBoxOptions) {
-  return mainWindow
+  return mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()
     ? dialog.showMessageBox(mainWindow, options)
     : dialog.showMessageBox(options);
 }
@@ -243,22 +321,16 @@ function configureSession(): void {
   });
 }
 
-function meetingIdFromAudioUrl(rawUrl: string): string | null {
-  const prefix = 'kataribe-audio://meeting/';
-  if (!rawUrl.startsWith(prefix)) {
-    return null;
-  }
-  const value = decodeURIComponent(rawUrl.slice(prefix.length).split('?')[0]);
-  return value.length > 0 ? value : null;
-}
-
 function registerAudioProtocol(meetingStore: MeetingStore): void {
   protocol.handle('kataribe-audio', async (request) => {
-    const meetingId = meetingIdFromAudioUrl(request.url);
-    if (!meetingId) {
+    const target = parseMeetingAudioUrl(request.url);
+    if (!target) {
       return new Response('Not found', { status: 404 });
     }
-    const audioPath = await meetingStore.audioPath(meetingId);
+    const audioPath =
+      target.variant === 'enhanced' && target.model
+        ? await meetingStore.enhancedAudioPath(target.meetingId, target.model)
+        : await meetingStore.audioPath(target.meetingId);
     if (!audioPath) {
       return new Response('Not found', { status: 404 });
     }
@@ -266,7 +338,10 @@ function registerAudioProtocol(meetingStore: MeetingStore): void {
     try {
       return await net.fetch(pathToFileURL(audioPath).toString());
     } catch (error) {
-      console.error(`failed to serve meeting audio: ${meetingId}`, error);
+      console.error(
+        `failed to serve meeting audio: ${target.meetingId}`,
+        error,
+      );
       return new Response('Not found', { status: 404 });
     }
   });
@@ -290,6 +365,17 @@ function registerAppMenu(): void {
         {
           label: t('Kataribe 会議録 について'),
           click: () => app.showAboutPanel(),
+        },
+        { type: 'separator' },
+        {
+          label: t('ライセンス'),
+          submenu: reuseLicenseMenuItems((kind) => {
+            void openReuseLicense(kind).catch((error: unknown) => {
+              console.error(
+                `failed to open the ${kind} license: ${error instanceof Error ? error.message : String(error)}`,
+              );
+            });
+          }),
         },
         { type: 'separator' },
         { role: 'hide', label: t('Kataribe を隠す') },
@@ -373,6 +459,7 @@ function createWindow(): BrowserWindow {
     console.log('main window closed');
     mainWindow = null;
     rendererReady = false;
+    void reuseEnhancementService?.cancel();
     const status = stateStore.getStatus();
     if (
       !isQuitting &&
@@ -391,6 +478,7 @@ function createWindow(): BrowserWindow {
     if (!hasLoadedRenderer || isQuitting) {
       return;
     }
+    void reuseEnhancementService?.cancel();
     const status = stateStore.getStatus();
     if (status !== 'starting' && status !== 'recording' && status !== 'stopping') {
       return;
@@ -409,6 +497,7 @@ function createWindow(): BrowserWindow {
 
   window.webContents.on('render-process-gone', (_event, details) => {
     rendererReady = false;
+    void reuseEnhancementService?.cancel();
     if (isQuitting) {
       return;
     }
@@ -523,6 +612,8 @@ function registerIpc(
   processing: ProcessingCoordinator,
   modelManager: ModelManager,
   diarizationModelManager: DiarizationModelManager,
+  reuseModelManager: ReuseModelManager,
+  reuseEnhancement: ReuseEnhancementService,
   llmProfileManager: LlmProfileManager,
   multiOutput: MultiOutputController,
 ): void {
@@ -986,6 +1077,139 @@ function registerIpc(
     return list;
   });
 
+  ipcMain.handle('reuse:list-models', () => reuseModelManager.list());
+
+  ipcMain.handle('reuse:download-model', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    void reuseModelManager
+      .download(model)
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') {
+          return;
+        }
+        console.error(
+          `reuse model download failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        void broadcastReuseModelList(reuseModelManager);
+      });
+    return reuseModelManager.list();
+  });
+
+  ipcMain.handle('reuse:cancel-download', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    reuseModelManager.cancel(model);
+    return reuseModelManager.list();
+  });
+
+  ipcMain.handle('reuse:delete-model', async (_event, model: unknown) => {
+    if (!isReuseModel(model)) {
+      throw new Error('invalid reuse model');
+    }
+    await reuseModelManager.delete(model);
+    const list = await reuseModelManager.list();
+    broadcast('reuse:models-changed', list);
+    return list;
+  });
+
+  ipcMain.handle('reuse:open-license', async (_event, kind: unknown) => {
+    if (!isReuseLicenseKind(kind)) {
+      throw new Error('invalid reuse license kind');
+    }
+    await openReuseLicense(kind);
+  });
+
+  ipcMain.handle('reuse:get-enhancement', async (_event, meetingId: string) => {
+    if (typeof meetingId !== 'string') {
+      throw new Error('invalid meeting id');
+    }
+    const detail = await meetingStore.detail(meetingId);
+    return detail?.enhancement ?? null;
+  });
+
+  ipcMain.handle('reuse:disk-usage', () => scanSavedAudioUsage(meetingStore));
+
+  ipcMain.handle('reuse:delete-saved-audio', async () => {
+    const usage = await deleteAllSavedAudio(meetingStore);
+    try {
+      await activeMeetingIndex?.rebuild(meetingStore);
+    } catch (error) {
+      console.error(
+        `failed to rebuild the meeting index after deleting enhanced audio: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    broadcast('meetings:changed', await meetingStore.list());
+    return usage;
+  });
+
+  ipcMain.handle(
+    'reuse:enhance-saved-audio',
+    (_event, meetingId: unknown, model: unknown) => {
+      if (typeof meetingId !== 'string' || !isReuseModel(model)) {
+        throw new Error('invalid saved audio enhancement request');
+      }
+      void processing
+        .requestSavedAudioEnhancement(meetingId, model)
+        .catch((error: unknown) => {
+          console.error(
+            `saved audio enhancement failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return processing.getState();
+    },
+  );
+
+  ipcMain.handle(
+    'enhancement:progress',
+    (_event, requestId: unknown, progress: unknown) => {
+      if (typeof requestId !== 'string' || typeof progress !== 'number') {
+        throw new Error('invalid enhancement progress');
+      }
+      reuseEnhancement.handleProgress(requestId, progress);
+    },
+  );
+
+  ipcMain.handle(
+    'enhancement:chunk',
+    async (
+      _event,
+      requestId: unknown,
+      index: unknown,
+      samples: unknown,
+    ) => {
+      if (
+        typeof requestId !== 'string' ||
+        typeof index !== 'number' ||
+        !(samples instanceof Float32Array)
+      ) {
+        throw new Error('invalid enhancement chunk');
+      }
+      await reuseEnhancement.handleChunk(requestId, index, samples);
+    },
+  );
+
+  ipcMain.handle('enhancement:done', async (_event, requestId: unknown) => {
+    if (typeof requestId !== 'string') {
+      throw new Error('invalid enhancement request');
+    }
+    await reuseEnhancement.handleDone(requestId);
+  });
+
+  ipcMain.handle(
+    'enhancement:error',
+    (_event, requestId: unknown, message: unknown) => {
+      if (typeof requestId !== 'string' || typeof message !== 'string') {
+        throw new Error('invalid enhancement error');
+      }
+      reuseEnhancement.handleError(requestId, message);
+    },
+  );
+
   ipcMain.handle('diarization:model-status', () => diarizationModelManager.status());
 
   ipcMain.handle('diarization:model-download', async () => {
@@ -1054,6 +1278,23 @@ function registerIpc(
     });
     return processing.getState();
   });
+
+  ipcMain.handle(
+    'meetings:retry-comparison',
+    (_event, meetingId: unknown) => {
+      if (typeof meetingId !== 'string') {
+        throw new Error('invalid meeting id');
+      }
+      void processing
+        .requestTranscriptionComparison(meetingId)
+        .catch((error: unknown) => {
+          console.error(
+            `failed to retry transcription comparison: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
+      return processing.getState();
+    },
+  );
 
   ipcMain.handle('summary:preview', (_event, meetingId: string, profileId?: string) => {
     return processing.createSummaryPreview(
@@ -1408,8 +1649,42 @@ function registerIpc(
     shell.showItemInFolder(meetingDir);
   });
 
+  ipcMain.handle('enhancement:ready', () => {
+    enhancementBridgeReady = true;
+    for (const resolveBridge of enhancementBridgeWaiters.splice(0)) {
+      resolveBridge();
+    }
+  });
+
   ipcMain.on('app:renderer-ready', () => {
     rendererReady = true;
+    if (isReuseSmokeTest) {
+      void runReuseSmokeTest({
+        service: reuseEnhancement,
+        modelManager: reuseModelManager,
+        outputDir: join(app.getPath('userData'), 'tmp'),
+        model: 'nemotronlabs',
+        waitForBridge: waitForEnhancementBridge,
+      })
+        .then((result) => {
+          console.log(
+            `KATARIBE_REUSE_SMOKE_TEST_OK ${JSON.stringify(result)}`,
+          );
+          app.exit(0);
+        })
+        .catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          if (/webgpu|gpu|adapter|buffer/iu.test(message)) {
+            console.log(`KATARIBE_REUSE_SMOKE_TEST_SKIPPED ${message}`);
+            app.exit(0);
+            return;
+          }
+          console.error(`KATARIBE_REUSE_SMOKE_TEST_FAILED ${message}`);
+          app.exit(1);
+        });
+      return;
+    }
     if (!isSmokeTest) {
       return;
     }
@@ -1453,6 +1728,7 @@ if (!app.requestSingleInstanceLock()) {
     trayController = null;
     activeMeetingIndex?.close();
     activeMeetingIndex = null;
+    void reuseEnhancementService?.cancel();
     const coordinator = processingCoordinator;
     processingCoordinator = null;
     if (coordinator) {
@@ -1485,9 +1761,10 @@ if (!app.requestSingleInstanceLock()) {
     registerAppMenu();
     applyThemeMode(storedSettings.theme);
     const saveRoot = storedSettings.saveRoot;
-    const meetingStore = new MeetingStore(saveRoot);
+    const tempRoot = join(app.getPath('userData'), 'tmp');
+    const meetingStore = new MeetingStore(saveRoot, tempRoot);
     const childRegistry = new ChildProcessRegistry(
-      join(app.getPath('userData'), 'tmp', 'children'),
+      join(tempRoot, 'children'),
     );
     await childRegistry.cleanupOrphaned();
     configureChildProcessRegistry(childRegistry);
@@ -1512,6 +1789,39 @@ if (!app.requestSingleInstanceLock()) {
         broadcast('diarization:models-changed', null);
       },
     });
+    const reuseModelManager = new ReuseModelManager({
+      modelsDir: reuseSmokeModelPath
+        ? dirname(reuseSmokeModelPath)
+        : join(app.getPath('userData'), 'models', 'reuse'),
+      definitions: reuseSmokeModelPath
+        ? [{ ...REUSE_MODEL_DEFINITIONS[0], fileName: basename(reuseSmokeModelPath) }]
+        : undefined,
+      fetch: electronFetch,
+      onProgress: (progress) => {
+        broadcast('reuse:model-progress', progress);
+      },
+      onChange: () => {
+        void broadcastReuseModelList(reuseModelManager);
+      },
+    });
+    const reuseTempTokens = new ReuseTempTokenStore();
+    const reuseEnhancement = new ReuseEnhancementService({
+      tempTokens: reuseTempTokens,
+      modelManager: reuseModelManager,
+      sendStart: (message) => {
+        if (!mainWindow || mainWindow.isDestroyed() || !rendererReady) {
+          return false;
+        }
+        mainWindow.webContents.send('enhancement:start', message);
+        return true;
+      },
+      sendCancel: (message) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('enhancement:cancel', message);
+        }
+      },
+    });
+    reuseEnhancementService = reuseEnhancement;
     const secretCrypto: SecretCrypto = {
       isAvailable: () => safeStorage.isAsyncEncryptionAvailable(),
       encrypt: (plainText) => safeStorage.encryptStringAsync(plainText),
@@ -1542,21 +1852,64 @@ if (!app.requestSingleInstanceLock()) {
     });
     const mediaEncoder = new MediaEncoder({ locator });
     const transcriptionService = new TranscriptionService({ locator });
+    const openAiTranscriptionService = new OpenAiTranscriptionService({
+      fetch: electronFetch,
+    });
+    const transcriptionRunner = new TranscriptionRunner({
+      settings: () => settingsStore.get(),
+      apiKeyStore,
+      modelManager,
+      localService: transcriptionService,
+      openAiService: openAiTranscriptionService,
+      confirmCloudTranscription: async (details) => {
+        const audioLabel =
+          details.audioVariant === 'enhanced'
+            ? t('強調した音声（失敗したときは生の音声）')
+            : t('生の音声');
+        const result = await showMessageDialog({
+          type: 'warning',
+          title: t('OpenAI 文字起こしの確認'),
+          message: t('音声を OpenAI に送信しますか？'),
+          detail: t(
+            '送信先: {host}\nモデル: {model}\n音声の長さ: {minutes} 分\n分割数: {chunks}\n音声: {audio}\n\n音声ファイルは端末外に出ます。送信するのは文字起こし用の音声だけで、会議のタイトルや保存先のパスは送信しません。',
+            {
+              host: details.host || 'OpenAI',
+              model: details.model,
+              minutes: Math.max(1, Math.round(details.durationSeconds / 60)),
+              chunks: details.chunkCount,
+              audio: audioLabel,
+            },
+          ),
+          buttons: [t('送信'), t('ローカルで続ける')],
+          defaultId: 1,
+          cancelId: 1,
+        });
+        return result.response === 0;
+      },
+    });
     const diarizationService = new DiarizationService({
       locator,
       models: diarizationModelManager,
     });
     const llmClient = new LlmClient({ fetch: electronFetch });
     const multiOutput = new MultiOutputController({ locator });
+    const reuseSavedAudio = new ReuseSavedAudioService({
+      enhancement: reuseEnhancement,
+      modelManager: reuseModelManager,
+      mediaEncoder,
+      tempRoot,
+    });
     const processing = new ProcessingCoordinator({
-      tempRoot: join(app.getPath('userData'), 'tmp'),
+      tempRoot,
       meetingStore,
-      modelManager,
       apiKeyStore,
       mediaEncoder,
       transcriptionService,
+      transcriptionRunner,
       diarizationService,
       llmClient,
+      reuseSavedAudio,
+      reuseEnhancement,
       settings: () => settingsStore.get(),
       onStateChange: (state) => {
         broadcast('processing:state', state);
@@ -1590,6 +1943,13 @@ if (!app.requestSingleInstanceLock()) {
     });
     processingCoordinator = processing;
     await processing.markInterruptedMeetings();
+    await cleanupOrphanedTempDirs(tempRoot, meetingStore).catch(
+      (error: unknown) => {
+        console.error(
+          `failed to clean orphaned temp directories: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
     meetingIndexRoot = join(app.getPath('userData'), 'index');
     try {
       activeMeetingIndex = await MeetingSearchIndex.open(meetingIndexRoot, saveRoot);
@@ -1604,7 +1964,7 @@ if (!app.requestSingleInstanceLock()) {
 
     const recordingManager = new RecordingManager({
       saveRoot,
-      tempRoot: join(app.getPath('userData'), 'tmp'),
+      tempRoot,
       appVersion: app.getVersion(),
       blocker: {
         start: () => {
@@ -1620,6 +1980,11 @@ if (!app.requestSingleInstanceLock()) {
     });
     activeRecordingManager = recordingManager;
     registerAudioProtocol(meetingStore);
+    registerReuseProtocols({
+      protocol,
+      tempTokens: reuseTempTokens,
+      modelManager: reuseModelManager,
+    });
     registerIpc(
       recordingManager,
       meetingStore,
@@ -1627,6 +1992,8 @@ if (!app.requestSingleInstanceLock()) {
       processing,
       modelManager,
       diarizationModelManager,
+      reuseModelManager,
+      reuseEnhancement,
       llmProfileManager,
       multiOutput,
     );

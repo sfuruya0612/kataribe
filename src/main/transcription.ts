@@ -18,7 +18,13 @@ export type TranscriptionErrorCode =
   | 'empty-output'
   | 'incomplete'
   | 'cancelled'
-  | 'invalid-audio';
+  | 'invalid-audio'
+  | 'openai-config'
+  | 'openai-rate-limit'
+  | 'openai-server'
+  | 'openai-network'
+  | 'openai-failed'
+  | 'file-too-large';
 
 export type TranscriptionState = 'completed' | 'partial' | 'cancelled' | 'failed';
 

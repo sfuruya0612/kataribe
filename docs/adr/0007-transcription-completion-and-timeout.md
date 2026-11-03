@@ -54,11 +54,12 @@ Mac のスリープ中は処理が進まないため、タイマーの計時か�
   モデルの候補は large-v3-turbo、medium、small の順に下げる。
 - 利用者がキャンセルした場合も、その時点までのセグメントを部分結果として保存する。
   キャンセル後に自動再開はしない。
-- `meta.json` の `status` は PRD の 6 値（recording、encoding、transcribing、transcribed、summarized、error）を維持する。
+- `meta.json` の `status` は PRD の 7 値 (recording、encoding、enhancing、transcribing、transcribed、summarized、error) を維持する。
   部分結果、再開回数、最後のセグメントの終了時刻、エラーの種類は、`transcription` の別の項目に記録する。
   `transcription.state` は `running`、`partial`、`cancelled`、`interrupted`、`failed`、`completed` のいずれかとする。
-- アプリの起動時に、`status` が `recording`、`encoding`、`transcribing` のまま残っている会議を検出する。
+- アプリの起動時に、`status` が `recording`、`encoding`、`enhancing`、`transcribing` のまま残っている会議を検出する。
   これらは `interrupted` として扱い、残っているファイルから復旧する操作を画面に出す。
+  `enhancing` のときは `meta.status = error` とし、`enhancement.json` の該当 state を `interrupted` に更新する。
 - エラーは、タイムアウト、プロセスのクラッシュ、空の出力、出力の途中切断、モデルの読み込み失敗、ディスクの書き込み失敗に分類する。
   画面には分類ごとのメッセージを出し、再実行の操作を用意する。
 - エンコードにも音声の長さに応じたタイムアウトを設ける。

@@ -24,11 +24,15 @@ import type {
   WhisperModelList,
 } from '../../shared/types';
 import { DiarizationSettings } from './DiarizationSettings';
+import { EnhancementStorage } from './EnhancementStorage';
 import { useI18n } from './i18n';
 import { errorText, formatBytes, type InputDevice } from './recording-utils';
+import { ReuseSettings } from './ReuseSettings';
+import { SummaryCleanupSetting } from './SummaryCleanupSetting';
+import { TranscriptionEngineSettings } from './TranscriptionEngineSettings';
 import type { PermissionState } from './use-recorder';
 
-type SettingsTab = 'general' | 'recording' | 'transcription' | 'summary';
+export type SettingsTab = 'general' | 'recording' | 'transcription' | 'summary';
 
 type SettingsPanelProps = {
   saveRoot: string;
@@ -38,6 +42,7 @@ type SettingsPanelProps = {
   permission: PermissionState;
   microphones: InputDevice[];
   systemDevices: InputDevice[];
+  initialTab?: SettingsTab;
   onUpdateSettings: (patch: Partial<AppSettings>) => Promise<void>;
   onChangeSaveRoot: () => void;
   onSetInputSource: (source: InputSource) => void;
@@ -86,6 +91,7 @@ export function SettingsPanel({
   permission,
   microphones,
   systemDevices,
+  initialTab,
   onUpdateSettings,
   onChangeSaveRoot,
   onSetInputSource,
@@ -96,7 +102,7 @@ export function SettingsPanel({
   onShowAbout,
 }: SettingsPanelProps) {
   const { locale, t } = useI18n();
-  const [tab, setTab] = useState<SettingsTab>('general');
+  const [tab, setTab] = useState<SettingsTab>(initialTab ?? 'general');
   const [models, setModels] = useState<WhisperModelList | null>(null);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [llmProfiles, setLlmProfiles] = useState<LlmProfilesState | null>(null);
@@ -1104,6 +1110,21 @@ export function SettingsPanel({
         ) : null}
 
         {tab === 'transcription' ? (
+          <>
+          <TranscriptionEngineSettings
+            settings={settings}
+            llmProfiles={llmProfiles}
+            onUpdateSettings={onUpdateSettings}
+            onOpenSummary={() => setTab('summary')}
+          />
+
+          <ReuseSettings
+            settings={settings}
+            onUpdateSettings={onUpdateSettings}
+          />
+
+          <EnhancementStorage />
+
           <section className="settings-section">
             <p className="settings-label">{t('whisper.cpp モデル')}</p>
             <div className="setting-card model-list">
@@ -1212,7 +1233,7 @@ export function SettingsPanel({
             </p>
             <p className="muted">
               {t(
-                '文字起こしは端末内の whisper.cpp で行います。録音停止後、選択中のモデルで自動的に開始します。',
+                '録音停止後の文字起こしで使うモデルです。OpenAI API を選んだ場合も、送信を取りやめたときのフォールバックに使います。',
               )}
             </p>
             <div className="setting-card prompt-card">
@@ -1231,8 +1252,14 @@ export function SettingsPanel({
                   '専門用語や固有名詞をカンマ区切りで入力します。日本語の会議で用語の表記を安定させます。用語集が多いと関係のない単語を誘導することがあります。',
                 )}
               </p>
+              <p className="muted">
+                {t(
+                  'OpenAI の文字起こしでは、用語集は API のプロンプト上限に合わせて先頭から使います。',
+                )}
+              </p>
             </div>
           </section>
+          </>
         ) : null}
 
         {tab === 'summary' ? (
@@ -1558,6 +1585,11 @@ export function SettingsPanel({
                 )}
               </div>
             </section>
+
+            <SummaryCleanupSetting
+              settings={settings}
+              onUpdateSettings={onUpdateSettings}
+            />
 
             <section className="settings-section">
               <p className="settings-label">{t('要約プロンプト')}</p>
