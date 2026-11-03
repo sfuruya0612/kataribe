@@ -209,4 +209,4 @@ issue 0023 のモデル管理と WebGPU エンジン、issue 0026 のメタデ�
 - 録音直後は元の WAV、再実行時は `audio.mp3` からデコードした WAV を入力にして強調し、`audio.enhanced.nemotronlabs.mp3` を一時ファイル経由で置き換える。失敗時は以前の mp3 を残す。
 - 会議詳細の音声プレイヤーで生音声と強調音声を切り替え、会議詳細から再実行できるようにした。
 - `kataribe-audio` に強調音声の種類とモデル ID を追加し、許可外のモデルとパスを拒否する。
-- `npm run typecheck`、`npm test` (568 件)、`npm run build` が通る。
+- `npm run typecheck`、`npm test` (570 件)、`npm run build` が通る。

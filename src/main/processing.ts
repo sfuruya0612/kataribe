@@ -401,7 +401,13 @@ export class ProcessingCoordinator {
     }
     this.comparisonRerunStatus.set(meetingId, meta.status);
     this.comparisonReruns.add(meetingId);
-    await this.enqueue(meetingId, () => this.processMeeting(meetingId));
+    try {
+      await this.enqueue(meetingId, () => this.processMeeting(meetingId));
+    } catch (error) {
+      this.comparisonRerunStatus.delete(meetingId);
+      this.comparisonReruns.delete(meetingId);
+      throw error;
+    }
   }
 
   cancel(): boolean {
@@ -1540,6 +1546,20 @@ export class ProcessingCoordinator {
     if (!(await exists(audioPath))) {
       throw new Error(t('変換できる音声ファイルがありません。'));
     }
+    await reconcileEnhancement(meeting.meetingDir, {
+      audioSha256: await hashFile(audioPath),
+      modelSha256: {
+        nemotronlabs: getReuseModelDefinition('nemotronlabs').sha256,
+      },
+      comparisonEnabled:
+        this.settings().enhanceBeforeTranscription &&
+        this.settings().transcriptionEngine === 'whisper-cpp',
+      transcriptionEngine: this.settings().transcriptionEngine,
+    }).catch((error: unknown) => {
+      console.error(
+        `failed to reconcile speech enhancement: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
     const previousStatus = meta.status;
     const controller = new AbortController();
     this.active = { meetingId, controller };

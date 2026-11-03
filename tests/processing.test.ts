@@ -553,6 +553,52 @@ describe('saved audio enhancement queue', () => {
     );
     expect(enhance).toHaveBeenCalledTimes(1);
   });
+
+  it('removes stale derivatives when the saved audio changes before re-enhancement', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'changed audio');
+    await writeFile(join(meetingDir, 'transcript.raw.md'), 'old raw');
+    await writeFile(
+      join(meetingDir, 'transcript.nemotronlabs.md'),
+      'old enhanced',
+    );
+    await writeFile(
+      join(meetingDir, 'audio.enhanced.nemotronlabs.mp3'),
+      'old enhanced audio',
+    );
+    await writeEnhancementFile(
+      meetingDir,
+      createEnhancementFile({
+        path: 'audio.mp3',
+        sha256: '0'.repeat(64),
+        sample_rate: 44100,
+        channels: 1,
+      }),
+    );
+    const enhance = vi.fn(async () => undefined);
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      reuseSavedAudio: { enhance } as unknown as ReuseSavedAudioService,
+    });
+
+    await coordinator.requestSavedAudioEnhancement(
+      meetingId,
+      'nemotronlabs',
+    );
+
+    expect(enhance).toHaveBeenCalledTimes(1);
+    await expect(
+      readFile(join(meetingDir, 'transcript.raw.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'transcript.nemotronlabs.md')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(
+      readFile(join(meetingDir, 'audio.enhanced.nemotronlabs.mp3')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
 
 describe('transcription comparison flow', () => {
@@ -760,6 +806,91 @@ describe('transcription comparison flow', () => {
     expect(
       await readFile(join(meetingDir, 'transcript.previous.md'), 'utf8'),
     ).toBe('OLD TRANSCRIPT');
+    expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
+      'transcribed',
+    );
+  });
+
+  it('clears a queued comparison marker when enqueue rejects', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    await writeFile(join(meetingDir, 'audio.mp3'), 'audio');
+    let markStarted = (): void => undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const outcome: TranscriptionOutcome = {
+      state: 'completed',
+      segments: [{ startSeconds: 0, endSeconds: 1, text: 'text' }],
+      language: 'ja',
+      lastEndSeconds: 1,
+      durationSeconds: 1,
+      elapsedSeconds: 0.5,
+      errorCode: null,
+      error: null,
+      resumed: false,
+    };
+    const resolution = {
+      engine: 'whisper-cpp' as const,
+      modelLabel: 'small',
+      fallbackReason: null,
+    };
+    const runner = {
+      plan: vi.fn(async () => ({
+        resolution,
+        failure: null,
+        localModel: 'small' as const,
+        localModelPath: '/model',
+        openAiModel: null,
+        openAiEndpoint: null,
+        openAiApiKey: null,
+      })),
+      run: vi.fn(async () => {
+        markStarted();
+        await gate;
+        return { outcome, resolution };
+      }),
+    } as unknown as TranscriptionRunner;
+    const mediaEncoder = {
+      createTranscriptionWav: async ({
+        outputPath,
+      }: {
+        outputPath: string;
+      }) => {
+        await writeFile(
+          outputPath,
+          encodeWavMono16(new Float32Array(16_000), 16_000),
+        );
+      },
+    } as unknown as MediaEncoder;
+    const { coordinator } = createCoordinator({
+      root,
+      saveRoot,
+      complete: vi.fn(),
+      settings: {
+        enhanceBeforeTranscription: false,
+        speakerDiarization: false,
+      },
+      transcriptionRunner: runner,
+      mediaEncoder,
+    });
+
+    const first = coordinator.requestTranscription(meetingId);
+    await started;
+    await expect(
+      coordinator.requestTranscriptionComparison(meetingId),
+    ).rejects.toThrow(/already queued/u);
+    release();
+    await first;
+
+    await vi.waitFor(async () => {
+      await coordinator.requestTranscription(meetingId);
+    });
+
+    expect(runner.run).toHaveBeenCalledTimes(2);
     expect((await readMeetingMeta(join(meetingDir, 'meta.json'))).status).toBe(
       'transcribed',
     );

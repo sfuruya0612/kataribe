@@ -239,5 +239,5 @@ issue 0025、0026、0024 が、この issue のモデル管理、エンジン、
 - `npm run smoke:reuse -- /tmp/reuse-model.safetensors` で 16 kHz、44.1 kHz、48 kHz の 2 秒音声を処理し、出力が入力と異なり、長さとサンプルレートが一致することを確認した。
 - M4 Pro (48 GB)、macOS 27.2 の実測は 16 kHz 455 ms、44.1 kHz 708 ms、48 kHz 747 ms で、60 分への線形外挿は 13.7 分、21.2 分、22.4 分だった。
 - M1 と M3 の実機確認は未実施である。`docs/testing/reuse-speech-enhancement.md` に未検証として記録した。
-- `npm run typecheck`、`npm test` (568 件)、`npm run build` が通る。
+- `npm run typecheck`、`npm test` (570 件)、`npm run build` が通る。
 - 計画との差分: `@webgpu/types` を devDependency に追加した。カスタムプロトコルは Worker からの fetch に `corsEnabled` が必要だったため、4 つの privilege に追加した。

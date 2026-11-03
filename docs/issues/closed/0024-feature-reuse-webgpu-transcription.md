@@ -333,5 +333,5 @@ WebGPU エンジン、モデル管理、音声のチャンク処理は issue 002
 - 再実行は `transcript.md` を `transcript.previous.md` にコピーし、生と強調の両方が成功したときだけ比較用と `transcript.md` を置き換える。失敗時は以前の結果を残す。
 - OpenAI の文字起こしでは比較せず、強調に成功した音声または生の音声を 1 回だけ送る。確認ダイアログに送る音声を表示する。
 - 話者分離のキャッシュキーに `input_kind`、`enhancement_model_sha256`、`enhancement_settings` を追加し、スキーマを 2 に上げた。
-- `npm run typecheck`、`npm test` (568 件)、`npm run build` が通る。
+- `npm run typecheck`、`npm test` (570 件)、`npm run build` が通る。
 - 実会議の CER 比較は未実施である。WebGPU エンジンを使った比較は `docs/testing/reuse-speech-enhancement.md` の「実会議での比較」に従って行う必要がある。
