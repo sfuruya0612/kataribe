@@ -3,6 +3,7 @@
 - Requirements: REQ-ENHANCE-001
 - Priority: High
 - Created: 2026-11-04
+- Completed: 2026-11-04
 - Model: DeepSeek V4.1 Flash 1017
 - Branch: feature/bug-meeting-detail-audio-and-enhancement-status
 
@@ -57,16 +58,16 @@
 
 ## 完了条件
 
-- [ ] REQ-ENHANCE-001 の受入基準「会議詳細の音声プレイヤーで、生音声と強調音声を切り替えて再生できる」を満たす。生音声のファイルが `audio.wav` から `audio.mp3` に変わったとき、または同じ名前で置き換わったときに、URL が変わり、新しい音声を読み込む。
-- [ ] REQ-ENHANCE-001 の受入基準「再実行に成功したときは以前の強調音声を新しい結果で置き換え、失敗したときは以前の強調音声を残す」を満たす。成功した再実行で強調音声の URL が変わり、古い音声を再生しない。`enhancement.json` を読めないときも、`meta.json` の `enhancedModels` に従って強調音声を再生できる。
-- [ ] `parseMeetingAudioUrl` が `?v=<version>` を受け付け、ほかのクエリ、空の `v`、フラグメントを拒否する。
-- [ ] 音声ファイルの更新時刻またはサイズが変わると、`MeetingSummary.audioUrl` が変わる。
-- [ ] 音声強調の状態はタイトル行の 1 行のボタンに収まり、詳細はモーダルで表示する。画面上部に詳細の行を常時表示しない。
-- [ ] 状態の要約が、読み込み失敗、実行中、失敗または中断、成功、キャンセル済み、未実行の優先順位で決まる。
-- [ ] 音声強調のデータがない会議では、状態ボタンを表示しない。
-- [ ] `npm run typecheck`、`npm test`、`npm run build` が通る。
-- [ ] CHANGES.md の `### FIX` と `### UPDATE` を更新する。
-- [ ] README とリリースチェックリストは、利用手順と確認項目が変わらないため更新しない。
+- [x] REQ-ENHANCE-001 の受入基準「会議詳細の音声プレイヤーで、生音声と強調音声を切り替えて再生できる」を満たす。生音声のファイルが `audio.wav` から `audio.mp3` に変わったとき、または同じ名前で置き換わったときに、URL が変わり、新しい音声を読み込む。
+- [x] REQ-ENHANCE-001 の受入基準「再実行に成功したときは以前の強調音声を新しい結果で置き換え、失敗したときは以前の強調音声を残す」を満たす。成功した再実行で強調音声の URL が変わり、古い音声を再生しない。`enhancement.json` を読めないときも、`meta.json` の `enhancedModels` に従って強調音声を再生できる。
+- [x] `parseMeetingAudioUrl` が `?v=<version>` を受け付け、ほかのクエリ、空の `v`、フラグメントを拒否する。
+- [x] 音声ファイルの更新時刻またはサイズが変わると、`MeetingSummary.audioUrl` が変わる。
+- [x] 音声強調の状態はタイトル行の 1 行のボタンに収まり、詳細はモーダルで表示する。画面上部に詳細の行を常時表示しない。
+- [x] 状態の要約が、読み込み失敗、実行中、失敗または中断、成功、キャンセル済み、未実行の優先順位で決まる。
+- [x] 音声強調のデータがない会議では、状態ボタンを表示しない。
+- [x] `npm run typecheck`、`npm test`、`npm run build` が通る。
+- [x] CHANGES.md の `### FIX` と `### UPDATE` を更新する。
+- [x] README とリリースチェックリストは、利用手順と確認項目が変わらないため更新しない。
 
 ## 解決方法
 
@@ -112,3 +113,10 @@
 - `src/renderer/src/EnhancementStatusSummary.test.tsx` を追加し、状態の優先順位、読み込み失敗、データなしの非表示、1 行のボタンを固定する。
 - `src/renderer/src/MeetingDetail.test.tsx` を追加し、`meta.json` の `enhancedModels` から強調音声の選択肢を作ることと、生音声の URL にバージョンが付くことを固定する。
 - `src/renderer/src/EnhancementStatus.test.tsx` に、見出しを隠す表示を追加する。
+
+## 実施結果
+
+`kataribe-audio` の URL に音声ファイルのバージョンを付け、`AudioPlayer` が URL の変更で音声要素を作り直すようにした。
+音声強調の状態はタイトル行の 1 行のボタンにまとめ、詳細をモーダルで表示する。
+`npm run typecheck`、`npm test`（593 件）、`npm run build` が通った。
+Electron 45.1.0 の実アプリで、5 秒の `audio.mp3` を 12 秒のファイルへ置き換えたときに URL と再生時間が更新されること、生音声と強調音声を再生できること、状態ボタンとモーダルを表示できることを確認した。
