@@ -110,4 +110,5 @@
 - `tests/meeting-audio.test.ts` に、`?v=` の受理と不正なクエリの拒否を追加する。
 - `tests/meetings.test.ts` に、音声ファイルの更新で `audioUrl` のバージョンが変わることを追加する。
 - `src/renderer/src/EnhancementStatusSummary.test.tsx` を追加し、状態の優先順位、読み込み失敗、データなしの非表示、1 行のボタンを固定する。
+- `src/renderer/src/MeetingDetail.test.tsx` を追加し、`meta.json` の `enhancedModels` から強調音声の選択肢を作ることと、生音声の URL にバージョンが付くことを固定する。
 - `src/renderer/src/EnhancementStatus.test.tsx` に、見出しを隠す表示を追加する。
