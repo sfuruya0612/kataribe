@@ -39,7 +39,7 @@
 
 - `enhancement.json` の `saved_audio.nemotronlabs.output.sha256` を URL の `v` に使う。
 - 会議詳細からの再実行で強調音声を置き換えたとき、URL が変わり、古い応答を再生しない。
-- `enhancement.json` に成功した出力がないときは強調音声の選択肢を出さない。`enhancement.json` を音声強調の状態の正とする既存の方針に合わせる。
+- 強調音声の選択肢は `meta.json` の `enhancedModels` に従う。`enhancement.json` を読めないときはバージョンなしの URL を使い、再生できるファイルを残す。
 
 ### 音声強調の状態表示
 
@@ -58,7 +58,7 @@
 ## 完了条件
 
 - [ ] REQ-ENHANCE-001 の受入基準「会議詳細の音声プレイヤーで、生音声と強調音声を切り替えて再生できる」を満たす。生音声のファイルが `audio.wav` から `audio.mp3` に変わったとき、または同じ名前で置き換わったときに、URL が変わり、新しい音声を読み込む。
-- [ ] REQ-ENHANCE-001 の受入基準「再実行に成功したときは以前の強調音声を新しい結果で置き換え、失敗したときは以前の強調音声を残す」を満たす。成功した再実行で強調音声の URL が変わり、古い音声を再生しない。
+- [ ] REQ-ENHANCE-001 の受入基準「再実行に成功したときは以前の強調音声を新しい結果で置き換え、失敗したときは以前の強調音声を残す」を満たす。成功した再実行で強調音声の URL が変わり、古い音声を再生しない。`enhancement.json` を読めないときも、`meta.json` の `enhancedModels` に従って強調音声を再生できる。
 - [ ] `parseMeetingAudioUrl` が `?v=<version>` を受け付け、ほかのクエリ、空の `v`、フラグメントを拒否する。
 - [ ] 音声ファイルの更新時刻またはサイズが変わると、`MeetingSummary.audioUrl` が変わる。
 - [ ] 音声強調の状態はタイトル行の 1 行のボタンに収まり、詳細はモーダルで表示する。画面上部に詳細の行を常時表示しない。
@@ -91,7 +91,7 @@
   - `src` の変更で生音声へ戻す副作用を削除する。
 - `src/renderer/src/MeetingDetail.tsx`
   - `AudioPlayer` の `key` に会議 ID を設定する。
-  - 強調音声の URL を `enhancedMeetingAudioUrl` と `detail.enhancement` の出力ハッシュから作る。
+  - 強調音声の URL を `enhancedMeetingAudioUrl` と `detail.enhancement` の出力ハッシュから作る。出力がないときはバージョンなしの URL にする。
   - `detail-head` から `EnhancementStatus` を外し、タイトル行に `EnhancementStatusSummary` を置く。
 - `src/renderer/src/EnhancementStatusSummary.tsx` を追加する。
   - 1 行のボタンと詳細のモーダルを持つ。

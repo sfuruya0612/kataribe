@@ -294,17 +294,15 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
-  const enhancedSavedAudio =
-    detail?.enhancement?.saved_audio.nemotronlabs ?? null;
-  const enhancedSrc =
-    enhancedSavedAudio?.state === 'succeeded' &&
-    enhancedSavedAudio.output !== null
-      ? enhancedMeetingAudioUrl(
-          current.id,
-          'nemotronlabs',
-          enhancedSavedAudio.output.sha256,
-        )
-      : null;
+  const enhancedOutput =
+    detail?.enhancement?.saved_audio.nemotronlabs?.output ?? null;
+  const enhancedSrc = current.enhancedModels.includes('nemotronlabs')
+    ? enhancedMeetingAudioUrl(
+        current.id,
+        'nemotronlabs',
+        enhancedOutput?.sha256 ?? null,
+      )
+    : null;
   const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
