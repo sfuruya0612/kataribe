@@ -209,7 +209,13 @@ export function MeetingDetail({
 
   useEffect(() => {
     void load();
-  }, [load, meeting?.status, meeting?.hasTranscript, meeting?.hasSummary]);
+  }, [
+    load,
+    meeting?.status,
+    meeting?.hasTranscript,
+    meeting?.hasSummary,
+    meeting?.audioUrl,
+  ]);
 
   useEffect(() => {
     const running =
