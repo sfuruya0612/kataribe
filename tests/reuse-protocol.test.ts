@@ -98,6 +98,24 @@ describe('ReuseTempTokenStore', () => {
     store.revoke(revoked);
     expect(store.resolve(revoked)).toBeNull();
   });
+
+  it('extends the expiry while the token keeps being read', () => {
+    let now = 0;
+    const store = new ReuseTempTokenStore({
+      now: () => now,
+      ttlMs: 10,
+      createToken: () => 'token',
+    });
+    const token = store.issue('/tmp/input.wav');
+    now = 9;
+    expect(store.resolve(token)).toBe('/tmp/input.wav');
+    now = 18;
+    expect(store.resolve(token)).toBe('/tmp/input.wav');
+    now = 27;
+    expect(store.resolve(token)).toBe('/tmp/input.wav');
+    now = 38;
+    expect(store.resolve(token)).toBeNull();
+  });
 });
 
 describe('serveFileRange', () => {
@@ -228,6 +246,59 @@ describe('registerReuseProtocols', () => {
       new Request('kataribe-temp://enhance/not-issued'),
     );
     expect(deniedToken.status).toBe(404);
+  });
+
+  // 長い会議では強調に 10 分以上かかるため、読み出しが続く間はトークンを失効させない。
+  it('serves a temp file across reads that outlast the initial token ttl', async () => {
+    let now = 0;
+    const tempTokens = new ReuseTempTokenStore({
+      now: () => now,
+      ttlMs: 10,
+      createToken: () => 'temp',
+    });
+    const root = await mkdtemp(join(tmpdir(), 'kataribe-reuse-long-'));
+    roots.push(root);
+    const tempPath = join(root, 'input.wav');
+    await writeFile(tempPath, 'wav input');
+    const token = tempTokens.issue(tempPath);
+    const { manager } = await createModelFile(Buffer.from('model weights'));
+    const handlers = new Map<
+      string,
+      (request: Request) => Promise<Response>
+    >();
+    registerReuseProtocols({
+      protocol: {
+        handle(scheme, handler) {
+          handlers.set(scheme, handler);
+        },
+      },
+      tempTokens,
+      modelManager: manager,
+    });
+    const tempHandler = handlers.get('kataribe-temp');
+    expect(tempHandler).toBeDefined();
+    if (!tempHandler) {
+      return;
+    }
+
+    for (const time of [9, 18, 27]) {
+      now = time;
+      const response = await tempHandler(
+        new Request(`kataribe-temp://enhance/${token}`, {
+          headers: { Range: 'bytes=0-2' },
+        }),
+      );
+      expect(response.status).toBe(206);
+      expect(await response.text()).toBe('wav');
+    }
+
+    now = 38;
+    const expired = await tempHandler(
+      new Request(`kataribe-temp://enhance/${token}`, {
+        headers: { Range: 'bytes=0-2' },
+      }),
+    );
+    expect(expired.status).toBe(404);
   });
 });
 

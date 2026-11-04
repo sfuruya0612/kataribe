@@ -32,9 +32,13 @@ export type ReuseEnhancementServiceOptions = {
   sendCancel: (message: EnhancementCancelMessage) => void;
   timeoutMs?: number;
   createRequestId?: () => string;
+  scheduleTimeout?: (callback: () => void, delayMs: number) => NodeJS.Timeout;
+  cancelTimeout?: (timer: NodeJS.Timeout) => void;
 };
 
-const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
+// 強調は進捗が届くたびに延長する無操作タイムアウトで監視する。
+// 音声の長さに対して固定の上限を置くと、遅いマシンで正常な処理を打ち切る。
+const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const CHUNK_SECONDS = 5;
 const HOP_SECONDS = 2.5;
 const CROSSFADE_SECONDS = 0.5;
@@ -51,7 +55,7 @@ type ActiveEnhancement = {
   writtenFrames: number;
   token: string;
   releaseModel: () => void;
-  timeout: NodeJS.Timeout;
+  timeout: NodeJS.Timeout | null;
   onProgress: ((progress: number) => void) | undefined;
   signal: AbortSignal | undefined;
   onAbort: (() => void) | null;
@@ -75,6 +79,11 @@ export class ReuseEnhancementService {
   private readonly sendCancel: (message: EnhancementCancelMessage) => void;
   private readonly timeoutMs: number;
   private readonly createRequestId: () => string;
+  private readonly scheduleTimeout: (
+    callback: () => void,
+    delayMs: number,
+  ) => NodeJS.Timeout;
+  private readonly cancelTimeout: (timer: NodeJS.Timeout) => void;
   private active: ActiveEnhancement | null = null;
 
   constructor(options: ReuseEnhancementServiceOptions) {
@@ -82,8 +91,13 @@ export class ReuseEnhancementService {
     this.modelManager = options.modelManager;
     this.sendStart = options.sendStart;
     this.sendCancel = options.sendCancel;
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.createRequestId = options.createRequestId ?? (() => randomUUID());
+    this.scheduleTimeout =
+      options.scheduleTimeout ??
+      ((callback, delayMs) => setTimeout(callback, delayMs));
+    this.cancelTimeout =
+      options.cancelTimeout ?? ((timer) => clearTimeout(timer));
   }
 
   isBusy(): boolean {
@@ -150,9 +164,7 @@ export class ReuseEnhancementService {
         writtenFrames: 0,
         token,
         releaseModel,
-        timeout: setTimeout(() => {
-          void this.fail(active, new Error('enhancement timed out'));
-        }, this.timeoutMs),
+        timeout: null,
         onProgress: request.onProgress,
         signal: request.signal,
         onAbort: null,
@@ -177,6 +189,7 @@ export class ReuseEnhancementService {
       if (active.settled) {
         return;
       }
+      this.armTimeout(active);
       const sent = this.sendStart({
         requestId,
         model: request.model,
@@ -208,6 +221,7 @@ export class ReuseEnhancementService {
       return;
     }
     const value = Math.max(0, Math.min(1, progress));
+    this.armTimeout(active);
     active.onProgress?.(value);
   }
 
@@ -255,6 +269,7 @@ export class ReuseEnhancementService {
       await this.fail(active, error);
       throw error;
     }
+    this.armTimeout(active);
   }
 
   async handleDone(requestId: string): Promise<void> {
@@ -290,12 +305,28 @@ export class ReuseEnhancementService {
     void this.fail(active, new Error(message));
   }
 
+  private armTimeout(active: ActiveEnhancement): void {
+    if (active.settled) {
+      return;
+    }
+    if (active.timeout !== null) {
+      this.cancelTimeout(active.timeout);
+    }
+    active.timeout = this.scheduleTimeout(() => {
+      this.sendCancel({ requestId: active.requestId });
+      void this.fail(active, new Error('enhancement timed out'));
+    }, this.timeoutMs);
+  }
+
   private settle(active: ActiveEnhancement): void {
     if (active.settled) {
       return;
     }
     active.settled = true;
-    clearTimeout(active.timeout);
+    if (active.timeout !== null) {
+      this.cancelTimeout(active.timeout);
+      active.timeout = null;
+    }
     if (active.onAbort && active.signal) {
       active.signal.removeEventListener('abort', active.onAbort);
     }

@@ -108,6 +108,9 @@ type TempToken = {
 
 /**
  * 音声強調の入力 WAV を Renderer に返すための一時トークンを管理する。
+ *
+ * 期限はトークンの発行時ではなく最後の読み出しからの経過時間で判定し、
+ * 処理中のジョブが長時間にわたって読み出しを続けられるようにする。
  */
 export class ReuseTempTokenStore {
   private readonly now: () => number;
@@ -135,10 +138,14 @@ export class ReuseTempTokenStore {
     if (!entry) {
       return null;
     }
-    if (this.now() >= entry.expiresAt) {
+    const now = this.now();
+    if (now >= entry.expiresAt) {
       this.tokens.delete(token);
       return null;
     }
+    // 長い音声の強調ではチャンクの読み出しが 10 分を超えるため、
+    // 読み出しが続いている間は期限を延ばし、無操作のときだけ失効させる。
+    entry.expiresAt = now + this.ttlMs;
     return entry.path;
   }
 

@@ -76,6 +76,39 @@ async function waitForStart(
   throw new Error('enhancement did not start');
 }
 
+type TimerHarness = {
+  scheduleTimeout: (callback: () => void, delayMs: number) => NodeJS.Timeout;
+  cancelTimeout: (timer: NodeJS.Timeout) => void;
+  advance: (milliseconds: number) => void;
+};
+
+function createTimerHarness(): TimerHarness {
+  let now = 0;
+  let nextId = 1;
+  const timers = new Map<number, { at: number; callback: () => void }>();
+  return {
+    scheduleTimeout: (callback, delayMs) => {
+      const id = nextId;
+      nextId += 1;
+      timers.set(id, { at: now + delayMs, callback });
+      return id as unknown as NodeJS.Timeout;
+    },
+    cancelTimeout: (timer) => {
+      timers.delete(timer as unknown as number);
+    },
+    advance: (milliseconds) => {
+      now += milliseconds;
+      for (const [id, timer] of [...timers]) {
+        if (timer.at > now) {
+          continue;
+        }
+        timers.delete(id);
+        timer.callback();
+      }
+    },
+  };
+}
+
 describe('ReuseEnhancementService', () => {
   it('writes chunks in order and completes the WAV header and length', async () => {
     const { inputPath, outputPath, modelManager } = await createWorkspace();
@@ -231,5 +264,84 @@ describe('ReuseEnhancementService', () => {
         model: 'nemotronlabs',
       }),
     ).rejects.toThrow();
+  });
+
+  // 長い音声では処理時間が 30 分を超えるため、進捗が続く間はタイムアウトさせない。
+  it('extends the timeout while progress and chunks keep arriving', async () => {
+    const { inputPath, outputPath, modelManager } = await createWorkspace();
+    const starts: EnhancementStartMessage[] = [];
+    const timers = createTimerHarness();
+    const service = new ReuseEnhancementService({
+      tempTokens: new ReuseTempTokenStore(),
+      modelManager,
+      sendStart: (message) => {
+        starts.push(message);
+        return true;
+      },
+      sendCancel: () => undefined,
+      createRequestId: () => 'request-idle',
+      timeoutMs: 1000,
+      scheduleTimeout: timers.scheduleTimeout,
+      cancelTimeout: timers.cancelTimeout,
+    });
+    const promise = service.enhance({
+      inputPath,
+      outputPath,
+      model: 'nemotronlabs',
+    });
+    promise.catch(() => undefined);
+    await waitForStart(starts);
+    let settled = false;
+    void promise.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+
+    timers.advance(700);
+    service.handleProgress('request-idle', 0.1);
+    timers.advance(700);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    await service.cancel();
+    await expect(promise).rejects.toThrow(/cancelled/u);
+  });
+
+  it('fails when the renderer stops reporting progress', async () => {
+    const { inputPath, outputPath, modelManager } = await createWorkspace();
+    const starts: EnhancementStartMessage[] = [];
+    const cancelled: string[] = [];
+    const timers = createTimerHarness();
+    const service = new ReuseEnhancementService({
+      tempTokens: new ReuseTempTokenStore(),
+      modelManager,
+      sendStart: (message) => {
+        starts.push(message);
+        return true;
+      },
+      sendCancel: (message) => cancelled.push(message.requestId),
+      createRequestId: () => 'request-stalled',
+      timeoutMs: 1000,
+      scheduleTimeout: timers.scheduleTimeout,
+      cancelTimeout: timers.cancelTimeout,
+    });
+    const promise = service.enhance({
+      inputPath,
+      outputPath,
+      model: 'nemotronlabs',
+    });
+    promise.catch(() => undefined);
+    await waitForStart(starts);
+
+    timers.advance(999);
+    await Promise.resolve();
+    expect(cancelled).toEqual([]);
+    timers.advance(1);
+    await expect(promise).rejects.toThrow(/timed out/u);
+    expect(cancelled).toEqual(['request-stalled']);
   });
 });
