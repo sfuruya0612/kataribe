@@ -107,6 +107,21 @@ describe('MeetingStore', () => {
     expect(meetings[0].audioUrl).toContain('kataribe-audio://meeting/');
   });
 
+  it('changes the audio URL when the source audio file changes', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000a1';
+    const meetingDir = await createMeeting(root, id, {}, Buffer.alloc(44));
+
+    const first = (await store.list())[0];
+    expect(first.audioUrl).toMatch(/\?v=/u);
+    const firstUrl = first.audioUrl ?? '';
+
+    await writeFile(join(meetingDir, 'audio.wav'), Buffer.alloc(48));
+    const second = (await store.list())[0];
+    expect(second.audioUrl).toMatch(/\?v=/u);
+    expect(second.audioUrl).not.toBe(firstUrl);
+  });
+
   it('returns the enhancing status and the enhancement summary', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-0000000000e1';

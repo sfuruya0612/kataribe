@@ -9,6 +9,7 @@ import {
   type FrontMatterValue,
 } from '../shared/markdown';
 import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
+import { meetingAudioUrl } from '../shared/meeting-audio-url';
 import {
   extractTranscriptSpeakers,
   recoverTranscriptSpeakers,
@@ -292,7 +293,7 @@ export class MeetingStore {
             audioUrl:
               audio === null
                 ? null
-                : `kataribe-audio://meeting/${encodeURIComponent(id)}`,
+                : meetingAudioUrl(id, audio.version),
             chunkCount: Array.isArray(meta.chunks) ? meta.chunks.length : 0,
             hasTranscript,
             hasSummary,
@@ -991,7 +992,7 @@ export class MeetingStore {
   private async locateAudio(
     meta: MeetingMeta,
     meetingDir: string,
-  ): Promise<{ path: string; name: string } | null> {
+  ): Promise<{ path: string; name: string; version: string } | null> {
     const candidates = [
       typeof meta.audio_path === 'string' ? meta.audio_path : null,
       'audio.mp3',
@@ -1010,8 +1011,18 @@ export class MeetingStore {
       if (!isInside(this.saveRoot, path)) {
         continue;
       }
-      if (await fileExists(path)) {
-        return { path, name: candidate };
+      try {
+        const info = await stat(path);
+        if (!info.isFile()) {
+          continue;
+        }
+        return {
+          path,
+          name: candidate,
+          version: `${info.mtimeMs}-${info.size}`,
+        };
+      } catch {
+        // Try the next candidate.
       }
     }
     return null;

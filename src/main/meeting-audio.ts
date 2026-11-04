@@ -8,19 +8,40 @@ export type MeetingAudioRequest = {
 };
 
 const PREFIX = 'kataribe-audio://meeting/';
+const VERSION_QUERY = /^v=[A-Za-z0-9._-]{1,128}$/u;
+
+/**
+ * 会議音声の URL から、`meeting/` より後ろのパスを取り出す。
+ *
+ * バージョンは再生するファイルを特定せず、キャッシュを分けるためだけに使う。
+ * 任意のクエリを受け付けると、パスやモデルの指定を URL から広げられない
+ * という前提が崩れるため、`v` だけを受け付ける。
+ */
+function audioPathFromUrl(rawUrl: string): string | null {
+  if (rawUrl.includes('#')) {
+    return null;
+  }
+  const queryIndex = rawUrl.indexOf('?');
+  const path = queryIndex === -1 ? rawUrl : rawUrl.slice(0, queryIndex);
+  const query = queryIndex === -1 ? null : rawUrl.slice(queryIndex + 1);
+  if (query !== null && !VERSION_QUERY.test(query)) {
+    return null;
+  }
+  if (!path.startsWith(PREFIX)) {
+    return null;
+  }
+  return path.slice(PREFIX.length);
+}
 
 /**
  * `kataribe-audio` の URL を、会議 ID、音声の種類、モデル ID へ分解する。
  */
 export function parseMeetingAudioUrl(rawUrl: string): MeetingAudioRequest | null {
-  if (!rawUrl.startsWith(PREFIX)) {
+  const path = audioPathFromUrl(rawUrl);
+  if (path === null) {
     return null;
   }
-  if (rawUrl.includes('?') || rawUrl.includes('#')) {
-    return null;
-  }
-  const rest = rawUrl.slice(PREFIX.length);
-  const parts = rest.split('/');
+  const parts = path.split('/');
   let meetingId: string;
   try {
     meetingId = decodeURIComponent(parts[0] ?? '');

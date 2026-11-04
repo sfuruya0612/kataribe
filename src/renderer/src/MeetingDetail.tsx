@@ -9,8 +9,9 @@ import type {
   TranscriptionEngine,
   TranslationPreview,
 } from '../../shared/types';
+import { enhancedMeetingAudioUrl } from '../../shared/meeting-audio-url';
 import { AudioPlayer } from './AudioPlayer';
-import { EnhancementStatus } from './EnhancementStatus';
+import { EnhancementStatusSummary } from './EnhancementStatusSummary';
 import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
 import { StaleTranscriptNotice } from './StaleTranscriptNotice';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
@@ -287,9 +288,17 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
-  const enhancedSrc = current.enhancedModels.includes('nemotronlabs')
-    ? `kataribe-audio://meeting/${encodeURIComponent(current.id)}/enhanced/nemotronlabs`
-    : null;
+  const enhancedSavedAudio =
+    detail?.enhancement?.saved_audio.nemotronlabs ?? null;
+  const enhancedSrc =
+    enhancedSavedAudio?.state === 'succeeded' &&
+    enhancedSavedAudio.output !== null
+      ? enhancedMeetingAudioUrl(
+          current.id,
+          'nemotronlabs',
+          enhancedSavedAudio.output.sha256,
+        )
+      : null;
   const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
   const summary = detail?.summary ?? null;
@@ -872,6 +881,10 @@ export function MeetingDetail({
           <span className={`status-chip ${meetingStatusClass(current.status)}`}>
             {meetingStatusLabel(current.status, locale)}
           </span>
+          <EnhancementStatusSummary
+            enhancement={detail?.enhancement ?? null}
+            warning={detail?.enhancementWarning ?? null}
+          />
         </div>
         <p className="detail-meta">
           {formatDateTime(current.startedAt, locale)} ·{' '}
@@ -898,12 +911,9 @@ export function MeetingDetail({
             {detail.diarizationError}
           </p>
         ) : null}
-        <EnhancementStatus
-          enhancement={detail?.enhancement ?? null}
-          warning={detail?.enhancementWarning ?? null}
-        />
         <div className="detail-player-row">
           <AudioPlayer
+            key={current.id}
             src={current.audioUrl}
             enhancedSrc={enhancedSrc}
             peaks={peaks}

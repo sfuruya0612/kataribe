@@ -25,6 +25,24 @@ describe('parseMeetingAudioUrl', () => {
       variant: 'enhanced',
       model: 'nemotronlabs',
     });
+    expect(
+      parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001?v=1700000000000-1234',
+      ),
+    ).toEqual({
+      meetingId: '00000000-0000-4000-8000-000000000001',
+      variant: 'raw',
+      model: null,
+    });
+    expect(
+      parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001/enhanced/nemotronlabs?v=abc123',
+      ),
+    ).toEqual({
+      meetingId: '00000000-0000-4000-8000-000000000001',
+      variant: 'enhanced',
+      model: 'nemotronlabs',
+    });
   });
 
   it('rejects unknown variants, models, and queries', () => {
@@ -41,6 +59,21 @@ describe('parseMeetingAudioUrl', () => {
     expect(
       parseMeetingAudioUrl(
         'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001?path=/etc/passwd',
+      ),
+    ).toBeNull();
+    expect(
+      parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001?v=',
+      ),
+    ).toBeNull();
+    expect(
+      parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001?v=abc&path=/etc/passwd',
+      ),
+    ).toBeNull();
+    expect(
+      parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001#fragment',
       ),
     ).toBeNull();
     expect(parseMeetingAudioUrl('file:///etc/passwd')).toBeNull();
