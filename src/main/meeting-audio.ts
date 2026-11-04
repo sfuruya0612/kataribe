@@ -8,7 +8,7 @@ export type MeetingAudioRequest = {
 };
 
 const PREFIX = 'kataribe-audio://meeting/';
-const VERSION_QUERY = /^v=[A-Za-z0-9._-]{1,128}$/u;
+const VERSION_QUERY = /^v=[A-Za-z0-9._%~-]{1,128}$/u;
 
 /**
  * 会議音声の URL から、`meeting/` より後ろのパスを取り出す。

@@ -36,6 +36,15 @@ describe('parseMeetingAudioUrl', () => {
     });
     expect(
       parseMeetingAudioUrl(
+        'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001?v=a%20b',
+      ),
+    ).toEqual({
+      meetingId: '00000000-0000-4000-8000-000000000001',
+      variant: 'raw',
+      model: null,
+    });
+    expect(
+      parseMeetingAudioUrl(
         'kataribe-audio://meeting/00000000-0000-4000-8000-000000000001/enhanced/nemotronlabs?v=abc123',
       ),
     ).toEqual({
