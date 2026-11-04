@@ -191,6 +191,7 @@ export function MeetingDetail({
   }, [refreshLlmProfiles]);
 
   useEffect(() => {
+    setDetail(null);
     setTab('transcript');
     setEditing(false);
     setSummaryEditing(false);
@@ -886,6 +887,7 @@ export function MeetingDetail({
             {meetingStatusLabel(current.status, locale)}
           </span>
           <EnhancementStatusSummary
+            key={current.id}
             enhancement={detail?.enhancement ?? null}
             warning={detail?.enhancementWarning ?? null}
           />
