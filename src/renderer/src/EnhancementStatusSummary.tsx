@@ -24,6 +24,9 @@ function summaryLabel(
   if (state === 'warning') {
     return t('状態を読み込めません');
   }
+  if (state === 'pending') {
+    return t('未実行');
+  }
   return t(ENHANCEMENT_STATE_MESSAGE_KEYS[state]);
 }
 

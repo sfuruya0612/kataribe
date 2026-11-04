@@ -172,4 +172,10 @@ describe('EnhancementStatusSummary', () => {
     expect(html).toContain('状態を読み込めません');
     expect(html).toContain('詳細');
   });
+
+  it('shows not run when the enhancement has no finished entry', () => {
+    const html = render(fixture({}));
+    expect(html).toContain('未実行');
+    expect(html).toContain('詳細');
+  });
 });
