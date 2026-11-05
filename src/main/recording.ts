@@ -755,8 +755,7 @@ export class RecordingManager {
   private async createMeetingDir(now: Date): Promise<string> {
     const year = String(now.getFullYear());
     const date = `${year}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-    const time = `${pad(now.getHours())}${pad(now.getMinutes())}`;
-    const base = `${date}_${time}_${DEFAULT_MEETING_TITLE}`;
+    const base = `${date}_${DEFAULT_MEETING_TITLE}`;
     const yearRoot = join(this.saveRoot, year);
     await ensurePrivateDirectory(yearRoot);
 

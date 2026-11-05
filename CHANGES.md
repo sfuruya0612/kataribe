@@ -73,6 +73,8 @@
   - @shoichi.furuya
 - [ADD] タイトル未入力の会議に、要約生成時の LLM でタイトルを付ける
   - @shoichi.furuya
+- [ADD] 会議詳細にタイトル自動生成の失敗表示と再試行を追加する
+  - @shoichi.furuya
 - [ADD] ヘッダーのアプリ名の左にアプリアイコンを表示する
   - @shoichi.furuya
 - [ADD] mise のタスクから npm スクリプトを実行できるようにする
@@ -125,6 +127,10 @@
 
 ### CHANGE
 
+- [CHANGE] 会議フォルダ名を YYYY-MM-DD_タイトル に変更する
+  - 既存のフォルダは自動で改名しない
+  - タイトルを変更したときは新しい形式へ改名する
+  - @shoichi.furuya
 - [CHANGE] グローバルショートカット機能を削除する
   - @shoichi.furuya
 
@@ -153,6 +159,12 @@
   - @shoichi.furuya
 - [FIX] 設定画面で設定項目の名前と説明が 1 行に並ぶ問題を修正する
   - 設定項目の名前と説明を縦に並べ、説明を別の行に表示する
+  - @shoichi.furuya
+- [FIX] タイトル自動生成の失敗が記録されず、タイトルが未入力のまま残る問題を修正する
+  - 失敗理由を meta.json の title_generation に保存し、会議詳細に表示する
+  - タイトル生成の出力上限を 1024 トークン、タイムアウトを 120 秒に広げる
+  - @shoichi.furuya
+- [FIX] タイトル生成で使ったトークン数を summary.usage に反映する
   - @shoichi.furuya
 
 ### misc
@@ -200,4 +212,6 @@
   - ADR-0005、0007、0010、0012、0013、0021 に、派生音声、`enhancing` 状態、一時ファイル、キャッシュキーを反映する
   - @shoichi.furuya
 - [ADD] 1000 行を超えるソースファイルの分割 issue 0027、0028、0029、0030、0031 を起票する
+  - @shoichi.furuya
+- [ADD] ADR-0010 と ADR-0025 にタイトル生成の失敗記録を追記し、PRD と README を更新する
   - @shoichi.furuya

@@ -29,13 +29,14 @@ import type {
   LlmRuntimeConfig,
   MeetingDetail,
   MeetingStatus,
+  MeetingSummary,
   ProcessingState,
   SummaryPreview,
   SummaryLanguage,
   TranslationPreview,
   TranslationResult,
 } from '../shared/types';
-import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
+import { DEFAULT_MEETING_TITLE } from '../shared/title';
 import { renameTranscriptSpeakers } from '../shared/speakers';
 import type { ApiKeyStore } from './api-keys';
 import { hashFile } from './asset-download';
@@ -66,8 +67,8 @@ import {
   updateMetaEnhancement,
   writeEnhancementFile,
 } from './reuse-metadata';
+import { generateAndSaveMeetingTitle } from './meeting-title';
 import { generateSummary } from './summary';
-import { generateMeetingTitle } from './summary';
 import type { TranscriptionOutcome, TranscriptionService } from './transcription';
 import type {
   TranscriptionPlan,
@@ -303,6 +304,7 @@ export class ProcessingCoordinator {
   private readonly translationTokens = new Map<string, TranslationToken>();
   private queue: Promise<void> = Promise.resolve();
   private active: ActiveTask | null = null;
+  private titleGenerationActive = false;
   private queued = new Set<string>();
   private readonly comparisonReruns = new Set<string>();
   private readonly comparisonRerunStatus = new Map<string, MeetingStatus>();
@@ -334,7 +336,7 @@ export class ProcessingCoordinator {
   }
 
   isBusy(): boolean {
-    return this.state.stage !== null;
+    return this.state.stage !== null || this.titleGenerationActive;
   }
 
   pauseForRecording(): void {
@@ -549,6 +551,49 @@ export class ProcessingCoordinator {
     );
   }
 
+  private async resolveTitleRuntime(profileId?: string): Promise<{
+    config: LlmRuntimeConfig;
+    apiKey: string;
+  }> {
+    const config = await this.runtimeConfig(profileId);
+    if (!config) {
+      throw new Error(
+        t(
+          'LLM プロファイルが設定されていません。設定画面でプロファイルを追加してください。',
+        ),
+      );
+    }
+    if (!config.endpoint) {
+      throw new Error(
+        t('LLM のエンドポイント URL が正しくありません。設定を確認してください。'),
+      );
+    }
+    if (!config.apiKeyConfigured) {
+      throw new Error(
+        t('LLM の API キーが設定されていません。設定画面で保存してください。'),
+      );
+    }
+    let apiKey: string;
+    try {
+      apiKey =
+        (await this.apiKeyStore.getKey(
+          config.id,
+          config.baseUrl,
+          config.provider,
+        )) ?? '';
+    } catch (error) {
+      throw new Error(
+        t('API キーを復号できませんでした。設定画面で再入力してください。{detail}', {
+          detail: error instanceof Error ? ` (${error.message})` : '',
+        }),
+      );
+    }
+    if (!apiKey) {
+      throw new Error(t('API キーが設定されていません。'));
+    }
+    return { config, apiKey };
+  }
+
   async createSummaryPreview(
     meetingId: string,
     profileId?: string,
@@ -629,7 +674,11 @@ export class ProcessingCoordinator {
         t('要約の確認トークンが無効です。もう一度プレビューを開いてください。'),
       );
     }
-    if (this.active || this.state.stage !== null) {
+    if (
+      this.active ||
+      this.state.stage !== null ||
+      this.titleGenerationActive
+    ) {
       throw new Error(
         t('別の処理が実行中です。完了してから要約を生成してください。'),
       );
@@ -682,7 +731,11 @@ export class ProcessingCoordinator {
     if (!apiKey) {
       throw new Error(t('API キーが設定されていません。'));
     }
-    if (this.active || this.state.stage !== null) {
+    if (
+      this.active ||
+      this.state.stage !== null ||
+      this.titleGenerationActive
+    ) {
       throw new Error(
         t('別の処理が実行中です。完了してから要約を生成してください。'),
       );
@@ -700,7 +753,7 @@ export class ProcessingCoordinator {
       cancellable: true,
       error: null,
     });
-    const metaPath = join(detail.meeting.meetingDir, 'meta.json');
+    let metaPath = join(detail.meeting.meetingDir, 'meta.json');
     try {
       const startedAt = this.now().toISOString();
       await updateMeetingMeta(metaPath, (meta) => {
@@ -782,32 +835,40 @@ export class ProcessingCoordinator {
 
       let meeting = (await this.meetingStore.find(meetingId)) ?? detail.meeting;
       if (meeting.title === DEFAULT_MEETING_TITLE) {
+        this.setState({
+          ...this.state,
+          stage: 'title',
+          progress: null,
+          etaSeconds: null,
+          message: t('タイトルを生成しています'),
+        });
         try {
-          const generatedTitle = await generateMeetingTitle({
+          meeting = await generateAndSaveMeetingTitle({
+            meetingStore: this.meetingStore,
             client: this.llmClient,
+            meeting,
             transcriptBody: generated.usedTranscriptBody,
             language: config.language,
             kind: config.kind,
             endpoint: config.endpoint,
             apiKey,
             model: config.model,
+            provider: config.provider,
             signal: controller.signal,
+            now: this.now,
+            usage: generated.usage,
           });
-          generated.usage.inputTokens =
-            (generated.usage.inputTokens ?? 0) +
-            (generatedTitle.inputTokens ?? 0);
-          generated.usage.outputTokens =
-            (generated.usage.outputTokens ?? 0) +
-            (generatedTitle.outputTokens ?? 0);
-          const title = sanitizeMeetingTitle(generatedTitle.title);
-          if (title && title !== DEFAULT_MEETING_TITLE) {
-            meeting = await this.meetingStore.updateTitle(meetingId, title);
-          }
         } catch (error) {
+          if (controller.signal.aborted) {
+            throw error;
+          }
           console.error(
             `failed to generate meeting title: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
+      }
+      if (meeting.meetingDir !== detail.meeting.meetingDir) {
+        metaPath = join(meeting.meetingDir, 'meta.json');
       }
       const summary = await this.meetingStore.readSummary(meeting);
       if (!summary) {
@@ -849,6 +910,55 @@ export class ProcessingCoordinator {
       throw error;
     } finally {
       this.active = null;
+    }
+  }
+
+  async generateTitle(
+    meetingId: string,
+    profileId?: string,
+  ): Promise<MeetingSummary> {
+    if (this.active || this.state.stage !== null) {
+      throw new Error(
+        t('別の処理が実行中です。完了してからタイトルを生成してください。'),
+      );
+    }
+    if (this.titleGenerationActive) {
+      throw new Error(
+        t('タイトルを生成しています。完了してから再実行してください。'),
+      );
+    }
+    this.titleGenerationActive = true;
+    try {
+      const detail = await this.meetingStore.detail(meetingId);
+      if (!detail) {
+        throw new Error(t('会議が見つかりません。'));
+      }
+      if (detail.meeting.title !== DEFAULT_MEETING_TITLE) {
+        throw new Error(t('タイトルが既に入力されています。'));
+      }
+      if (!detail.transcript?.body.trim()) {
+        throw new Error(
+          t('文字起こしがありません。先に文字起こしを完了してください。'),
+        );
+      }
+      const { config, apiKey } = await this.resolveTitleRuntime(profileId);
+      return await generateAndSaveMeetingTitle({
+        meetingStore: this.meetingStore,
+        client: this.llmClient,
+        meeting: detail.meeting,
+        transcriptBody: detail.transcript.body,
+        language:
+          detail.meeting.summaryLanguage ?? this.settings().summaryLanguage,
+        kind: config.kind,
+        endpoint: config.endpoint,
+        apiKey,
+        model: config.model,
+        provider: config.provider,
+        now: this.now,
+      });
+    } finally {
+      this.titleGenerationActive = false;
+      this.onMeetingUpdated(meetingId);
     }
   }
 
@@ -941,7 +1051,11 @@ export class ProcessingCoordinator {
         t('翻訳の確認トークンが無効です。もう一度プレビューを開いてください。'),
       );
     }
-    if (this.active || this.state.stage !== null) {
+    if (
+      this.active ||
+      this.state.stage !== null ||
+      this.titleGenerationActive
+    ) {
       throw new Error(
         t('別の処理が実行中です。完了してから翻訳を実行してください。'),
       );
@@ -1124,7 +1238,11 @@ export class ProcessingCoordinator {
   }
 
   async saveTranscript(meetingId: string, markdown: string): Promise<MeetingDetail> {
-    if (this.active || this.state.stage !== null) {
+    if (
+      this.active ||
+      this.state.stage !== null ||
+      this.titleGenerationActive
+    ) {
       throw new Error(t('処理中は文字起こしを編集できません。'));
     }
     if (markdown.length > 5 * 1024 * 1024) {
@@ -1144,7 +1262,11 @@ export class ProcessingCoordinator {
   }
 
   async saveSummary(meetingId: string, markdown: string): Promise<MeetingDetail> {
-    if (this.active || this.state.stage !== null) {
+    if (
+      this.active ||
+      this.state.stage !== null ||
+      this.titleGenerationActive
+    ) {
       throw new Error(t('処理中は要約を編集できません。'));
     }
     if (markdown.length > 5 * 1024 * 1024) {
@@ -1187,7 +1309,10 @@ export class ProcessingCoordinator {
     meetingId: string,
     operation: () => Promise<void>,
   ): Promise<void> {
-    while (this.recordingActive && !this.shuttingDown) {
+    while (
+      (this.recordingActive || this.titleGenerationActive) &&
+      !this.shuttingDown
+    ) {
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
     }
     if (this.shuttingDown) {

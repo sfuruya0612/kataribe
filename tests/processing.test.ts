@@ -55,7 +55,7 @@ async function createMeeting() {
   roots.push(root);
   const saveRoot = join(root, 'Kataribe');
   const meetingId = '00000000-0000-4000-8000-0000000000aa';
-  const meetingDir = join(saveRoot, '2026', '2026-10-31_1000_要約テスト');
+  const meetingDir = join(saveRoot, '2026', '2026-10-31_要約テスト');
   await mkdir(meetingDir, { recursive: true });
   const meta: MeetingMeta = {
     schema_version: 1,
@@ -342,22 +342,175 @@ describe('ProcessingCoordinator summary flow', () => {
         outputTokens: 3,
         status: 200,
       });
-    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+    const { coordinator, meetingStore } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+    });
     const preview = await coordinator.createSummaryPreview(meetingId);
     const result = await coordinator.generateSummary(meetingId, preview.token);
     expect(result.meeting.title).toBe('リリース計画の定例');
     expect(result.meeting.meetingDir).not.toBe(meetingDir);
     expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]?.[0]).toMatchObject({
+      maxTokens: 1024,
+      timeoutMs: 120_000,
+    });
+    const updatedMeta = JSON.parse(
+      await readFile(join(result.meeting.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(updatedMeta.title_generation).toMatchObject({
+      state: 'completed',
+      provider: 'chatgpt',
+      model: 'gpt-5.5',
+    });
+    expect(updatedMeta.summary.usage).toEqual({
+      input_tokens: 105,
+      output_tokens: 43,
+    });
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.titleGeneration).toMatchObject({
+      state: 'completed',
+      error: null,
+    });
+  });
+
+  it('records a title generation failure without failing the summary', async () => {
+    const { root, saveRoot, meetingId, meetingDir } = await createMeeting();
+    const metaPath = join(meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.title = 'タイトル未入力';
+    await writeFile(metaPath, JSON.stringify(meta));
+    const complete = vi
+      .fn()
+      .mockResolvedValueOnce(summaryResponse)
+      .mockRejectedValueOnce(new Error('LLM request timed out'));
+    const { coordinator, meetingStore } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+    });
+    const preview = await coordinator.createSummaryPreview(meetingId);
+    const result = await coordinator.generateSummary(meetingId, preview.token);
+    expect(result.meeting.title).toBe('タイトル未入力');
+    const updatedMeta = JSON.parse(
+      await readFile(join(meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(updatedMeta.status).toBe('summarized');
+    expect(updatedMeta.summary.state).toBe('completed');
+    expect(updatedMeta.title_generation).toMatchObject({
+      state: 'failed',
+      provider: 'chatgpt',
+      model: 'gpt-5.5',
+      error: 'LLM request timed out',
+    });
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.titleGeneration).toMatchObject({
+      state: 'failed',
+      error: 'LLM request timed out',
+    });
   });
 
   it('requires a transcript and an API key for the preview', async () => {
     const { root, saveRoot, meetingId } = await createMeeting();
     const complete = vi.fn();
     const { coordinator } = createCoordinator({ root, saveRoot, complete });
-    await rm(join(saveRoot, '2026', '2026-10-31_1000_要約テスト', 'transcript.md'));
+    await rm(join(saveRoot, '2026', '2026-10-31_要約テスト', 'transcript.md'));
     await expect(coordinator.createSummaryPreview(meetingId)).rejects.toThrow(
       '文字起こしがありません',
     );
+  });
+});
+
+describe('ProcessingCoordinator title generation', () => {
+  async function createUntitledMeeting() {
+    const created = await createMeeting();
+    const metaPath = join(created.meetingDir, 'meta.json');
+    const meta = JSON.parse(await readFile(metaPath, 'utf8'));
+    meta.title = 'タイトル未入力';
+    await writeFile(metaPath, JSON.stringify(meta));
+    return created;
+  }
+
+  it('generates and saves a title for an existing untitled meeting', async () => {
+    const { root, saveRoot, meetingId, meetingDir } =
+      await createUntitledMeeting();
+    const complete = vi.fn(async (_request: unknown) => ({
+      text: 'リリース計画の定例',
+      inputTokens: 12,
+      outputTokens: 4,
+      status: 200,
+    }));
+    const { coordinator, meetingStore } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+    });
+
+    const updated = await coordinator.generateTitle(meetingId);
+
+    expect(updated.title).toBe('リリース計画の定例');
+    expect(updated.meetingDir).not.toBe(meetingDir);
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({
+      maxTokens: 1024,
+      timeoutMs: 120_000,
+    });
+    const meta = JSON.parse(
+      await readFile(join(updated.meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.title_generation).toMatchObject({
+      state: 'completed',
+      provider: 'chatgpt',
+      model: 'gpt-5.5',
+    });
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.titleGeneration).toMatchObject({
+      state: 'completed',
+      error: null,
+    });
+  });
+
+  it('records the failure reason and rethrows it', async () => {
+    const { root, saveRoot, meetingId, meetingDir } =
+      await createUntitledMeeting();
+    const complete = vi.fn(async () => {
+      throw new Error('LLM request timed out');
+    });
+    const { coordinator, meetingStore } = createCoordinator({
+      root,
+      saveRoot,
+      complete,
+    });
+
+    await expect(coordinator.generateTitle(meetingId)).rejects.toThrow(
+      'LLM request timed out',
+    );
+
+    const meta = JSON.parse(
+      await readFile(join(meetingDir, 'meta.json'), 'utf8'),
+    );
+    expect(meta.title).toBe('タイトル未入力');
+    expect(meta.title_generation).toMatchObject({
+      state: 'failed',
+      error: 'LLM request timed out',
+    });
+    const detail = await meetingStore.detail(meetingId);
+    expect(detail?.titleGeneration).toMatchObject({
+      state: 'failed',
+      error: 'LLM request timed out',
+    });
+  });
+
+  it('does not overwrite an existing title', async () => {
+    const { root, saveRoot, meetingId } = await createMeeting();
+    const complete = vi.fn();
+    const { coordinator } = createCoordinator({ root, saveRoot, complete });
+
+    await expect(coordinator.generateTitle(meetingId)).rejects.toThrow(
+      'タイトルが既に入力されています',
+    );
+    expect(complete).not.toHaveBeenCalled();
   });
 });
 

@@ -805,6 +805,13 @@ ul {
   background: var(--warning-bg);
 }
 
+.title-generation-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .recording-error {
   display: flex;
   flex-direction: column;

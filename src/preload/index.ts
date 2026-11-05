@@ -150,6 +150,11 @@ const api = {
     title: string,
   ): Promise<MeetingSummary> =>
     ipcRenderer.invoke('meetings:update-title', meetingId, title),
+  generateMeetingTitle: (
+    meetingId: string,
+    profileId?: string,
+  ): Promise<MeetingSummary> =>
+    ipcRenderer.invoke('meetings:generate-title', meetingId, profileId),
   searchMeetings: (query: string): Promise<MeetingSearchResult> =>
     ipcRenderer.invoke('meetings:search', query),
   importAudio: (): Promise<MeetingSummary | null> =>

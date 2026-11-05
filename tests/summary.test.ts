@@ -3,6 +3,7 @@ import type { LlmClient } from '../src/main/llm';
 import {
   buildSummarySystemPrompt,
   buildSummaryUserPrompt,
+  generateMeetingTitle,
   generateSummary,
   hashTranscript,
   splitTranscriptForSummary,
@@ -51,6 +52,53 @@ describe('splitTranscriptForSummary', () => {
     expect(chunks.join('\n')).toContain('line-0');
     expect(chunks.join('\n')).toContain('line-9');
     expect(chunks[1]).toContain('line-3');
+  });
+});
+
+describe('generateMeetingTitle', () => {
+  it('uses a long enough output budget and strips decoration', async () => {
+    const complete = vi.fn(async (_request: unknown) => ({
+      text: '「リリース計画の定例」\n補足',
+      inputTokens: 20,
+      outputTokens: 8,
+      status: 200,
+    }));
+    const result = await generateMeetingTitle({
+      client: { complete } as unknown as LlmClient,
+      transcriptBody: '[00:00:01] リリース計画を確認します。',
+      language: 'ja',
+      kind: 'openai',
+      endpoint: 'https://api.example.com/v1/chat/completions',
+      apiKey: 'key',
+      model: 'model',
+    });
+    expect(result.title).toBe('リリース計画の定例');
+    expect(result.inputTokens).toBe(20);
+    expect(result.outputTokens).toBe(8);
+    expect(complete.mock.calls[0]?.[0]).toMatchObject({
+      maxTokens: 1024,
+      timeoutMs: 120_000,
+    });
+  });
+
+  it('rejects an empty response', async () => {
+    const complete = vi.fn(async () => ({
+      text: '   ',
+      inputTokens: 1,
+      outputTokens: 0,
+      status: 200,
+    }));
+    await expect(
+      generateMeetingTitle({
+        client: { complete } as unknown as LlmClient,
+        transcriptBody: '[00:00:01] 会議',
+        language: 'ja',
+        kind: 'openai',
+        endpoint: 'https://api.example.com/v1/chat/completions',
+        apiKey: 'key',
+        model: 'model',
+      }),
+    ).rejects.toThrow('meeting title is empty');
   });
 });
 

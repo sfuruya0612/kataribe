@@ -31,6 +31,7 @@ import type {
   MeetingSearchResult,
   MeetingStatus,
   MeetingSummary,
+  MeetingTitleGeneration,
   MeetingWaveform,
   RecordingErrorInfo,
   ReuseModel,
@@ -130,6 +131,39 @@ function asString(value: FrontMatterValue | undefined): string | null {
 
 function asBoolean(value: FrontMatterValue | undefined): boolean {
   return value === true;
+}
+
+function titleGenerationFromMeta(
+  meta: MeetingMeta,
+): MeetingTitleGeneration | null {
+  const value = meta.title_generation;
+  if (
+    !value ||
+    (value.state !== 'running' &&
+      value.state !== 'completed' &&
+      value.state !== 'failed')
+  ) {
+    return null;
+  }
+  return {
+    state: value.state,
+    provider:
+      typeof value.provider === 'string' && value.provider.length > 0
+        ? value.provider
+        : null,
+    model:
+      typeof value.model === 'string' && value.model.length > 0
+        ? value.model
+        : null,
+    generatedAt:
+      typeof value.generated_at === 'string' && value.generated_at.length > 0
+        ? value.generated_at
+        : null,
+    error:
+      typeof value.error === 'string' && value.error.length > 0
+        ? value.error
+        : null,
+  };
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -401,6 +435,7 @@ export class MeetingStore {
           : null,
       enhancement: enhancement.file,
       enhancementWarning: enhancement.warning,
+      titleGeneration: meta ? titleGenerationFromMeta(meta) : null,
     };
   }
 
@@ -635,8 +670,7 @@ export class MeetingStore {
     const now = new Date();
     const year = String(now.getFullYear());
     const date = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const time = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    const base = `${date}_${time}_${title}`;
+    const base = `${date}_${title}`;
     const yearRoot = join(this.saveRoot, year);
     await mkdir(yearRoot, { recursive: true, mode: 0o700 });
     let meetingDir = join(yearRoot, base);
@@ -746,16 +780,23 @@ export class MeetingStore {
     return updated;
   }
 
-  async updateTitle(meetingId: string, rawTitle: string): Promise<MeetingSummary> {    const meeting = await this.find(meetingId);
+  async updateTitle(
+    meetingId: string,
+    rawTitle: string,
+    updateMeta?: (meta: MeetingMeta) => void,
+  ): Promise<MeetingSummary> {
+    const meeting = await this.find(meetingId);
     if (!meeting) {
       throw new Error(t('会議が見つかりません。'));
     }
     const title = sanitizeMeetingTitle(rawTitle);
     const parent = dirname(meeting.meetingDir);
     const currentName = basename(meeting.meetingDir);
-    const prefixMatch = currentName.match(/^(\d{4}-\d{2}-\d{2}_\d{4})_/u);
-    const prefix = prefixMatch?.[1] ?? currentName.replace(/_.*$/u, '');
-    const baseName = `${prefix}_${title}`;
+    const dateMatch = currentName.match(
+      /^(\d{4}-\d{2}-\d{2})(?:_\d{4})?_.+/u,
+    );
+    const datePrefix = dateMatch?.[1] ?? currentName.replace(/_.*$/u, '');
+    const baseName = `${datePrefix}_${title}`;
 
     let targetDir = join(parent, baseName);
     let index = 2;
@@ -776,6 +817,8 @@ export class MeetingStore {
       const metaPath = join(targetDir, 'meta.json');
       await updateMeetingMeta(metaPath, (meta) => {
         meta.title = title;
+        delete meta.title_generation;
+        updateMeta?.(meta);
       });
       for (const name of [
         'transcript.md',

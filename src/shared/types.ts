@@ -165,6 +165,14 @@ export type TranscriptComparison = {
   models: Partial<Record<ReuseModel, TranscriptDocument>>;
 };
 
+export type MeetingTitleGeneration = {
+  state: 'running' | 'completed' | 'failed';
+  provider: string | null;
+  model: string | null;
+  generatedAt: string | null;
+  error: string | null;
+};
+
 export type MeetingDetail = {
   meeting: MeetingSummary;
   recordingError: RecordingErrorInfo | null;
@@ -176,6 +184,7 @@ export type MeetingDetail = {
   enhancement: EnhancementFile | null;
   transcriptComparisons: TranscriptComparison;
   enhancementWarning: string | null;
+  titleGeneration: MeetingTitleGeneration | null;
 };
 export type MeetingSearchKind =
   | 'title'
@@ -205,7 +214,8 @@ export type ProcessingStage =
   | 'enhancing'
   | 'transcribing'
   | 'translating'
-  | 'summarizing';
+  | 'summarizing'
+  | 'title';
 
 export type ProcessingState = {
   stage: ProcessingStage | null;

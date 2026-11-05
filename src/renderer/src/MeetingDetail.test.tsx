@@ -5,6 +5,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_MEETING_TITLE } from '../../shared/title';
 import type {
   MeetingSummary,
   ProcessingState,
@@ -81,5 +82,14 @@ describe('MeetingDetail audio choices', () => {
   it('hides the enhanced audio choice when the summary has no enhanced model', () => {
     const html = render({ ...meeting, enhancedModels: [] });
     expect(html).not.toContain('audio-variant-selector');
+  });
+
+  it('shows the automatic title action for an untitled meeting', () => {
+    const html = render({ ...meeting, title: DEFAULT_MEETING_TITLE });
+    expect(html).toContain('タイトルを自動生成');
+  });
+
+  it('hides the automatic title action when a title already exists', () => {
+    expect(render()).not.toContain('タイトルを自動生成');
   });
 });

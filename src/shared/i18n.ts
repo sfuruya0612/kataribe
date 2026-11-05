@@ -390,6 +390,20 @@ export const EN_MESSAGES = {
   '処理を中断': 'Cancel processing',
   'プロファイル': 'Profile',
   'タイトルを編集': 'Edit title',
+  'タイトルを自動生成': 'Generate title automatically',
+  'タイトル生成を再試行': 'Retry title generation',
+  'タイトルを自動生成できませんでした':
+    'Could not generate the title automatically.',
+  'タイトルを生成しました。': 'Generated the title.',
+  'タイトルを生成しています': 'Generating the title',
+  'タイトルを生成できませんでした: {error}':
+    'Could not generate the title: {error}',
+  'タイトルが既に入力されています。': 'The title is already set.',
+  '別の処理が実行中です。完了してからタイトルを生成してください。':
+    'Another operation is running. Wait for it to finish before generating a title.',
+  'タイトルを生成しています。完了してから再実行してください。':
+    'The title is being generated. Wait for it to finish before trying again.',
+  '生成されたタイトルが空です。': 'The generated title is empty.',
   '日本語訳を再生成': 'Regenerate Japanese translation',
   'プロファイル未設定': 'No profile configured',
   '要約を生成しています': 'Generating the summary',

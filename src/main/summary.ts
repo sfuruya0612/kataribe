@@ -295,9 +295,10 @@ export async function generateMeetingTitle(
       excerpt,
       '--- TRANSCRIPT END ---',
     ].join('\n'),
-    maxTokens: 80,
+    // 推論にトークンを使うモデルでも本文が空にならないよう、余裕を持たせる。
+    maxTokens: 1024,
     signal: options.signal,
-    timeoutMs: 60_000,
+    timeoutMs: 120_000,
   });
   const title = result.text
     .replaceAll('\r\n', '\n')

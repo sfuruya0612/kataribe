@@ -122,7 +122,7 @@ describe('RecordingManager', () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
     );
     expect(session.meetingDir).toBe(
-      join(fixture.saveRoot, '2026', '2026-10-29_1405_タイトル未入力'),
+      join(fixture.saveRoot, '2026', '2026-10-29_タイトル未入力'),
     );
 
     const meta = await readMeta(session.meetingDir);
@@ -373,8 +373,8 @@ describe('RecordingManager', () => {
       sampleRate: 48000,
     });
 
-    expect(first.meetingDir).toContain('2026-10-29_1405_タイトル未入力');
-    expect(second.meetingDir).toContain('2026-10-29_1405_タイトル未入力_2');
+    expect(first.meetingDir).toContain('2026-10-29_タイトル未入力');
+    expect(second.meetingDir).toContain('2026-10-29_タイトル未入力_2');
   });
 
   it('lists and recovers a session left behind after a crash', async () => {
@@ -549,7 +549,7 @@ describe('RecordingManager', () => {
       event,
     );
 
-    expect(failure.meetingDir).toContain('2026-10-29_1405_タイトル未入力');
+    expect(failure.meetingDir).toContain('2026-10-29_タイトル未入力');
     const meta = await readMeta(failure.meetingDir);
     expect(meta.status).toBe('error');
     expect(meta.duration).toBe(0);
