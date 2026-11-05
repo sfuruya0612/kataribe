@@ -1450,7 +1450,7 @@ export function SettingsPanel({
                     </label>
                   </div>
                   <label className="setting-row">
-                    <span>
+                    <span className="setting-row-text">
                       <strong>{t('このプロファイルを既定にする')}</strong>
                       <span className="muted">
                         {t(

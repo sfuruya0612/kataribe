@@ -27,7 +27,7 @@ export function EnhancementStorageView({
       <p className="settings-label">{t('音声強調のディスク使用量')}</p>
       <div className="setting-card">
         <div className="setting-row">
-          <span>
+          <span className="setting-row-text">
             {usage === null ? (
               <span className="muted">{t('使用量を確認中...')}</span>
             ) : (

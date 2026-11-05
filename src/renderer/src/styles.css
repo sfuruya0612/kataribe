@@ -1558,6 +1558,14 @@ ul {
   gap: 12px;
 }
 
+.setting-row-text {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .setting-path {
   min-width: 0;
   overflow: hidden;

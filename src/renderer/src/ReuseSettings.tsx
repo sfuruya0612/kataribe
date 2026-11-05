@@ -77,7 +77,7 @@ export function ReuseSettingsView({
       <p className="settings-label">{t('音声強調 (RE-USE)')}</p>
       <div className="setting-card">
         <label className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('録音停止後の保存音声の強調')}</strong>
             <span className="muted">
               {t(
@@ -94,7 +94,7 @@ export function ReuseSettingsView({
       </div>
       <div className="setting-card">
         <label className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('文字起こし前の音声を強調する')}</strong>
             <span className="muted">
               {t(
@@ -116,7 +116,7 @@ export function ReuseSettingsView({
       </div>
       <div className="setting-card">
         <div className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('WebGPU')}</strong>
             <span className={gpu.available ? 'ok-text' : 'error-text'}>
               {gpu.available
@@ -151,7 +151,7 @@ export function ReuseSettingsView({
       </div>
       <div className="setting-card model-list">
         <div className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('音声強調モデル')}</strong>
             <span className="muted">
               {t(
