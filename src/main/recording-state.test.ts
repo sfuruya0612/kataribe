@@ -10,7 +10,7 @@ import { RecordingStateStore } from './recording-state';
 
 const session: RecordingSession = {
   meetingId: '00000000-0000-4000-8000-000000000001',
-  meetingDir: '/tmp/Kataribe/2026/2026-10-29_1405_タイトル未入力',
+  meetingDir: '/tmp/Kataribe/2026/2026-10-29_タイトル未入力',
   startedAt: '2026-10-29T05:05:00.000Z',
   sampleRate: 48000,
   inputSource: 'both',

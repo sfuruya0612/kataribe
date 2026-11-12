@@ -805,6 +805,13 @@ ul {
   background: var(--warning-bg);
 }
 
+.title-generation-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
 .recording-error {
   display: flex;
   flex-direction: column;
@@ -1204,6 +1211,53 @@ ul {
   font-size: 10px;
 }
 
+.enhancement-summary-button {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 6px;
+  padding: 2px 10px 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.enhancement-summary-button:hover {
+  background: var(--hover-tint);
+}
+
+.enhancement-summary-button .status-chip {
+  padding: 0 6px;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.enhancement-summary-action {
+  color: var(--accent-strong);
+  font-size: 10px;
+}
+
+.detail-enhancement {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.enhancement-dialog {
+  width: min(620px, 100%);
+}
+
+.enhancement-dialog-body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 12px;
+  overflow: auto;
+}
+
 .detail-player-row {
   display: flex;
   align-items: center;
@@ -1509,6 +1563,14 @@ ul {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.setting-row-text {
+  display: flex;
+  flex: 1 1 18rem;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .setting-path {

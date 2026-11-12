@@ -20,7 +20,7 @@ export function SummaryCleanupSetting({
       <p className="settings-label">{t('要約の前処理')}</p>
       <div className="setting-card">
         <label className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('相槌と擬音を除いてから要約する')}</strong>
             <span className="muted">
               {t(

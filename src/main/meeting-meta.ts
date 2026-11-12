@@ -98,6 +98,15 @@ export type MeetingMetaTranslation = {
   error?: string;
 };
 
+export type MeetingMetaTitleGeneration = {
+  state: 'running' | 'completed' | 'failed';
+  provider?: string;
+  model?: string;
+  started_at?: string;
+  generated_at?: string;
+  error?: string;
+};
+
 export type MeetingMetaDiarization = {
   state: 'completed' | 'failed';
   speakers?: number;
@@ -145,6 +154,7 @@ export type MeetingMeta = {
   enhancement?: MeetingMetaEnhancement;
   speakers?: string[];
   summary?: MeetingMetaSummary;
+  title_generation?: MeetingMetaTitleGeneration;
   translations?: Partial<Record<SummaryLanguage, MeetingMetaTranslation>>;
   summary_language?: SummaryLanguage;
   pinned?: boolean;

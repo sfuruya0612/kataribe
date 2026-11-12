@@ -88,13 +88,18 @@ function fixture(): EnhancementFile {
   };
 }
 
-function render(enhancement: EnhancementFile | null, warning: string | null = null): string {
+function render(
+  enhancement: EnhancementFile | null,
+  warning: string | null = null,
+  showHeading = true,
+): string {
   return renderToStaticMarkup(
     createElement(I18nProvider, {
       initialLocale: 'ja',
       children: createElement(EnhancementStatus, {
         enhancement,
         warning,
+        showHeading,
       }),
     }),
   );
@@ -123,5 +128,12 @@ describe('EnhancementStatus', () => {
 
   it('renders nothing when there is no enhancement data', () => {
     expect(render(null)).toBe('');
+  });
+
+  it('hides the heading when it is shown inside another titled surface', () => {
+    const html = render(fixture(), null, false);
+    expect(html).not.toContain('<strong>音声強調の状態</strong>');
+    expect(html).toContain('保存音声の強調');
+    expect(html).toContain('文字起こし前の強調');
   });
 });

@@ -120,6 +120,10 @@ declare global {
         meetingId: string,
         title: string,
       ) => Promise<MeetingSummary>;
+      generateMeetingTitle: (
+        meetingId: string,
+        profileId?: string,
+      ) => Promise<MeetingSummary>;
       searchMeetings: (query: string) => Promise<MeetingSearchResult>;
       importAudio: () => Promise<MeetingSummary | null>;
       setMeetingPinned: (

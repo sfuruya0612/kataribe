@@ -111,7 +111,7 @@ export function DiarizationSettings({
       <p className="settings-label">{t('話者分離')}</p>
       <div className="setting-card">
         <label className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('話者分離を使う')}</strong>
             <span className="muted">
               {t(
@@ -130,7 +130,7 @@ export function DiarizationSettings({
           />
         </label>
         <label className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('話者数')}</strong>
             <span className="muted">
               {t(
@@ -156,7 +156,7 @@ export function DiarizationSettings({
       </div>
       <div className="setting-card">
         <div className="setting-row">
-          <span>
+          <span className="setting-row-text">
             <strong>{t('話者分離モデル')}</strong>
             <span className="muted">
               {t(

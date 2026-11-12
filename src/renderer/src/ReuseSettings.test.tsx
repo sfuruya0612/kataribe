@@ -78,6 +78,13 @@ describe('req_enhance_001_reuse_settings', () => {
     );
   });
 
+  it('separates the setting label and its description into a stacked block', () => {
+    const html = render(modelList);
+    expect(html).toContain(
+      '<span class="setting-row-text"><strong>録音停止後の保存音声の強調</strong><span class="muted">録音停止後に保存する音声へ',
+    );
+  });
+
   it('marks the saved audio enhancement setting as on', () => {
     const html = render(modelList, availableGpu, 'ja', true);
     expect(html).toMatch(

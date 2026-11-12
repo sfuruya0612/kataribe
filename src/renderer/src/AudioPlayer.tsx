@@ -42,7 +42,7 @@ export function AudioPlayer({
     setMediaDuration(duration);
     setError(null);
     const audio = audioRef.current;
-    if (audio && src) {
+    if (audio && selectedSrc) {
       audio.load();
       if (initialTime !== null && initialTime !== undefined && initialTime > 0) {
         const apply = () => {
@@ -60,8 +60,11 @@ export function AudioPlayer({
   }, [selectedSrc, duration, initialTime]);
 
   useEffect(() => {
-    setVariant('raw');
-  }, [src]);
+    const audio = audioRef.current;
+    if (audio) {
+      audio.playbackRate = speed;
+    }
+  }, [selectedSrc, speed]);
 
   const toggle = async () => {
     const audio = audioRef.current;
@@ -115,6 +118,7 @@ export function AudioPlayer({
         onChange={setVariant}
       />
       <audio
+        key={selectedSrc ?? undefined}
         ref={audioRef}
         src={selectedSrc ?? undefined}
         preload="metadata"

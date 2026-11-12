@@ -820,6 +820,24 @@ function registerIpc(
     return updated;
   });
 
+  ipcMain.handle(
+    'meetings:generate-title',
+    async (_event, meetingId: string, profileId?: string) => {
+      const status = stateStore.getStatus();
+      if (
+        status === 'starting' ||
+        status === 'recording' ||
+        status === 'stopping'
+      ) {
+        throw new Error(t('録音中はタイトルを変更できません。'));
+      }
+      return processing.generateTitle(
+        String(meetingId),
+        typeof profileId === 'string' && profileId ? profileId : undefined,
+      );
+    },
+  );
+
   ipcMain.handle('meetings:search', (_event, query: string) => {
     const index = activeMeetingIndex;
     return index?.isReady() ? index.search(String(query)) : meetingStore.search(String(query));

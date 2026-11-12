@@ -1,29 +1,17 @@
 import { ENHANCEMENT_STATE_MESSAGE_KEYS } from '../../shared/i18n';
 import type {
   EnhancementFile,
-  EnhancementState,
   EnhancementTranscriptionEntry,
 } from '../../shared/types';
 import { REUSE_MODELS } from '../../shared/types';
 import { useI18n } from './i18n';
+import { enhancementStateClass } from './enhancement-state';
 
 type EnhancementStatusProps = {
   enhancement: EnhancementFile | null;
   warning: string | null;
+  showHeading?: boolean;
 };
-
-function stateClass(state: EnhancementState): string {
-  if (state === 'succeeded') {
-    return 'status-summarized';
-  }
-  if (state === 'failed' || state === 'interrupted') {
-    return 'status-error';
-  }
-  if (state === 'running') {
-    return 'status-transcribing';
-  }
-  return 'status-idle';
-}
 
 /**
  * 音声強調の状態、処理時間、使用モデルを表示する。
@@ -31,6 +19,7 @@ function stateClass(state: EnhancementState): string {
 export function EnhancementStatus({
   enhancement,
   warning,
+  showHeading = true,
 }: EnhancementStatusProps) {
   const { t } = useI18n();
   if (!enhancement && !warning) {
@@ -62,7 +51,7 @@ export function EnhancementStatus({
     <div className="model-row" key={key}>
       <span className="model-name-group">
         <span>{label}</span>
-        <span className={`status-chip ${stateClass(entry.state)}`}>
+        <span className={`status-chip ${enhancementStateClass(entry.state)}`}>
           {t(ENHANCEMENT_STATE_MESSAGE_KEYS[entry.state])}
         </span>
         {entry.elapsed_seconds !== null ? (
@@ -84,7 +73,7 @@ export function EnhancementStatus({
 
   return (
     <section className="detail-enhancement" aria-label={t('音声強調の状態')}>
-      <strong>{t('音声強調の状態')}</strong>
+      {showHeading ? <strong>{t('音声強調の状態')}</strong> : null}
       {warning ? (
         <p className="alert alert-warning" role="status">
           {t('音声強調の状態を読み込めませんでした。')}
@@ -98,7 +87,7 @@ export function EnhancementStatus({
             <div className="model-row" key={`saved-${model}`}>
               <span className="model-name-group">
                 <span className="mono">{model}</span>
-                <span className={`status-chip ${stateClass(entry.state)}`}>
+                <span className={`status-chip ${enhancementStateClass(entry.state)}`}>
                   {t(ENHANCEMENT_STATE_MESSAGE_KEYS[entry.state])}
                 </span>
                 {entry.elapsed_seconds !== null ? (

@@ -2,7 +2,15 @@
  * 会議フォルダの読み書き、検索、話者名、保存済みデータの不変条件を検証する。
  * 対応する要求: REQ-DIAR-001、REQ-DIAR-002、REQ-UI-001 (保存済みデータの不変)、REQ-TODO-001
  */
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -41,7 +49,7 @@ async function createMeeting(
   overrides: Record<string, unknown> = {},
   audio?: Buffer,
 ) {
-  const meetingDir = join(root, '2026', `2026-10-29_1400_${id}`);
+  const meetingDir = join(root, '2026', `2026-10-29_${id}`);
   await mkdir(meetingDir, { recursive: true });
   const meta = {
     schema_version: 1,
@@ -105,6 +113,21 @@ describe('MeetingStore', () => {
       chunkCount: 1,
     });
     expect(meetings[0].audioUrl).toContain('kataribe-audio://meeting/');
+  });
+
+  it('changes the audio URL when the source audio file changes', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-0000000000a1';
+    const meetingDir = await createMeeting(root, id, {}, Buffer.alloc(44));
+
+    const first = (await store.list())[0];
+    expect(first.audioUrl).toMatch(/\?v=/u);
+    const firstUrl = first.audioUrl ?? '';
+
+    await writeFile(join(meetingDir, 'audio.wav'), Buffer.alloc(48));
+    const second = (await store.list())[0];
+    expect(second.audioUrl).toMatch(/\?v=/u);
+    expect(second.audioUrl).not.toBe(firstUrl);
   });
 
   it('returns the enhancing status and the enhancement summary', async () => {
@@ -441,7 +464,7 @@ describe('MeetingStore', () => {
     const updated = await store.updateTitle(id, '新しい 会議/タイトル');
     expect(updated.title).toBe('新しい 会議_タイトル');
     expect(updated.meetingDir).not.toBe(meetingDir);
-    expect(updated.meetingDir).toContain('2026-10-29_1400_新しい 会議_タイトル');
+    expect(updated.meetingDir).toContain('2026-10-29_新しい 会議_タイトル');
     expect(await readFile(join(updated.meetingDir, 'transcript.md'), 'utf8')).toContain(
       'title: 新しい 会議_タイトル',
     );
@@ -470,6 +493,20 @@ describe('MeetingStore', () => {
       ),
     ).toContain('強調の本文');
     await expect(readFile(join(meetingDir, 'meta.json'), 'utf8')).rejects.toThrow();
+  });
+
+  it('renames an older timed folder to the date and title format', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-000000000010';
+    const meetingDir = await createMeeting(root, id);
+    const olderDir = join(root, '2026', '2026-10-29_1400_週次定例');
+    await rename(meetingDir, olderDir);
+
+    const updated = await store.updateTitle(id, '新しい定例');
+
+    expect(updated.meetingDir).toBe(
+      join(root, '2026', '2026-10-29_新しい定例'),
+    );
   });
 
   it('searches transcripts, translations, summaries, and titles', async () => {
@@ -565,6 +602,9 @@ describe('MeetingStore', () => {
     await writeFile(source, Buffer.from('not a real mp3'));
     const imported = await store.importAudio(source, '0.1.0');
     expect(imported.title).toBe('取り込みテスト');
+    expect(imported.meetingDir).toMatch(
+      /\/\d{4}-\d{2}-\d{2}_取り込みテスト$/u,
+    );
     expect(imported.status).toBe('encoding');
     expect(imported.audioUrl).toContain('kataribe-audio://meeting/');
     const meta = JSON.parse(

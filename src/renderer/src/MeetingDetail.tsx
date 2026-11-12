@@ -9,12 +9,15 @@ import type {
   TranscriptionEngine,
   TranslationPreview,
 } from '../../shared/types';
+import { enhancedMeetingAudioUrl } from '../../shared/meeting-audio-url';
+import { DEFAULT_MEETING_TITLE } from '../../shared/title';
 import { AudioPlayer } from './AudioPlayer';
-import { EnhancementStatus } from './EnhancementStatus';
+import { EnhancementStatusSummary } from './EnhancementStatusSummary';
 import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
 import { StaleTranscriptNotice } from './StaleTranscriptNotice';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
 import { SummaryRegenerationWarning } from './SummaryRegenerationWarning';
+import { TitleGenerationNotice } from './TitleGenerationNotice';
 import {
   TranscriptComparison,
   type TranscriptView,
@@ -87,6 +90,8 @@ function progressLabel(processing: ProcessingState, t: I18nValue['t']): string {
       return t('翻訳しています');
     case 'summarizing':
       return t('要約を生成しています');
+    case 'title':
+      return t('タイトルを生成しています');
     default:
       return '';
   }
@@ -136,6 +141,7 @@ export function MeetingDetail({
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [titleSaving, setTitleSaving] = useState(false);
+  const [titleGenerating, setTitleGenerating] = useState(false);
   const [speakerEditing, setSpeakerEditing] = useState(false);
   const [speakerDraft, setSpeakerDraft] = useState<string[]>([]);
   const [speakerSaving, setSpeakerSaving] = useState(false);
@@ -190,6 +196,7 @@ export function MeetingDetail({
   }, [refreshLlmProfiles]);
 
   useEffect(() => {
+    setDetail(null);
     setTab('transcript');
     setEditing(false);
     setSummaryEditing(false);
@@ -208,7 +215,13 @@ export function MeetingDetail({
 
   useEffect(() => {
     void load();
-  }, [load, meeting?.status, meeting?.hasTranscript, meeting?.hasSummary]);
+  }, [
+    load,
+    meeting?.status,
+    meeting?.hasTranscript,
+    meeting?.hasSummary,
+    meeting?.audioUrl,
+  ]);
 
   useEffect(() => {
     const running =
@@ -287,8 +300,14 @@ export function MeetingDetail({
   }
 
   const current = detail?.meeting ?? meeting;
+  const enhancedOutput =
+    detail?.enhancement?.saved_audio.nemotronlabs?.output ?? null;
   const enhancedSrc = current.enhancedModels.includes('nemotronlabs')
-    ? `kataribe-audio://meeting/${encodeURIComponent(current.id)}/enhanced/nemotronlabs`
+    ? enhancedMeetingAudioUrl(
+        current.id,
+        'nemotronlabs',
+        enhancedOutput?.sha256 ?? null,
+      )
     : null;
   const recordingError = detail?.recordingError ?? null;
   const transcript = detail?.transcript ?? null;
@@ -327,6 +346,15 @@ export function MeetingDetail({
       translation.generatedAt < transcript.updatedAt,
   );
   const activeHere = processing.meetingId === meeting.id && processing.stage !== null;
+  const canGenerateTitle =
+    current.title === DEFAULT_MEETING_TITLE &&
+    current.hasTranscript &&
+    current.status !== 'recording';
+  const titleGeneration =
+    current.title === DEFAULT_MEETING_TITLE
+      ? detail?.titleGeneration ?? null
+      : null;
+  const titleGenerationFailed = titleGeneration?.state === 'failed';
   const processingError =
     processing.meetingId === meeting.id ? processing.error : null;
   const progressPercent =
@@ -385,6 +413,28 @@ export function MeetingDetail({
       );
     } finally {
       setTitleSaving(false);
+    }
+  };
+
+  const generateTitle = async () => {
+    setTitleGenerating(true);
+    setError(null);
+    try {
+      await window.kataribe.generateMeetingTitle(
+        meeting.id,
+        summaryProfileId || undefined,
+      );
+      setNotice(t('タイトルを生成しました。'));
+      await load();
+    } catch (reason: unknown) {
+      await load();
+      setError(
+        t('タイトルを生成できませんでした: {error}', {
+          error: errorText(reason),
+        }),
+      );
+    } finally {
+      setTitleGenerating(false);
     }
   };
 
@@ -809,7 +859,12 @@ export function MeetingDetail({
         <button
           type="button"
           className="button button-primary"
-          disabled={!transcript || summaryBusy || processing.stage !== null}
+          disabled={
+            !transcript ||
+            summaryBusy ||
+            processing.stage !== null ||
+            titleGenerating
+          }
           onClick={() => void openSummaryPreview()}
         >
           {previewBusy
@@ -859,10 +914,22 @@ export function MeetingDetail({
           ) : (
             <>
               <h1 className="detail-title">{current.title}</h1>
+              {canGenerateTitle && !titleGenerationFailed ? (
+                <button
+                  type="button"
+                  className="link-button"
+                  disabled={titleGenerating || processing.stage !== null}
+                  onClick={() => void generateTitle()}
+                >
+                  {titleGenerating
+                    ? t('生成中...')
+                    : t('タイトルを自動生成')}
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="link-button"
-                disabled={processing.stage !== null}
+                disabled={processing.stage !== null || titleGenerating}
                 onClick={startTitleEditing}
               >
                 {t('タイトルを編集')}
@@ -872,6 +939,11 @@ export function MeetingDetail({
           <span className={`status-chip ${meetingStatusClass(current.status)}`}>
             {meetingStatusLabel(current.status, locale)}
           </span>
+          <EnhancementStatusSummary
+            key={current.id}
+            enhancement={detail?.enhancement ?? null}
+            warning={detail?.enhancementWarning ?? null}
+          />
         </div>
         <p className="detail-meta">
           {formatDateTime(current.startedAt, locale)} ·{' '}
@@ -898,12 +970,15 @@ export function MeetingDetail({
             {detail.diarizationError}
           </p>
         ) : null}
-        <EnhancementStatus
-          enhancement={detail?.enhancement ?? null}
-          warning={detail?.enhancementWarning ?? null}
+        <TitleGenerationNotice
+          titleGeneration={titleGeneration}
+          canRetry={canGenerateTitle}
+          busy={titleGenerating}
+          onRetry={() => void generateTitle()}
         />
         <div className="detail-player-row">
           <AudioPlayer
+            key={current.id}
             src={current.audioUrl}
             enhancedSrc={enhancedSrc}
             peaks={peaks}
@@ -1115,7 +1190,9 @@ export function MeetingDetail({
               <button
                 type="button"
                 className="link-button"
-                disabled={!summary || processing.stage !== null}
+                disabled={
+                  !summary || processing.stage !== null || titleGenerating
+                }
                 onClick={startSummaryEditing}
               >
                 {t('編集')}
@@ -1228,7 +1305,9 @@ export function MeetingDetail({
               className="setting-input summary-profile-select"
               aria-label={t('要約に使う LLM プロファイル')}
               value={summaryProfileId}
-              disabled={processing.stage !== null || summaryBusy}
+              disabled={
+                processing.stage !== null || summaryBusy || titleGenerating
+              }
               onChange={(event) => {
                 if (previewRef.current) {
                   void changeSummaryProfile(event.target.value);
