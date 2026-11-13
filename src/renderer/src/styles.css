@@ -1160,6 +1160,11 @@ ul {
   overflow: hidden;
 }
 
+.detail-panel > .alert {
+  flex: none;
+  margin: 10px 14px;
+}
+
 .detail-toolbar {
   display: flex;
   align-items: center;

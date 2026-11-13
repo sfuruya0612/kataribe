@@ -166,6 +166,9 @@
   - @shoichi.furuya
 - [FIX] タイトル生成で使ったトークン数を summary.usage に反映する
   - @shoichi.furuya
+- [FIX] 会議詳細の古い文字起こしの警告が画面全体に広がる問題を修正する
+  - 警告を内容の高さに収め、文字起こしと要約の領域を警告の下に配置する
+  - @shoichi.furuya
 
 ### misc
 

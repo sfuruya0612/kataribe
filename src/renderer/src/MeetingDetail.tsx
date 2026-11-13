@@ -1052,11 +1052,12 @@ export function MeetingDetail({
         {notice ? <p className="notice-text">{notice}</p> : null}
       </div>
 
+      <StaleTranscriptNotice
+        summaryStale={Boolean(staleSummary)}
+        translationStale={staleTranslation}
+      />
+
       <div className="detail-body">
-        <StaleTranscriptNotice
-          summaryStale={Boolean(staleSummary)}
-          translationStale={staleTranslation}
-        />
         <section className="transcript-pane" aria-labelledby="transcript-title">
           <div className="transcript-bar">
             <div className="seg" role="tablist" aria-label={t('会議の表示')}>
