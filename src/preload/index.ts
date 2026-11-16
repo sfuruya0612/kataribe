@@ -10,6 +10,9 @@ import type {
 import type {
   AppInfo,
   AppSettings,
+  ChatHistory,
+  ChatSendRequest,
+  ChatSendResult,
   DiarizationModelProgress,
   DiarizationModelStatus,
   EnhancementFile,
@@ -204,6 +207,19 @@ const api = {
     token: string,
   ): Promise<GenerateSummaryResult> =>
     ipcRenderer.invoke('summary:generate', meetingId, token),
+  getChatHistory: (meetingId: string): Promise<ChatHistory> =>
+    ipcRenderer.invoke('chat:load', meetingId),
+  sendChatMessage: (request: ChatSendRequest): Promise<ChatSendResult> =>
+    ipcRenderer.invoke('chat:send', request),
+  prepareChatContext: (
+    meetingId: string,
+    profileId?: string,
+  ): Promise<ChatHistory> =>
+    ipcRenderer.invoke('chat:prepare', meetingId, profileId),
+  cancelChat: (meetingId: string): Promise<boolean> =>
+    ipcRenderer.invoke('chat:cancel', meetingId),
+  clearChatHistory: (meetingId: string): Promise<ChatHistory> =>
+    ipcRenderer.invoke('chat:clear', meetingId),
   previewTranslation: (
     meetingId: string,
     targetLanguage: SummaryLanguage,
@@ -311,6 +327,8 @@ const api = {
     ipcRenderer.invoke('diarization:model-cancel'),
   copyText: (text: string): Promise<void> =>
     ipcRenderer.invoke('app:copy-text', text),
+  openExternal: (url: string): Promise<void> =>
+    ipcRenderer.invoke('app:open-external', url),
   onProcessingState: (listener: (state: ProcessingState) => void): (() => void) =>
     subscribe('processing:state', listener),
   onMeetingUpdated: (

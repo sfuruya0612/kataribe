@@ -176,6 +176,17 @@ describe('SettingsStore', () => {
     );
   });
 
+  it('req_chat_002_normalizes_the_web_search_default', () => {
+    expect(DEFAULT_APP_SETTINGS.chatWebSearchDefault).toBe(false);
+    expect(
+      normalizeAppSettings({ chatWebSearchDefault: true }).chatWebSearchDefault,
+    ).toBe(true);
+    expect(
+      normalizeAppSettings({ chatWebSearchDefault: 'yes' as never })
+        .chatWebSearchDefault,
+    ).toBe(false);
+  });
+
   it('req_ui_001_normalizes_the_ui_language', () => {
     expect(DEFAULT_APP_SETTINGS.uiLanguage).toBe('ja');
     expect(normalizeAppSettings({ uiLanguage: 'en' }).uiLanguage).toBe('en');

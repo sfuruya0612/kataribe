@@ -28,6 +28,7 @@ import { EnhancementStorage } from './EnhancementStorage';
 import { useI18n } from './i18n';
 import { errorText, formatBytes, type InputDevice } from './recording-utils';
 import { ReuseSettings } from './ReuseSettings';
+import { ChatSearchSetting } from './ChatSearchSetting';
 import { SummaryCleanupSetting } from './SummaryCleanupSetting';
 import { TranscriptionEngineSettings } from './TranscriptionEngineSettings';
 import type { PermissionState } from './use-recorder';
@@ -1587,6 +1588,11 @@ export function SettingsPanel({
             </section>
 
             <SummaryCleanupSetting
+              settings={settings}
+              onUpdateSettings={onUpdateSettings}
+            />
+
+            <ChatSearchSetting
               settings={settings}
               onUpdateSettings={onUpdateSettings}
             />

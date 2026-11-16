@@ -13,6 +13,7 @@ import { enhancedMeetingAudioUrl } from '../../shared/meeting-audio-url';
 import { DEFAULT_MEETING_TITLE } from '../../shared/title';
 import { AudioPlayer } from './AudioPlayer';
 import { EnhancementStatusSummary } from './EnhancementStatusSummary';
+import { MeetingChat } from './MeetingChat';
 import { SavedAudioEnhancementControls } from './SavedAudioEnhancementControls';
 import { StaleTranscriptNotice } from './StaleTranscriptNotice';
 import { SummaryCleanupWarning } from './SummaryCleanupWarning';
@@ -32,7 +33,7 @@ import {
   meetingStatusLabel,
 } from './recording-utils';
 
-type DetailTab = 'transcript' | 'summary';
+type DetailTab = 'transcript' | 'summary' | 'chat';
 
 type MeetingDetailProps = {
   meeting: MeetingSummary | null;
@@ -41,6 +42,7 @@ type MeetingDetailProps = {
   whisperModel: 'large-v3-turbo' | 'medium' | 'small';
   transcriptionEngine: TranscriptionEngine;
   enhanceBeforeTranscription: boolean;
+  chatWebSearchDefault: boolean;
   initialSeekSeconds: number | null;
   onUpdateSettings: (patch: {
     whisperModel?: 'large-v3-turbo' | 'medium' | 'small';
@@ -104,6 +106,7 @@ export function MeetingDetail({
   whisperModel,
   transcriptionEngine,
   enhanceBeforeTranscription,
+  chatWebSearchDefault,
   initialSeekSeconds,
   onUpdateSettings,
   onBack,
@@ -1079,6 +1082,15 @@ export function MeetingDetail({
               >
                 {t('要約')}
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'chat'}
+                aria-pressed={tab === 'chat'}
+                onClick={() => setTab('chat')}
+              >
+                {t('チャット')}
+              </button>
             </div>
             <span className="detail-toolbar-spacer" />
             {tab === 'transcript' &&
@@ -1296,6 +1308,18 @@ export function MeetingDetail({
                 </p>
               </div>
             )
+          ) : tab === 'chat' ? (
+            <MeetingChat
+              meetingId={current.id}
+              hasSummary={Boolean(summary)}
+              hasTranscript={Boolean(transcript)}
+              llmProfiles={llmProfiles}
+              defaultWebSearch={chatWebSearchDefault}
+              contextVersion={`${summary?.updatedAt ?? ''}|${
+                transcript?.updatedAt ?? ''
+              }|${summary?.generatedAt ?? ''}`}
+              onOpenSettings={onOpenSettings}
+            />
           ) : null}
         </section>
 

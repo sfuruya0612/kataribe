@@ -124,6 +124,18 @@
   - 比較セッションは `audio.mp3` から 16 kHz WAV を 1 回だけ作り、生と強調の文字起こしを保存する
   - 再実行は生と強調の両方が成功したときだけ `transcript.md` と比較用を置き換え、失敗時は以前の結果を残す
   - @shoichi.furuya
+- [ADD] 要約後に会議の内容について AI とチャットできるようにする
+  - 要約と、相槌と擬音を除いた `transcript.cleaned.md` をコンテキストにし、チャット履歴を `chat.json` に保存する
+  - 長い文字起こしは質問に関連する行を抜粋し、直近の会話履歴を上限付きで送る
+  - @shoichi.furuya
+- [ADD] 会議チャットで API キー不要の Web 検索を使えるようにする
+  - メッセージごとに有効化し、検索結果の出典を回答と画面に表示する
+  - Brave Search を第一候補、DuckDuckGo を第二候補とし、日本語のクエリでは Bing の RSS を使わない
+  - 設定画面で Web 検索を既定で使うかを選べる
+  - @shoichi.furuya
+- [ADD] 要約生成時に相槌と擬音を除いた本文を `transcript.cleaned.md` として保存する
+  - 文字起こしの編集と再文字起こしで削除し、タイトルと話者名の変更を反映する
+  - @shoichi.furuya
 
 ### CHANGE
 
@@ -172,6 +184,10 @@
 
 ### misc
 
+- [ADD] ADR-0028 を追加し、会議チャットのコンテキスト、履歴、キー不要 Web 検索を記録する
+  - @shoichi.furuya
+- [ADD] issue 0033 の解決方法を記録し、closed に移動する
+  - @shoichi.furuya
 - [ADD] ADR-0019 を追加し、ADR-0017 の配布と DMG の決定を改訂する
   - @shoichi.furuya
 - [ADD] リリースチェックリストと録音回帰テストに録音エラー表示の確認手順を追加する

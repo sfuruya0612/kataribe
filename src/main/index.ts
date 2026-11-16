@@ -27,6 +27,7 @@ import type { SilenceConfig } from '../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  ChatSendRequest,
   InputSource,
   LlmProfilesState,
   MicrophonePermissionStatus,
@@ -57,6 +58,7 @@ import { getUiLanguage, setUiLanguage, t } from './i18n';
 import { LlmClient } from './llm';
 import { LlmProfileManager } from './llm-profiles';
 import { BinaryLocator, MediaEncoder } from './media';
+import { MeetingChatService } from './meeting-chat';
 import { MeetingStore } from './meetings';
 import { parseMeetingAudioUrl } from './meeting-audio';
 import { ModelManager } from './models';
@@ -99,6 +101,7 @@ import {
 import { TranscriptionService } from './transcription';
 import { TranscriptionRunner } from './transcription-runner';
 import { TrayController } from './tray';
+import { WebSearchService } from './web-search';
 
 const isSmokeTest = process.env.KATARIBE_SMOKE_TEST === '1';
 const isWindowTest = process.env.KATARIBE_WINDOW_TEST === '1';
@@ -115,6 +118,7 @@ let isQuitting = false;
 let shutdownInProgress = false;
 let stateTimer: NodeJS.Timeout | null = null;
 let processingCoordinator: ProcessingCoordinator | null = null;
+let meetingChatService: MeetingChatService | null = null;
 let reuseEnhancementService: ReuseEnhancementService | null = null;
 let activeMeetingIndex: MeetingSearchIndex | null = null;
 let meetingIndexRoot = '';
@@ -610,6 +614,7 @@ function registerIpc(
   meetingStore: MeetingStore,
   settingsStore: SettingsStore,
   processing: ProcessingCoordinator,
+  meetingChat: MeetingChatService,
   modelManager: ModelManager,
   diarizationModelManager: DiarizationModelManager,
   reuseModelManager: ReuseModelManager,
@@ -807,6 +812,11 @@ function registerIpc(
   });
 
   ipcMain.handle('meetings:update-title', async (_event, meetingId: string, title: string) => {
+    if (meetingChat.isActive(meetingId)) {
+      throw new Error(
+        t('チャットの実行中はこの操作を行えません。完了してから実行してください。'),
+      );
+    }
     if (processing.isBusy()) {
       throw new Error(t('処理中はタイトルを変更できません。'));
     }
@@ -854,6 +864,11 @@ function registerIpc(
   );
 
   ipcMain.handle('meetings:delete', async (_event, meetingId: string) => {
+    if (meetingChat.isActive(meetingId)) {
+      throw new Error(
+        t('チャットの実行中はこの操作を行えません。完了してから実行してください。'),
+      );
+    }
     const status = stateStore.getStatus();
     if (
       status === 'starting' ||
@@ -1325,8 +1340,47 @@ function registerIpc(
     return processing.generateSummary(meetingId, token);
   });
 
+  ipcMain.handle('chat:load', (_event, meetingId: string) => {
+    return meetingChat.load(meetingId);
+  });
+
+  ipcMain.handle('chat:send', (_event, request: ChatSendRequest) => {
+    return meetingChat.send(request);
+  });
+
+  ipcMain.handle(
+    'chat:prepare',
+    (_event, meetingId: string, profileId?: string) => {
+      return meetingChat.prepare(
+        meetingId,
+        typeof profileId === 'string' && profileId ? profileId : undefined,
+      );
+    },
+  );
+
+  ipcMain.handle('chat:cancel', (_event, meetingId: string) => {
+    return meetingChat.cancel(meetingId);
+  });
+
+  ipcMain.handle('chat:clear', (_event, meetingId: string) => {
+    return meetingChat.clear(meetingId);
+  });
+
   ipcMain.handle('app:copy-text', (_event, text: string) => {
     clipboard.writeText(String(text));
+  });
+
+  ipcMain.handle('app:open-external', async (_event, rawUrl: string) => {
+    let url: URL;
+    try {
+      url = new URL(String(rawUrl));
+    } catch {
+      throw new Error('invalid URL');
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+      throw new Error('unsupported URL scheme');
+    }
+    await shell.openExternal(url.toString());
   });
 
   ipcMain.handle('meetings:list', () => {
@@ -1746,6 +1800,8 @@ if (!app.requestSingleInstanceLock()) {
     trayController = null;
     activeMeetingIndex?.close();
     activeMeetingIndex = null;
+    meetingChatService?.shutdown();
+    meetingChatService = null;
     void reuseEnhancementService?.cancel();
     const coordinator = processingCoordinator;
     processingCoordinator = null;
@@ -1910,6 +1966,15 @@ if (!app.requestSingleInstanceLock()) {
       models: diarizationModelManager,
     });
     const llmClient = new LlmClient({ fetch: electronFetch });
+    const webSearch = new WebSearchService({ fetch: electronFetch });
+    const meetingChat = new MeetingChatService({
+      meetingStore,
+      apiKeyStore,
+      llmClient,
+      settings: () => settingsStore.get(),
+      webSearch,
+    });
+    meetingChatService = meetingChat;
     const multiOutput = new MultiOutputController({ locator });
     const reuseSavedAudio = new ReuseSavedAudioService({
       enhancement: reuseEnhancement,
@@ -2008,6 +2073,7 @@ if (!app.requestSingleInstanceLock()) {
       meetingStore,
       settingsStore,
       processing,
+      meetingChat,
       modelManager,
       diarizationModelManager,
       reuseModelManager,

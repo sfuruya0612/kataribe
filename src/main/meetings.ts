@@ -17,6 +17,11 @@ import {
   validateSpeakerNames,
 } from '../shared/speakers';
 import {
+  CLEANED_TRANSCRIPT_FILE,
+  cleanedTranscriptPath,
+  hashTranscriptBody,
+} from './cleaned-transcript';
+import {
   diarizationCachePath,
   readDiarizationCache,
   writeDiarizationCache,
@@ -825,6 +830,7 @@ export class MeetingStore {
         'transcript.raw.md',
         'transcript.nemotronlabs.md',
         'transcript.previous.md',
+        CLEANED_TRANSCRIPT_FILE,
         'transcript.ja.md',
         'transcript.en.md',
         'summary.md',
@@ -950,6 +956,35 @@ export class MeetingStore {
     }
 
     await writePrivateMarkdown(transcriptPath, renamedTranscript);
+    const cleanedPath = cleanedTranscriptPath(meeting.meetingDir);
+    try {
+      const cleanedMarkdown = await readFile(cleanedPath, 'utf8');
+      const renamedCleaned = renameTranscriptSpeakers(cleanedMarkdown, mapping);
+      const cleanedParsed = parseFrontMatter(renamedCleaned);
+      const sourceBody = parseFrontMatter(renamedTranscript).body.trim();
+      await writePrivateMarkdown(
+        cleanedPath,
+        stringifyFrontMatter(
+          {
+            ...cleanedParsed.frontMatter,
+            source_sha256: hashTranscriptBody(sourceBody),
+          },
+          cleanedParsed.body,
+        ),
+      );
+    } catch (error) {
+      if (
+        !(
+          error instanceof Error &&
+          'code' in error &&
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+        )
+      ) {
+        console.error(
+          `failed to update the cleaned transcript speaker labels: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     if (updatedCache !== null) {
       try {
         await writeDiarizationCache(

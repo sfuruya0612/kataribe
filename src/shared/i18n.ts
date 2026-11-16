@@ -1013,6 +1013,87 @@ export const EN_MESSAGES = {
     'Saved audio enhancement failed: {error}',
   '音声強調を開始できませんでした: {error}':
     'Could not start saved audio enhancement: {error}',
+  'チャット': 'Chat',
+  '会議チャット': 'Meeting chat',
+  '会議チャットで Web 検索を既定で使う':
+    'Use web search by default in meeting chat',
+  '検索語は Brave Search または DuckDuckGo に送信されます。検索結果は回答の参考にだけ使い、元のページはアプリ内で開きません。':
+    'Search queries are sent to Brave Search or DuckDuckGo. Search results are used only as reference, and pages open outside the app.',
+  'API キーは不要です。検索エンジンの仕様変更で使えなくなる場合があります。':
+    'No API key is required. The search may stop working if the search engines change.',
+  '要約を生成すると、要約と文字起こしをもとに会議の内容について質問できます。':
+    'Generate a summary to ask questions about the meeting based on the summary and transcript.',
+  '要約と文字起こしをもとに、会議の内容について質問できます。':
+    'Ask questions about the meeting based on the summary and transcript.',
+  'チャットに使う LLM プロファイル': 'LLM profile for chat',
+  '履歴を消去': 'Clear history',
+  '文字起こし: 相槌と擬音を除去済み':
+    'Transcript: filler words removed',
+  '文字起こし: 一部の区間で相槌と擬音を除去できていません':
+    'Transcript: filler words remain in some sections',
+  '文字起こし: 除去済みの内容が現在の文字起こしと一致しません':
+    'Transcript: the cleaned transcript does not match the current transcript',
+  '文字起こし: 相槌と擬音を除去していません':
+    'Transcript: filler words not removed',
+  '送信するコンテキスト: 要約 {summaryChars} 文字 + 文字起こし {transcriptChars} 文字（約 {tokens} トークン）':
+    'Context to send: summary {summaryChars} characters + transcript {transcriptChars} characters (about {tokens} tokens)',
+  '文字起こしが長いため、質問に関連する箇所を抜粋して送ります。':
+    'The transcript is long, so only the parts relevant to your question are sent.',
+  '相槌と擬音を除去する': 'Remove filler words',
+  '要約または文字起こしが更新されました。次の回答から新しい内容を使います。':
+    'The summary or transcript has changed. The next answer will use the new content.',
+  '相槌と擬音を除去しています...': 'Removing filler words...',
+  'チャット履歴を読み込んでいます。': 'Loading chat history...',
+  '会議の内容について質問できます。': 'Ask questions about this meeting.',
+  '例: 決定事項の背景は？ 反対した人はいる？ 次回までの宿題は？':
+    'Examples: What was the background of the decision? Did anyone object? What are the action items for next time?',
+  '回答を生成しています...': 'Generating an answer...',
+  '会議について質問を入力': 'Ask a question about this meeting',
+  'Web 検索を使う': 'Use web search',
+  'Cmd + Enter で送信': 'Cmd + Enter to send',
+  '送信するのは要約と文字起こしです。Web 検索を有効にすると、検索語も検索エンジンに送信されます。':
+    'Kataribe sends the summary and transcript. When web search is enabled, the search query is also sent to the search engine.',
+  '文字起こしを LLM に送って相槌と擬音を除去し、チャットのコンテキストに使います。':
+    'Send the transcript to the LLM to remove filler words, then use it as chat context.',
+  '文字起こしの文字数': 'Transcript characters',
+  '送信するのは文字起こしの本文だけです。音声ファイルは送信しません。':
+    'Only the transcript text is sent. Audio files are not sent.',
+  '除去する': 'Remove',
+  'チャット履歴を消去': 'Clear chat history',
+  'この会議のチャット履歴を削除します。元に戻せません。要約と文字起こしは削除しません。':
+    'Delete the chat history for this meeting. This cannot be undone. The summary and transcript are not deleted.',
+  '消去': 'Clear',
+  'チャット履歴を消去しました。': 'Cleared the chat history.',
+  'Web 検索の結果を使いました。': 'Used web search results.',
+  'Web 検索結果はありませんでした。': 'No web search results were found.',
+  '出典': 'Sources',
+  'チャット履歴を読み込めませんでした: {error}':
+    'Could not load the chat history: {error}',
+  'Web 検索がタイムアウトしました。': 'Web search timed out.',
+  'Web 検索が検索エンジンにブロックされました。':
+    'Web search was blocked by the search engine.',
+  'Web 検索を利用できませんでした。時間をおいて再試行してください。':
+    'Web search is unavailable. Try again later.',
+  'Web 検索に失敗しました: {error}': 'Web search failed: {error}',
+  'チャットの送信内容が正しくありません。': 'The chat request is invalid.',
+  'メッセージを入力してください。': 'Enter a message.',
+  'メッセージが長すぎます。{count} 文字以内で入力してください。':
+    'The message is too long. Enter at most {count} characters.',
+  '別のチャットが実行中です。完了してから実行してください。':
+    'Another chat is running. Wait for it to finish.',
+  '先に要約を生成してください。': 'Generate a summary first.',
+  'チャットをキャンセルしました。': 'Canceled the chat.',
+  '相槌と擬音の除去に失敗しました。': 'Failed to remove filler words.',
+  '相槌と擬音の除去に失敗しました。元の文字起こしを使います。':
+    'Failed to remove filler words. Using the original transcript.',
+  '相槌と擬音の除去が一部の区間で失敗しました。':
+    'Failed to remove filler words in some sections.',
+  '相槌と擬音の除去をキャンセルしました。':
+    'Canceled filler word removal.',
+  'チャットの実行中は履歴を消去できません。完了してから消去してください。':
+    'The chat history cannot be cleared while a chat is running. Wait for it to finish.',
+  'チャットの実行中はこの操作を行えません。完了してから実行してください。':
+    'This action is not available while a chat is running. Wait for it to finish.',
 } as const;
 
 export type MessageKey = keyof typeof EN_MESSAGES;

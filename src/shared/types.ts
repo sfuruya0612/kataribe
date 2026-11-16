@@ -155,6 +155,84 @@ export type TranscriptTranslation = {
   partial: boolean;
 };
 
+export type CleanedTranscriptState = 'completed' | 'partial' | 'failed';
+
+/**
+ * 要約の前処理で相槌と擬音を除いた文字起こし。
+ * 元の transcript.md の内容が変わったかは sourceHash で判定する。
+ */
+export type CleanedTranscriptDocument = {
+  markdown: string;
+  body: string;
+  sourceHash: string | null;
+  state: CleanedTranscriptState | null;
+  generatedAt: string | null;
+  provider: string | null;
+  model: string | null;
+  updatedAt: string | null;
+};
+
+export type ChatRole = 'user' | 'assistant';
+
+export type ChatSource = {
+  index: number;
+  title: string;
+  url: string;
+  displayUrl: string | null;
+  snippet: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: ChatRole;
+  content: string;
+  createdAt: string;
+  profileId: string | null;
+  model: string | null;
+  webSearch: boolean;
+  sources: ChatSource[];
+  searchError: string | null;
+};
+
+export type ChatTranscriptState = 'ready' | 'partial' | 'missing' | 'stale';
+
+export type ChatContextInfo = {
+  summaryChars: number;
+  transcriptChars: number;
+  usedTranscriptChars: number;
+  estimatedTokens: number;
+  transcriptState: ChatTranscriptState;
+  transcriptSource: 'cleaned' | 'original';
+  excerpted: boolean;
+  summaryUpdatedAt: string | null;
+  transcriptUpdatedAt: string | null;
+  cleanedGeneratedAt: string | null;
+};
+
+export type ChatHistory = {
+  meetingId: string;
+  messages: ChatMessage[];
+  context: ChatContextInfo;
+  lastProfileId: string | null;
+  contextChanged: boolean;
+  warning: string | null;
+};
+
+export type ChatSendRequest = {
+  meetingId: string;
+  message: string;
+  profileId: string | null;
+  webSearch: boolean;
+};
+
+export type ChatSendResult = {
+  history: ChatHistory;
+  userMessage: ChatMessage;
+  assistantMessage: ChatMessage;
+  searchError: string | null;
+  usage: SummaryUsage | null;
+};
+
 export type RecordingErrorInfo = {
   message: string;
   at: string;
@@ -340,6 +418,7 @@ export type AppSettings = {
   summaryLanguage: SummaryLanguage;
   summaryPromptTemplate: string;
   removeFillersBeforeSummary: boolean;
+  chatWebSearchDefault: boolean;
   enhanceSavedAudio: boolean;
   enhanceBeforeTranscription: boolean;
   clippingConfig: ClippingConfig;

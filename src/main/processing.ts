@@ -50,6 +50,7 @@ import {
   type DiarizationCache,
   type DiarizationInputKind,
 } from './diarization-cache';
+import { removeCleanedTranscript, writeCleanedTranscript } from './cleaned-transcript';
 import type { LlmClient } from './llm';
 import { buildLlmProfileStatus } from './llm-profiles';
 import { t } from './i18n';
@@ -870,6 +871,32 @@ export class ProcessingCoordinator {
       if (meeting.meetingDir !== detail.meeting.meetingDir) {
         metaPath = join(meeting.meetingDir, 'meta.json');
       }
+      try {
+        if (
+          preview.cleanupFillers &&
+          generated.cleanup.state !== 'failed' &&
+          generated.cleanup.state !== 'skipped'
+        ) {
+          await writeCleanedTranscript(meeting.meetingDir, {
+            title: meeting.title,
+            startedAt: meeting.startedAt,
+            durationSeconds: meeting.duration,
+            language: detail.transcript.language,
+            sourceBody: body,
+            body: generated.usedTranscriptBody,
+            state: generated.cleanup.state,
+            provider: config.provider,
+            model: config.model,
+            generatedAt: this.now().toISOString(),
+          });
+        } else {
+          await removeCleanedTranscript(meeting.meetingDir);
+        }
+      } catch (error) {
+        console.error(
+          `failed to save the cleaned transcript: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       const summary = await this.meetingStore.readSummary(meeting);
       if (!summary) {
         throw new Error(t('summary.md の読み込みに失敗しました。'));
@@ -1253,6 +1280,11 @@ export class ProcessingCoordinator {
       throw new Error(t('会議が見つかりません。'));
     }
     await writePrivateText(join(meeting.meetingDir, 'transcript.md'), markdown);
+    await removeCleanedTranscript(meeting.meetingDir).catch((error: unknown) => {
+      console.error(
+        `failed to remove the cleaned transcript: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    });
     this.onMeetingUpdated(meetingId);
     const detail = await this.meetingStore.detail(meetingId);
     if (!detail) {
@@ -1987,6 +2019,11 @@ export class ProcessingCoordinator {
     }
     if (primaryMarkdown) {
       await writePrivateText(target('transcript.md'), primaryMarkdown);
+      await removeCleanedTranscript(meeting.meetingDir).catch((error: unknown) => {
+        console.error(
+          `failed to remove the cleaned transcript: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
     }
     if (rerun && bothCompleted) {
       await rename(
@@ -2293,6 +2330,11 @@ export class ProcessingCoordinator {
       message: t('文字起こしをしています'),
       cancellable: true,
       error: null,
+    });
+    await removeCleanedTranscript(meeting.meetingDir).catch((error: unknown) => {
+      console.error(
+        `failed to remove the cleaned transcript: ${error instanceof Error ? error.message : String(error)}`,
+      );
     });
 
     let lastPartialAt = 0;

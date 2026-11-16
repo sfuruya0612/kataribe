@@ -594,6 +594,7 @@ export default function App({
               whisperModel={settings.whisperModel}
               transcriptionEngine={settings.transcriptionEngine}
               enhanceBeforeTranscription={settings.enhanceBeforeTranscription}
+              chatWebSearchDefault={settings.chatWebSearchDefault}
               initialSeekSeconds={detailSeekSeconds}
               onUpdateSettings={(patch) => updateSettings(patch)}
               onBack={() => setView('meetings')}

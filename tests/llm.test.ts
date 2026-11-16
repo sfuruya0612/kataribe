@@ -48,6 +48,52 @@ describe('LlmClient', () => {
     ]);
   });
 
+  it('sends conversation history before the current user message', async () => {
+    let captured: RequestInit | undefined;
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      captured = init;
+      return jsonResponse({ choices: [{ message: { content: 'ok' } }] });
+    });
+    const client = new LlmClient({ fetch: fetchImpl as unknown as typeof fetch });
+    await client.complete({
+      ...baseRequest,
+      history: [
+        { role: 'user', content: 'first question' },
+        { role: 'assistant', content: 'first answer' },
+      ],
+      user: 'second question',
+    });
+    const body = JSON.parse(String(captured?.body));
+    expect(body.messages).toEqual([
+      { role: 'system', content: 'system prompt' },
+      { role: 'user', content: 'first question' },
+      { role: 'assistant', content: 'first answer' },
+      { role: 'user', content: 'second question' },
+    ]);
+  });
+
+  it('sends history in an Anthropic messages request', async () => {
+    let captured: RequestInit | undefined;
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      captured = init;
+      return jsonResponse({ content: [{ type: 'text', text: 'ok' }] });
+    });
+    const client = new LlmClient({ fetch: fetchImpl as unknown as typeof fetch });
+    await client.complete({
+      ...baseRequest,
+      kind: 'anthropic',
+      endpoint: 'https://api.anthropic.com/v1/messages',
+      model: 'claude-test',
+      history: [{ role: 'assistant', content: 'first answer' }],
+      user: 'second question',
+    });
+    const body = JSON.parse(String(captured?.body));
+    expect(body.messages).toEqual([
+      { role: 'assistant', content: 'first answer' },
+      { role: 'user', content: 'second question' },
+    ]);
+  });
+
   it('sends an Anthropic messages request', async () => {
     let captured: RequestInit | undefined;
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {

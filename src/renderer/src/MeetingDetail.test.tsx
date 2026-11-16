@@ -58,6 +58,7 @@ function render(value: MeetingSummary = meeting): string {
         whisperModel: 'large-v3-turbo',
         transcriptionEngine: 'whisper-cpp',
         enhanceBeforeTranscription: false,
+        chatWebSearchDefault: false,
         initialSeekSeconds: null,
         onUpdateSettings: async () => undefined,
         onBack: () => undefined,
@@ -82,6 +83,11 @@ describe('MeetingDetail audio choices', () => {
   it('hides the enhanced audio choice when the summary has no enhanced model', () => {
     const html = render({ ...meeting, enhancedModels: [] });
     expect(html).not.toContain('audio-variant-selector');
+  });
+
+  it('shows the chat tab', () => {
+    const html = render();
+    expect(html).toContain('>チャット</button>');
   });
 
   it('shows the automatic title action for an untitled meeting', () => {

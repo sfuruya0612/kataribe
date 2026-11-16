@@ -21,6 +21,7 @@ const SKIPPED_FILES = new Set([
   'main/summary.ts',
   'main/transcript-cleanup.ts',
   'main/translation.ts',
+  'main/chat-context.ts',
 ]);
 
 const ALLOWED_CONTENT = new Set(['タイトル未入力', '取り込んだ音声']);

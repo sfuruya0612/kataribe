@@ -10,6 +10,9 @@ import type { SilenceConfig } from '../../shared/silence';
 import type {
   AppInfo,
   AppSettings,
+  ChatHistory,
+  ChatSendRequest,
+  ChatSendResult,
   DiarizationModelProgress,
   DiarizationModelStatus,
   EnhancementFile,
@@ -160,6 +163,14 @@ declare global {
         meetingId: string,
         token: string,
       ) => Promise<GenerateSummaryResult>;
+      getChatHistory: (meetingId: string) => Promise<ChatHistory>;
+      sendChatMessage: (request: ChatSendRequest) => Promise<ChatSendResult>;
+      prepareChatContext: (
+        meetingId: string,
+        profileId?: string,
+      ) => Promise<ChatHistory>;
+      cancelChat: (meetingId: string) => Promise<boolean>;
+      clearChatHistory: (meetingId: string) => Promise<ChatHistory>;
       previewTranslation: (
         meetingId: string,
         targetLanguage: SummaryLanguage,
@@ -245,6 +256,7 @@ declare global {
       downloadDiarizationModels: () => Promise<DiarizationModelStatus>;
       cancelDiarizationModelDownload: () => Promise<DiarizationModelStatus>;
       copyText: (text: string) => Promise<void>;
+      openExternal: (url: string) => Promise<void>;
       onProcessingState: (
         listener: (state: ProcessingState) => void,
       ) => () => void;

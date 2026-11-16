@@ -71,6 +71,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   summaryLanguage: 'ja',
   summaryPromptTemplate: '',
   removeFillersBeforeSummary: true,
+  chatWebSearchDefault: false,
   enhanceSavedAudio: false,
   enhanceBeforeTranscription: false,
   clippingConfig: { ...DEFAULT_CLIPPING_CONFIG },
@@ -197,6 +198,10 @@ export function normalizeAppSettings(
     typeof input?.removeFillersBeforeSummary === 'boolean'
       ? input.removeFillersBeforeSummary
       : DEFAULT_APP_SETTINGS.removeFillersBeforeSummary;
+  const chatWebSearchDefault =
+    typeof input?.chatWebSearchDefault === 'boolean'
+      ? input.chatWebSearchDefault
+      : DEFAULT_APP_SETTINGS.chatWebSearchDefault;
   const enhanceSavedAudio =
     typeof input?.enhanceSavedAudio === 'boolean'
       ? input.enhanceSavedAudio
@@ -225,6 +230,7 @@ export function normalizeAppSettings(
     summaryLanguage,
     summaryPromptTemplate,
     removeFillersBeforeSummary,
+    chatWebSearchDefault,
     enhanceSavedAudio,
     enhanceBeforeTranscription,
     clippingConfig: normalizeClippingConfig(

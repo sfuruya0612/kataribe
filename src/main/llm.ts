@@ -22,6 +22,11 @@ export class LlmError extends Error {
   }
 }
 
+export type LlmConversationMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 export type ChatCompletionRequest = {
   kind: 'openai' | 'anthropic';
   endpoint: string;
@@ -29,6 +34,7 @@ export type ChatCompletionRequest = {
   model: string;
   system: string;
   user: string;
+  history?: LlmConversationMessage[];
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
@@ -210,20 +216,32 @@ export class LlmClient {
     timeout.unref?.();
 
     try {
+      const history = (request.history ?? [])
+        .filter(
+          (message) =>
+            (message.role === 'user' || message.role === 'assistant') &&
+            typeof message.content === 'string' &&
+            message.content.length > 0,
+        )
+        .map((message) => ({
+          role: message.role,
+          content: message.content,
+        }));
+      const messages = [...history, { role: 'user', content: request.user }];
       const body =
         request.kind === 'anthropic'
           ? {
               model: request.model,
               max_tokens: request.maxTokens ?? 4096,
               system: request.system,
-              messages: [{ role: 'user', content: request.user }],
+              messages,
               temperature: request.temperature ?? 0.2,
             }
           : {
               model: request.model,
               messages: [
                 { role: 'system', content: request.system },
-                { role: 'user', content: request.user },
+                ...messages,
               ],
               ...(request.temperature !== undefined
                 ? { temperature: request.temperature }
