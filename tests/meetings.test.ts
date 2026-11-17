@@ -495,6 +495,36 @@ describe('MeetingStore', () => {
     await expect(readFile(join(meetingDir, 'meta.json'), 'utf8')).rejects.toThrow();
   });
 
+  it('prefixes the meeting date when the folder has no date', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-00000000000f';
+    const meetingDir = await createMeeting(root, id, {
+      started_at: '2026-10-29T12:00:00',
+    });
+    const dateLessDir = join(root, '2026', '週次定例');
+    await rename(meetingDir, dateLessDir);
+
+    const updated = await store.updateTitle(id, '新しい定例');
+
+    expect(updated.title).toBe('新しい定例');
+    expect(updated.meetingDir).toBe(
+      join(root, '2026', '2026-10-29_新しい定例'),
+    );
+  });
+
+  it('does not duplicate the date when the title already has one', async () => {
+    const { root, store } = await createStore();
+    const id = '00000000-0000-4000-8000-00000000000e';
+    await createMeeting(root, id, { started_at: '2026-10-29T12:00:00' });
+
+    const updated = await store.updateTitle(id, '2026-10-29_新しい定例');
+
+    expect(updated.title).toBe('2026-10-29_新しい定例');
+    expect(updated.meetingDir).toBe(
+      join(root, '2026', '2026-10-29_新しい定例'),
+    );
+  });
+
   it('renames an older timed folder to the date and title format', async () => {
     const { root, store } = await createStore();
     const id = '00000000-0000-4000-8000-000000000010';

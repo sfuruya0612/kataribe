@@ -1272,9 +1272,50 @@ ul {
 
 .detail-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns:
+    minmax(0, 1fr) 6px
+    var(--summary-pane-width, 280px);
   flex: 1;
   min-height: 0;
+}
+
+.detail-resizer {
+  position: relative;
+  width: 6px;
+  border: 0;
+  background: transparent;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.detail-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--line-soft);
+  transition:
+    background 120ms ease,
+    width 120ms ease;
+}
+
+.detail-resizer:hover::after,
+.detail-resizer:focus-visible::after,
+body.is-resizing-detail .detail-resizer::after {
+  left: 2px;
+  width: 2px;
+  background: var(--accent);
+}
+
+.detail-resizer:focus-visible {
+  outline: none;
+}
+
+body.is-resizing-detail {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .detail-empty {
@@ -1291,7 +1332,6 @@ ul {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-right: 1px solid var(--line-soft);
 }
 
 .transcript-bar {
@@ -1819,12 +1859,12 @@ ul {
     grid-template-columns: 1fr;
   }
 
-  .summary-pane {
-    border-top: 1px solid var(--line-soft);
+  .detail-resizer {
+    display: none;
   }
 
-  .transcript-pane {
-    border-right: 0;
+  .summary-pane {
+    border-top: 1px solid var(--line-soft);
   }
 
   .settings-grid-3 {

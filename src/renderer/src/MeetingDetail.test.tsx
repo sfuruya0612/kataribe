@@ -90,6 +90,14 @@ describe('MeetingDetail audio choices', () => {
     expect(html).toContain('>チャット</button>');
   });
 
+  it('shows the summary pane resizer with the default width', () => {
+    const html = render();
+    expect(html).toContain('detail-resizer');
+    expect(html).toContain('--summary-pane-width:280px');
+    expect(html).toContain('aria-valuenow="280"');
+    expect(html).toContain('要約の幅を変更');
+  });
+
   it('shows the automatic title action for an untitled meeting', () => {
     const html = render({ ...meeting, title: DEFAULT_MEETING_TITLE });
     expect(html).toContain('タイトルを自動生成');

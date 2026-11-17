@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { sanitizeMeetingTitle } from '../src/shared/title';
+import {
+  addMeetingDatePrefix,
+  formatMeetingDatePrefix,
+  sanitizeMeetingTitle,
+  splitMeetingDatePrefix,
+} from '../src/shared/title';
 
 describe('sanitizeMeetingTitle', () => {
   it('keeps Japanese titles and normalizes spaces', () => {
@@ -27,5 +32,39 @@ describe('sanitizeMeetingTitle', () => {
 
   it('uses the fallback for an empty title', () => {
     expect(sanitizeMeetingTitle('   ')).toBe('タイトル未入力');
+  });
+});
+
+describe('meeting date prefix', () => {
+  it('formats the meeting start date as YYYY-MM-DD in local time', () => {
+    expect(formatMeetingDatePrefix('2026-10-29T12:00:00')).toBe('2026-10-29');
+    expect(formatMeetingDatePrefix('invalid')).toBeNull();
+  });
+
+  it('splits a leading date with an underscore, hyphen, or space', () => {
+    expect(splitMeetingDatePrefix('2026-10-29_週次定例')).toEqual({
+      date: '2026-10-29',
+      title: '週次定例',
+    });
+    expect(splitMeetingDatePrefix('2026-10-29-週次定例')).toEqual({
+      date: '2026-10-29',
+      title: '週次定例',
+    });
+    expect(splitMeetingDatePrefix('2026-10-29 週次定例')).toEqual({
+      date: '2026-10-29',
+      title: '週次定例',
+    });
+    expect(splitMeetingDatePrefix('2026-10-29')).toBeNull();
+    expect(splitMeetingDatePrefix('週次定例')).toBeNull();
+  });
+
+  it('adds the meeting date and replaces a different date in the title', () => {
+    expect(addMeetingDatePrefix('週次定例', '2026-10-29T12:00:00')).toBe(
+      '2026-10-29_週次定例',
+    );
+    expect(
+      addMeetingDatePrefix('2026-10-28_週次定例', '2026-10-29T12:00:00'),
+    ).toBe('2026-10-29_週次定例');
+    expect(addMeetingDatePrefix('週次定例', 'invalid')).toBe('週次定例');
   });
 });

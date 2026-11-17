@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react';
+import type {
   LlmProfilesState,
   MeetingDetail as MeetingDetailData,
   MeetingSummary,
@@ -32,6 +37,15 @@ import {
   meetingStatusClass,
   meetingStatusLabel,
 } from './recording-utils';
+import {
+  DEFAULT_SUMMARY_PANE_WIDTH,
+  MAX_SUMMARY_PANE_WIDTH,
+  MIN_SUMMARY_PANE_WIDTH,
+  SUMMARY_PANE_WIDTH_STEP,
+  clampSummaryPaneWidth,
+  readStoredSummaryPaneWidth,
+  storeSummaryPaneWidth,
+} from './summary-pane-width';
 
 type DetailTab = 'transcript' | 'summary' | 'chat';
 
@@ -149,14 +163,125 @@ export function MeetingDetail({
   const [speakerDraft, setSpeakerDraft] = useState<string[]>([]);
   const [speakerSaving, setSpeakerSaving] = useState(false);
   const [speakerError, setSpeakerError] = useState<string | null>(null);
+  const [summaryPaneWidth, setSummaryPaneWidth] = useState(
+    readStoredSummaryPaneWidth,
+  );
   const previewRef = useRef<SummaryPreview | null>(null);
   const translationPreviewRef = useRef<TranslationPreview | null>(null);
   const savedAudioWasRunning = useRef(false);
+  const detailBodyRef = useRef<HTMLDivElement | null>(null);
+  const summaryPaneWidthRef = useRef(summaryPaneWidth);
+  const summaryResizeCleanupRef = useRef<(() => void) | null>(null);
 
   previewRef.current = preview;
   translationPreviewRef.current = translationPreview;
+  summaryPaneWidthRef.current = summaryPaneWidth;
 
   const meetingId = meeting?.id ?? null;
+
+  const applySummaryPaneWidth = useCallback((width: number): number => {
+    const containerWidth =
+      detailBodyRef.current?.getBoundingClientRect().width ?? 1200;
+    const next = clampSummaryPaneWidth(width, containerWidth);
+    setSummaryPaneWidth(next);
+    summaryPaneWidthRef.current = next;
+    return next;
+  }, []);
+
+  const persistSummaryPaneWidth = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      storeSummaryPaneWidth(
+        window.localStorage,
+        summaryPaneWidthRef.current,
+      );
+    } catch {
+      // localStorage にアクセスできない場合は保存しない。
+    }
+  }, []);
+
+  const resetSummaryPaneWidth = useCallback(() => {
+    applySummaryPaneWidth(DEFAULT_SUMMARY_PANE_WIDTH);
+    persistSummaryPaneWidth();
+  }, [applySummaryPaneWidth, persistSummaryPaneWidth]);
+
+  const startSummaryResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = summaryPaneWidthRef.current;
+    document.body.classList.add('is-resizing-detail');
+    const move = (moveEvent: PointerEvent) => {
+      applySummaryPaneWidth(startWidth + (startX - moveEvent.clientX));
+    };
+    const end = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      window.removeEventListener('pointercancel', end);
+      window.removeEventListener('blur', end);
+      document.body.classList.remove('is-resizing-detail');
+      summaryResizeCleanupRef.current = null;
+      persistSummaryPaneWidth();
+    };
+    summaryResizeCleanupRef.current = end;
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    window.addEventListener('blur', end);
+  };
+
+  const handleSummaryResizeKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      applySummaryPaneWidth(
+        summaryPaneWidthRef.current + SUMMARY_PANE_WIDTH_STEP,
+      );
+      persistSummaryPaneWidth();
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      applySummaryPaneWidth(
+        summaryPaneWidthRef.current - SUMMARY_PANE_WIDTH_STEP,
+      );
+      persistSummaryPaneWidth();
+    } else if (event.key === 'Home') {
+      event.preventDefault();
+      resetSummaryPaneWidth();
+    }
+  };
+
+  useEffect(() => {
+    const onResize = () => {
+      const containerWidth =
+        detailBodyRef.current?.getBoundingClientRect().width;
+      if (!containerWidth) {
+        return;
+      }
+      const next = clampSummaryPaneWidth(
+        summaryPaneWidthRef.current,
+        containerWidth,
+      );
+      if (next !== summaryPaneWidthRef.current) {
+        summaryPaneWidthRef.current = next;
+        setSummaryPaneWidth(next);
+      }
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      summaryResizeCleanupRef.current?.();
+      document.body.classList.remove('is-resizing-detail');
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!meetingId) {
@@ -1060,7 +1185,15 @@ export function MeetingDetail({
         translationStale={staleTranslation}
       />
 
-      <div className="detail-body">
+      <div
+        className="detail-body"
+        ref={detailBodyRef}
+        style={
+          {
+            '--summary-pane-width': `${summaryPaneWidth}px`,
+          } as CSSProperties
+        }
+      >
         <section className="transcript-pane" aria-labelledby="transcript-title">
           <div className="transcript-bar">
             <div className="seg" role="tablist" aria-label={t('会議の表示')}>
@@ -1322,6 +1455,21 @@ export function MeetingDetail({
             />
           ) : null}
         </section>
+
+        <div
+          className="detail-resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t('要約の幅を変更')}
+          aria-valuemin={MIN_SUMMARY_PANE_WIDTH}
+          aria-valuemax={MAX_SUMMARY_PANE_WIDTH}
+          aria-valuenow={summaryPaneWidth}
+          tabIndex={0}
+          title={t('ドラッグして要約の幅を変更')}
+          onPointerDown={startSummaryResize}
+          onDoubleClick={resetSummaryPaneWidth}
+          onKeyDown={handleSummaryResizeKeyDown}
+        />
 
         <aside className="summary-pane" aria-labelledby="summary-title">
           <div className="summary-head">

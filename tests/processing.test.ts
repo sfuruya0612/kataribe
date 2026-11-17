@@ -349,7 +349,7 @@ describe('ProcessingCoordinator summary flow', () => {
     });
     const preview = await coordinator.createSummaryPreview(meetingId);
     const result = await coordinator.generateSummary(meetingId, preview.token);
-    expect(result.meeting.title).toBe('リリース計画の定例');
+    expect(result.meeting.title).toBe('2026-10-31_リリース計画の定例');
     expect(result.meeting.meetingDir).not.toBe(meetingDir);
     expect(complete).toHaveBeenCalledTimes(2);
     expect(complete.mock.calls[1]?.[0]).toMatchObject({
@@ -449,7 +449,7 @@ describe('ProcessingCoordinator title generation', () => {
 
     const updated = await coordinator.generateTitle(meetingId);
 
-    expect(updated.title).toBe('リリース計画の定例');
+    expect(updated.title).toBe('2026-10-31_リリース計画の定例');
     expect(updated.meetingDir).not.toBe(meetingDir);
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete.mock.calls[0]?.[0]).toMatchObject({

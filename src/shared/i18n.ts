@@ -1013,6 +1013,8 @@ export const EN_MESSAGES = {
     'Saved audio enhancement failed: {error}',
   '音声強調を開始できませんでした: {error}':
     'Could not start saved audio enhancement: {error}',
+  '要約の幅を変更': 'Resize summary',
+  'ドラッグして要約の幅を変更': 'Drag to resize the summary',
   'チャット': 'Chat',
   '会議チャット': 'Meeting chat',
   '会議チャットで Web 検索を既定で使う':

@@ -271,7 +271,9 @@ OpenAI のモデルは `whisper-1` を既定とし、`gpt-4o-transcribe` と `gp
 会議一覧上部の検索欄から、タイトル、文字起こし、翻訳、要約を横断検索できます。検索結果にタイムスタンプがある場合は、音声プレイヤーの該当位置から再生できます。
 会議詳細のタイトル横の「タイトルを編集」からタイトルを変更できます。タイトルを変更すると会議フォルダ名と Markdown の front matter も更新します。
 タイトルが未入力の会議は、要約生成時に LLM が内容からタイトルを付けます。
+自動タイトルには会議の開始日 `YYYY-MM-DD_` が付きます。LLM がタイトルに日付を含めている場合は会議の開始日に置き換え、フォルダ名で日付を重複させません。
 タイトル生成に失敗した場合は、会議詳細に理由と再試行ボタンが表示されます。
+会議詳細の要約ペインの幅は、左右の境界をドラッグして変更できます。幅は次回起動時にも復元されます。境界をダブルクリックすると既定の幅に戻ります。
 会議詳細の要約ペインから、その会議だけの要約言語を日本語 / English に上書きできます。
 サイドバーの「ToDo 一覧」から、全会議の要約にある ToDo を会議名と日付付きで確認できます。未完了、完了、すべてを切り替えられ、チェックを切り替えると各会議の `summary.md` のチェックボックスに保存されます。会議名から会議詳細を開けます。
 既存の要約がある会議で要約を再生成すると、送信確認ダイアログに、既存の要約を上書きすることと、ToDo の完了状態を引き継がないことを表示します。
@@ -439,7 +441,7 @@ OpenAI の文字起こし API を選んだ場合だけ、送信のたびに確�
 
 Issue は番号の小さい順に進めます。
 アプリ基盤の [issue 0009](docs/issues/closed/0009-feat-electron-app-foundation.md)、録音中核の [issue 0010](docs/issues/closed/0010-feat-recording-core.md)、メニューバーと画面の土台の [issue 0011](docs/issues/closed/0011-feat-app-shell-and-recording-ui.md)、デバイス消失と権限拒否の [issue 0012](docs/issues/closed/0012-feat-device-loss-and-permission-handling.md)、BlackHole 2ch の検出の [issue 0001](docs/issues/closed/0001-feat-blackhole-device-detection.md)、マイクのクリッピング警告の [issue 0004](docs/issues/closed/0004-feat-microphone-clipping-warning.md)、システム音声の無音検出の [issue 0002](docs/issues/closed/0002-feat-system-audio-silence-detection.md)、スリープ復帰の [issue 0003](docs/issues/closed/0003-feat-sleep-recovery.md)、回帰テストの [issue 0006](docs/issues/closed/0006-test-m0-regression-harness.md)、BlackHole のサポート資料の [issue 0007](docs/issues/closed/0007-docs-blackhole-license-and-support.md)、Multi-Output Device の自動作成の [issue 0008](docs/issues/closed/0008-feat-multi-output-device-auto-creation.md) は実装済みです。
-要約後の会議チャットの [issue 0033](docs/issues/closed/0033-feature-meeting-chat.md) も実装済みです。
+要約後の会議チャットの [issue 0033](docs/issues/closed/0033-feature-meeting-chat.md)、会議詳細の要約ペインの幅変更の [issue 0034](docs/issues/closed/0034-feature-resize-summary-pane.md)、自動タイトルの日付接頭辞の [issue 0035](docs/issues/closed/0035-bug-generated-title-missing-date-prefix.md) も実装済みです。
 署名と公証を行わないため、[issue 0013](docs/issues/closed/0013-feat-release-checklist-and-entitlements.md) の Developer ID による署名、公証、Gatekeeper の警告なしの起動確認は対象外にしました。
 保留中の issue はありません。
 

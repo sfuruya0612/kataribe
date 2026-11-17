@@ -8,7 +8,12 @@ import {
   stringifyFrontMatter,
   type FrontMatterValue,
 } from '../shared/markdown';
-import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
+import {
+  DEFAULT_MEETING_TITLE,
+  formatMeetingDatePrefix,
+  sanitizeMeetingTitle,
+  splitMeetingDatePrefix,
+} from '../shared/title';
 import { meetingAudioUrl } from '../shared/meeting-audio-url';
 import {
   extractTranscriptSpeakers,
@@ -794,14 +799,20 @@ export class MeetingStore {
     if (!meeting) {
       throw new Error(t('会議が見つかりません。'));
     }
-    const title = sanitizeMeetingTitle(rawTitle);
+    const sanitized = sanitizeMeetingTitle(rawTitle);
     const parent = dirname(meeting.meetingDir);
     const currentName = basename(meeting.meetingDir);
-    const dateMatch = currentName.match(
-      /^(\d{4}-\d{2}-\d{2})(?:_\d{4})?_.+/u,
-    );
-    const datePrefix = dateMatch?.[1] ?? currentName.replace(/_.*$/u, '');
-    const baseName = `${datePrefix}_${title}`;
+    const folderDate =
+      currentName.match(/^(\d{4}-\d{2}-\d{2})(?:_|$)/u)?.[1] ?? null;
+    const meetingDate = formatMeetingDatePrefix(meeting.startedAt);
+    const datePrefix = folderDate ?? meetingDate ?? '';
+    const split = splitMeetingDatePrefix(sanitized);
+    const title = split ? `${split.date}_${split.title}` : sanitized;
+    const baseName = split
+      ? `${split.date}_${split.title}`
+      : datePrefix
+        ? `${datePrefix}_${sanitized}`
+        : sanitized;
 
     let targetDir = join(parent, baseName);
     let index = 2;

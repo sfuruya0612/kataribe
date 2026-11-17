@@ -288,8 +288,8 @@ export async function generateMeetingTitle(
     model: options.model,
     system:
       options.language === 'ja'
-        ? '会議の文字起こしから、会議の内容を表す短いタイトルを 1 つ作ってください。30 文字以内の日本語にし、引用符、句読点の飾り、説明、前置きは出力しないでください。'
-        : 'Create one short title (up to 60 characters) that describes the meeting from the transcript. Output only the title, without quotes, explanations, or punctuation decoration.',
+        ? '会議の文字起こしから、会議の内容を表す短いタイトルを 1 つ作ってください。30 文字以内の日本語にし、日付や時刻を含めず、引用符、句読点の飾り、説明、前置きは出力しないでください。'
+        : 'Create one short title (up to 60 characters) that describes the meeting from the transcript. Do not include dates or times. Output only the title, without quotes, explanations, or punctuation decoration.',
     user: [
       '--- TRANSCRIPT START ---',
       excerpt,

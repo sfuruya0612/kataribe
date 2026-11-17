@@ -2,7 +2,11 @@
  * 会議タイトルを生成し、結果と失敗理由を meta.json に残す。
  */
 import { join } from 'node:path';
-import { DEFAULT_MEETING_TITLE, sanitizeMeetingTitle } from '../shared/title';
+import {
+  addMeetingDatePrefix,
+  DEFAULT_MEETING_TITLE,
+  sanitizeMeetingTitle,
+} from '../shared/title';
 import type { MeetingSummary, SummaryLanguage } from '../shared/types';
 import { t } from './i18n';
 import type { LlmClient } from './llm';
@@ -108,10 +112,14 @@ export async function generateAndSaveMeetingTitle(
     if (options.signal?.aborted) {
       throw new Error('title generation was cancelled');
     }
-    const title = sanitizeMeetingTitle(generated.title);
-    if (title === DEFAULT_MEETING_TITLE) {
+    const generatedTitle = sanitizeMeetingTitle(generated.title);
+    if (generatedTitle === DEFAULT_MEETING_TITLE) {
       throw new Error(t('生成されたタイトルが空です。'));
     }
+    const title = addMeetingDatePrefix(
+      generatedTitle,
+      options.meeting.startedAt,
+    );
     return await options.meetingStore.updateTitle(
       options.meeting.id,
       title,

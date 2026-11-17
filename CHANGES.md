@@ -136,6 +136,9 @@
 - [ADD] 要約生成時に相槌と擬音を除いた本文を `transcript.cleaned.md` として保存する
   - 文字起こしの編集と再文字起こしで削除し、タイトルと話者名の変更を反映する
   - @shoichi.furuya
+- [ADD] 会議詳細の要約ペインの幅をドラッグ、矢印キー、ダブルクリックで変更し、次回起動時に復元する
+  - 左右のペインの境界を 6px のドラッグ領域にし、要約ペインの幅を 240px 以上、文字起こし側を 420px 以上に保つ
+  - @shoichi.furuya
 
 ### CHANGE
 
@@ -153,6 +156,9 @@
 
 ### FIX
 
+- [FIX] 要約後の自動タイトルに会議の開始日 `YYYY-MM-DD` の接頭辞を付け、日付のない会議フォルダも開始日で改名する
+  - LLM がタイトルに日付を含めている場合は会議の開始日に置き換え、フォルダ名で日付を重複させない
+  - @shoichi.furuya
 - [FIX] 設定画面を開き直したときに LLM の設定が既定に戻る問題を修正する
   - @shoichi.furuya
 - [FIX] 録音停止時に最終チャンクと停止通知が重複する問題を修正する
@@ -187,6 +193,10 @@
 - [ADD] ADR-0028 を追加し、会議チャットのコンテキスト、履歴、キー不要 Web 検索を記録する
   - @shoichi.furuya
 - [ADD] issue 0033 の解決方法を記録し、closed に移動する
+  - @shoichi.furuya
+- [ADD] issue 0034 の解決方法を記録し、closed に移動する
+  - @shoichi.furuya
+- [ADD] issue 0035 の解決方法を記録し、closed に移動する
   - @shoichi.furuya
 - [ADD] ADR-0019 を追加し、ADR-0017 の配布と DMG の決定を改訂する
   - @shoichi.furuya
