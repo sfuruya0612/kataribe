@@ -1,6 +1,6 @@
 {
   "name": "kataribe",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "会議音声の録音、文字起こし、要約を行う macOS アプリ",
   "main": "./out/main/index.js",
   "author": "Shoichi Furuya",
