@@ -5,6 +5,9 @@ directories:
   buildResources: build
 files:
   - out/**
+electronLanguages:
+  - en
+  - ja
 extraResources:
   - from: README.md
     to: README.md
