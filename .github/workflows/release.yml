@@ -151,8 +151,9 @@ jobs:
           set -euo pipefail
           notes="$(printf '%s\n' \
             '> [!WARNING]' \
-            '> この DMG は署名と公証を行っていない開発版です。macOS の Gatekeeper によって起動がブロックされる場合があります。' \
+            '> この DMG は Apple の Developer ID 署名と公証を行っていない開発版です。アプリは ad-hoc 署名されていますが、macOS の Gatekeeper によって起動がブロックされる場合があります。' \
             '> Applications にコピーしたアプリを Finder で右クリックして「開く」を選ぶか、システム設定の「プライバシーとセキュリティ」から許可してください。' \
+            '> 「壊れているため開けません」と表示された場合は、ターミナルで `xattr -cr /Applications/Kataribe.app` を実行してから開き直してください。' \
             '> 動作環境: macOS 14.2 以降、Apple Silicon（arm64）' \
             '> 同じ Release に添付した SHA-256 ファイルで DMG を検証できます。')"
           if gh release view "$TAG" >/dev/null 2>&1; then

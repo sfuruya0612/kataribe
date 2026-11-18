@@ -24,7 +24,7 @@ mp3 のビットレート設定、会議ごとの要約言語、検索結果か�
 UI の表示言語は日本語と英語から選べます。
 全会議の ToDo 一覧と、要約の再生成前の警告にも対応しています。
 要約後の会議チャット、相槌と擬音を除いた文字起こしの保存、API キー不要の Web 検索にも対応しています。
-GitHub Releases で署名なしの開発版 DMG（arm64）を配布しています。署名と公証は行いません。
+GitHub Releases で Developer ID 署名と公証なしの開発版 DMG（arm64）を配布しています。アプリは ad-hoc 署名します。
 この README の初期セットアップ手順は、録音機能を使う利用者向けです。
 
 ## ドキュメント
@@ -45,7 +45,7 @@ GitHub Releases で署名なしの開発版 DMG（arm64）を配布していま�
 - [ADR-0014: DMG 配布と署名、公証（ADR-0017 で置き換え）](docs/adr/0014-distribution-dmg-notarization.md)
 - [ADR-0017: 配布は行わず、ローカルビルドのみを使う（ADR-0019 で改訂）](docs/adr/0017-local-build-only.md)
 - [ADR-0018: Multi-Output Device は利用者の明示操作で自動作成する](docs/adr/0018-multi-output-auto-creation.md)
-- [ADR-0019: タグ作成時に署名なしの開発版 DMG を GitHub Releases で配布する](docs/adr/0019-unsigned-dmg-releases.md)
+- [ADR-0019: タグ作成時に Developer ID 署名と公証なしの開発版 DMG を GitHub Releases で配布する](docs/adr/0019-unsigned-dmg-releases.md)
 - [ADR-0028: 会議チャットは要約とクリーニング済み文字起こしをコンテキストにし、Web 検索はキー不要の簡易検索を使う](docs/adr/0028-meeting-chat-and-key-free-web-search.md)
 
 ## 動作環境
@@ -149,7 +149,8 @@ Bluetooth 出力には遅延があります。
 
 [GitHub Releases](https://github.com/sfuruya0612/kataribe/releases) に署名なしの開発版 DMG（arm64）を置いています。
 DMG は `v<package.json のバージョン>` タグを push すると自動作成されます。
-署名と公証を行っていないため、macOS の Gatekeeper によって起動をブロックされる場合があります。
+Developer ID 署名と公証を行っていないため、macOS の Gatekeeper によって起動をブロックされる場合があります。
+アプリは ad-hoc 署名されていますが、初回起動時の警告は残ります。
 その場合は Applications にコピーしたアプリを Finder で右クリックして「開く」を選ぶか、システム設定の「プライバシーとセキュリティ」から許可してください。
 動作環境は macOS 14.2 以降の Apple Silicon（arm64）です。
 DMG と一緒に添付している `.sha256` ファイルで、ダウンロードした DMG が正しく取得できたか確認できます。
@@ -211,7 +212,7 @@ npm run verify:mac
 `npm run package` は署名なしの `release/mac-arm64/Kataribe.app` を作る。
 `npm run verify:mac` は、`Info.plist`、entitlement、同梱物、アプリサイズを検査する。
 `npm run test:window` は、メインウィンドウを閉じてもアプリが終了せず、ウィンドウが非表示になることを確認する。
-署名と公証は行いません（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。
+Developer ID 署名と公証は行いません。アプリは ad-hoc 署名します（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。
 
 起動するとメニューバーにマイクのアイコンが表示されます。
 
@@ -469,6 +470,6 @@ git push origin v0.1.0
 
 タグを push すると、テスト、DMG の作成、GitHub Release の作成が順に実行されます。
 タグ名が `package.json` のバージョン（`v0.1.0`）と一致しない場合、`Release` ワークフローは GitHub Release を作成せずに失敗します。
-Release の本文は GitHub が前回のタグからのコミットと Pull Request から自動生成し、署名と公証を行っていない旨の注意を先頭に追加します。
+Release の本文は GitHub が前回のタグからのコミットと Pull Request から自動生成し、Developer ID 署名と公証を行っていない旨の注意を先頭に追加します。
 `Release` ワークフローは `Kataribe-<version>-arm64.dmg` と SHA-256 チェックサムを添付します。
-DMG は署名も公証も行わない開発版です（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。
+DMG は Developer ID 署名と公証を行わない開発版です。アプリは ad-hoc 署名します（[ADR-0019](docs/adr/0019-unsigned-dmg-releases.md)）。

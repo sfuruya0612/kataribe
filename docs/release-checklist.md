@@ -22,11 +22,15 @@ Developer ID による署名、公証、Gatekeeper の警告なしの起動確�
 - [ ] `npm run dist` で DMG が作られる
 - [ ] `npm run test:window` が成功する
 - [ ] `npm run verify:mac` が成功する
+- [ ] アプリバンドルが ad-hoc 署名され、`codesign --verify --deep --strict` が成功する
+- [ ] DMG 内のアプリも ad-hoc 署名され、`codesign --verify --deep --strict` が成功する
 - [ ] 署名済みビルドで `npm run verify:mac:release` が成功する
 - [ ] アプリのバージョンとビルド番号が正しい
 - [ ] `meta.json` と About 画面のバージョンが一致する
 
 ## 署名と公証
+
+Developer ID 署名と公証は対象外です。ad-hoc 署名はビルドの検査で確認します。
 
 - [ ] Apple Developer ID Application の証明書で署名されている
 - [ ] hardened runtime が有効になっている

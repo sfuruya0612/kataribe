@@ -1,8 +1,11 @@
-# ADR-0019: タグ作成時に署名なしの開発版 DMG を GitHub Releases で配布する
+# ADR-0019: タグ作成時に Developer ID 署名と公証なしの開発版 DMG を GitHub Releases で配布する
 
 Created: 2026-10-31
 Model: DeepSeek V4.1 Flash 1017
 Status: Accepted
+
+2026-11-18: アプリバンドルのコード署名が壊れて Gatekeeper が「壊れている」と判定する問題を修正するため、ad-hoc 署名を行うように決定を改訂した。
+Developer ID による署名と公証は引き続き行わない。
 
 ## 背景
 
@@ -19,19 +22,23 @@ Apple Developer Program の資格情報は用意せず、署名と公証は引�
 - DMG は `electron-builder` の `npm run dist` で作り、`npm run verify:mac` と `hdiutil verify` で検査する。
   DMG をマウントし、含まれるアプリも `npm run verify:mac` で検査する。
 - 検査に成功した場合だけ GitHub Release を作成し、DMG と SHA-256 チェックサムを添付する。
-- DMG は署名も公証も行わない。
+- DMG は Developer ID で署名せず、公証も行わない。
   Gatekeeper の警告なしに起動できることは保証しない。
-- リリースノートに、署名と公証を行っていないこと、対象が macOS 14.2 以降の Apple Silicon であることを明記する。
+- アプリバンドルは ad-hoc 署名（`electron-builder` の `mac.identity: "-"`）で署名する。
+  arm64 の macOS では、バンドル内のファイルを変更した後に有効なコード署名がないと起動できないため。
+- `npm run verify:mac` は、コード署名の検証に失敗した場合にエラーにする。
+  Gatekeeper の評価は `--strict-signing` を指定した場合だけ必須にする。
+- リリースノートに、Developer ID 署名と公証を行っていないこと、対象が macOS 14.2 以降の Apple Silicon であることを明記する。
 - Release の作成は、テストと DMG の作成が成功した後にだけ行う。
 - ローカルの開発ビルドを署名なしで使う決定は残す。
 
 ## 検討した選択肢
 
-| 選択肢 | 採用しない理由 |
+| 選択肢 | 判断 |
 | --- | --- |
 | ADR-0017 のとおり DMG を配布しない | タグ時点のビルドを GitHub Releases から取得できず、利用者が毎回ローカルでビルドする必要がある |
 | Developer ID で署名し、公証する | Apple Developer Program の資格情報と外部サービスへの提出が必要で、今回は用意しない |
-| ad-hoc 署名だけを行う | Gatekeeper の警告を避けられず、署名と公証の代わりにならない |
+| ad-hoc 署名だけを行う | 採用する。Developer ID 署名の代わりではなく、arm64 で起動できる有効な署名を作るために必要。Gatekeeper の警告は残る |
 | 手元で DMG を作って Release に添付する | ビルドと添付の手順が属人化し、タグと成果物が一致しなくなる |
 | Intel Mac 向けの DMG も作る | 同梱バイナリと動作検証が arm64 のみで、Intel Mac は対象外である |
 
@@ -40,6 +47,8 @@ Apple Developer Program の資格情報は用意せず、署名と公証は引�
 - タグと一致するバージョンの DMG を GitHub Releases からダウンロードできる。
 - 利用者は Gatekeeper の警告を許可する必要がある。
   起動できない場合は、Applications にコピーしたアプリを Finder で右クリックして開くか、システム設定の「プライバシーとセキュリティ」から許可する。
+- ad-hoc 署名により、ダウンロードしたアプリが「壊れているため開けません」と表示される問題を避ける。
+  Developer ID 署名と公証は行わないため、初回起動時の Gatekeeper の警告は残る。
 - 署名と公証は行わないため、Gatekeeper の警告なしの起動、公証、Developer ID の検証は完了条件に含めない。
 - macOS ランナーで DMG を作る時間と、DMG を Artifact として受け渡す時間が CI に加わる。
 - 将来 Developer ID を用意する場合は、この ADR を改訂し、ADR-0014 の署名と公証の決定を再開する。

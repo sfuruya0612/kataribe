@@ -202,13 +202,9 @@ if (codesign.status === 0) {
     'signed app has the audio-input entitlement',
   );
 } else {
-  const message = 'codesign verification failed (unsigned local build)';
-  if (strictSigning) {
-    failures.push(message);
-    console.error(`ng: ${message}`);
-  } else {
-    notes.push(message);
-  }
+  const message = 'codesign verification failed';
+  failures.push(message);
+  console.error(`ng: ${message}`);
 }
 
 const gatekeeper = spawnSync(
